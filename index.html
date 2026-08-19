@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Qonnect — Démo SMQ</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+
+<body>
+  <header>
+    <img src="assets/logo-qonnect.png" alt="Qonnect" class="logo">
+    <h1>Qonnect — Votre système de management, enfin connecté</h1>
+  </header>
+
+  <nav class="menu">
+    <a href="#dashboard">Tableau de bord</a>
+    <a href="#processus">Processus</a>
+    <a href="#documents">Documents</a>
+    <a href="#risques">Risques</a>
+    <a href="#evenements">Événements</a>
+    <a href="#performance">Performance</a>
+    <a href="#audits">Audits</a>
+    <a href="#changements">Changements</a>
+  </nav>
+
+  <main>
+
+    <section id="dashboard">
+      <h2>Tableau de bord</h2>
+
+      <div class="bloc red">
+        <h3>🔴 À traiter</h3>
+        <ul>
+          <li>Actions en retard</li>
+          <li>Événements à analyser</li>
+          <li>Risques critiques</li>
+        </ul>
+      </div>
+
+      <div class="bloc orange">
+        <h3>🟠 À surveiller</h3>
+        <ul>
+          <li>Indicateurs hors cible</li>
+          <li>Risques élevés</li>
+        </ul>
+      </div>
+
+      <div class="bloc green">
+        <h3>🟢 Maîtrisé</h3>
+        <ul>
+          <li>Objectifs atteints</li>
+          <li>Documents à jour</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="processus">
+      <h2>Processus</h2>
+      <pre id="processus-data"></pre>
+    </section>
+
+    <section id="documents">
+      <h2>Documents</h2>
+      <pre id="documents-data"></pre>
+    </section>
+
+    <section id="risques">
+      <h2>Risques</h2>
+      <pre id="risques-data"></pre>
+    </section>
+
+    <section id="evenements">
+      <h2>Événements</h2>
+      <pre id="evenements-data"></pre>
+    </section>
+
+    <section id="performance">
+      <h2>Indicateurs</h2>
+      <pre id="indicateurs-data"></pre>
+    </section>
+
+    <section id="audits">
+      <h2>Audits</h2>
+      <pre id="audits-data"></pre>
+    </section>
+
+    <section id="changements">
+      <h2>Changements</h2>
+      <pre id="changements-data"></pre>
+    </section>
+
+  </main>
+
+  <script>
+    async function loadJSON(id, file) {
+      const res = await fetch(file);
+      const data = await res.json();
+      document.getElementById(id).textContent = JSON.stringify(data, null, 2);
+    }
+
+    loadJSON("processus-data", "database/processus.json");
+    loadJSON("documents-data", "database/documents.json");
+    loadJSON("risques-data", "database/risques.json");
+    loadJSON("evenements-data", "database/evenements.json");
+    loadJSON("indicateurs-data", "database/indicateurs.json");
+    loadJSON("audits-data", "database/audits.json");
+    loadJSON("changements-data", "database/changements.json");
+  </script>
+
+</body>
+</html>
