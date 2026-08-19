@@ -1,0 +1,248 @@
+:root {
+  --primary: #2563EB;
+  --primary-dark: #1E3A8A;
+
+  --background: #F8FAFC;
+  --surface: #FFFFFF;
+
+  --text-primary: #172033;
+  --text-secondary: #64748B;
+
+  --border: #E2E8F0;
+
+  --success: #16A34A;
+  --success-bg: #DCFCE7;
+
+  --warning: #D97706;
+  --warning-bg: #FEF3C7;
+
+  --danger: #DC2626;
+  --danger-bg: #FEE2E2;
+
+  --info: #0284C7;
+  --info-bg: #E0F2FE;
+
+  --radius-card: 12px;
+  --radius-button: 8px;
+
+  --font-h1: 28px;
+  --font-h2: 22px;
+  --font-h3: 17px;
+  --font-body: 14px;
+  --font-small: 13px;
+  --font-mini: 11px;
+
+  --sidebar-width: 240px;
+  --header-height: 64px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--background);
+  color: var(--text-primary);
+}
+
+/* SIDEBAR */
+
+.sidebar {
+  width: var(--sidebar-width);
+  height: 100vh;
+  position: fixed;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.logo {
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 20px;
+}
+
+.sidebar nav .item {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: var(--text-primary);
+  text-decoration: none;
+  font-size: var(--font-body);
+}
+
+.sidebar nav .item:hover {
+  background: #F1F5F9;
+}
+
+.sidebar nav .item.active {
+  background: #EFF6FF;
+  color: var(--primary);
+  border-left: 4px solid var(--primary);
+}
+
+.group-title {
+  margin-top: 20px;
+  margin-bottom: 6px;
+  font-size: var(--font-small);
+  color: var(--text-secondary);
+}
+
+/* HEADER */
+
+.header {
+  height: var(--header-height);
+  margin-left: var(--sidebar-width);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 20px;
+}
+
+.header h1 {
+  font-size: var(--font-h1);
+  margin: 0;
+}
+
+.search {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: var(--font-body);
+}
+
+.header-actions .icon {
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+/* CONTENT */
+
+.content {
+  margin-left: var(--sidebar-width);
+  padding: 32px;
+  max-width: 1440px;
+}
+
+/* CARDS */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.card h3 {
+  font-size: var(--font-h3);
+  margin: 0 0 8px;
+}
+
+/* BADGES */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: var(--font-small);
+}
+
+.badge.success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.badge.warning {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.badge.danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.badge.info {
+  background: var(--info-bg);
+  color: var(--info);
+}
+
+/* BUTTONS */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-radius: var(--radius-button);
+  border: none;
+  font-size: var(--font-body);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.button.primary {
+  background: var(--primary);
+  color: #FFFFFF;
+}
+
+.button.secondary {
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+/* LAYOUTS */
+
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.section-title {
+  font-size: var(--font-h2);
+  margin-bottom: 16px;
+}
+
+/* ÉTATS VIDES */
+
+.empty-state {
+  padding: 20px;
+  border-radius: var(--radius-card);
+  border: 1px dashed var(--border);
+  background: #F9FAFB;
+  font-size: var(--font-body);
+}
+
+/* RESPONSIVE */
+
+@media (max-width: 900px) {
+  .sidebar {
+    position: static;
+    width: 100%;
+    height: auto;
+  }
+
+  .header {
+    margin-left: 0;
+  }
+
+  .content {
+    margin-left: 0;
+  }
+
+  .grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
