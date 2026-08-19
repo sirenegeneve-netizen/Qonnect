@@ -2,110 +2,55 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Qonnect — Démo SMQ</title>
-  <link rel="stylesheet" href="assets/styles.css">
+  <title>Qonnect — Votre système de management, enfin connecté</title>
+  <link rel="stylesheet" href="css/style.css">
 </head>
-
 <body>
-  <header>
-    <img src="assets/logo-qonnect.png" alt="Qonnect" class="logo">
-    <h1>Qonnect — Votre système de management, enfin connecté</h1>
+  <aside class="sidebar">
+    <div class="logo">QONNECT</div>
+
+    <nav>
+      <a href="#" class="item active" data-view="dashboard">🏠 Vue d'ensemble</a>
+
+      <div class="group-title">🧩 Système de management</div>
+      <a href="#" class="item" data-view="processus">Processus</a>
+      <a href="#" class="item" data-view="risques">Risques & opportunités</a>
+      <a href="#" class="item" data-view="objectifs">Objectifs</a>
+      <a href="#" class="item" data-view="indicateurs">Indicateurs</a>
+      <a href="#" class="item" data-view="changements">Changements</a>
+
+      <div class="group-title">📚 Système documentaire</div>
+      <a href="#" class="item" data-view="documents">Documents</a>
+
+      <div class="group-title">🚨 Qualité & amélioration</div>
+      <a href="#" class="item" data-view="evenements">Événements</a>
+      <a href="#" class="item" data-view="actions">Actions</a>
+
+      <div class="group-title">🔍 Évaluation</div>
+      <a href="#" class="item" data-view="audits">Audits</a>
+      <a href="#" class="item" data-view="referentiels">Référentiels</a>
+      <a href="#" class="item" data-view="conformite">Conformité</a>
+
+      <a href="#" class="item" data-view="ai">🤖 Qonnect AI</a>
+    </nav>
+  </aside>
+
+  <header class="header">
+    <h1 id="page-title">Vue d'ensemble</h1>
+    <input class="search" id="global-search" placeholder="🔎 Rechercher dans Qonnect...">
+    <div class="header-actions">
+      <button class="icon">🔔</button>
+      <button class="icon">❔</button>
+      <button class="icon">👤</button>
+    </div>
   </header>
 
-  <nav class="menu">
-    <a href="#dashboard">Tableau de bord</a>
-    <a href="#processus">Processus</a>
-    <a href="#documents">Documents</a>
-    <a href="#risques">Risques</a>
-    <a href="#evenements">Événements</a>
-    <a href="#performance">Performance</a>
-    <a href="#audits">Audits</a>
-    <a href="#changements">Changements</a>
-  </nav>
-
-  <main>
-
-    <section id="dashboard">
-      <h2>Tableau de bord</h2>
-
-      <div class="bloc red">
-        <h3>🔴 À traiter</h3>
-        <ul>
-          <li>Actions en retard</li>
-          <li>Événements à analyser</li>
-          <li>Risques critiques</li>
-        </ul>
-      </div>
-
-      <div class="bloc orange">
-        <h3>🟠 À surveiller</h3>
-        <ul>
-          <li>Indicateurs hors cible</li>
-          <li>Risques élevés</li>
-        </ul>
-      </div>
-
-      <div class="bloc green">
-        <h3>🟢 Maîtrisé</h3>
-        <ul>
-          <li>Objectifs atteints</li>
-          <li>Documents à jour</li>
-        </ul>
-      </div>
-    </section>
-
-    <section id="processus">
-      <h2>Processus</h2>
-      <pre id="processus-data"></pre>
-    </section>
-
-    <section id="documents">
-      <h2>Documents</h2>
-      <pre id="documents-data"></pre>
-    </section>
-
-    <section id="risques">
-      <h2>Risques</h2>
-      <pre id="risques-data"></pre>
-    </section>
-
-    <section id="evenements">
-      <h2>Événements</h2>
-      <pre id="evenements-data"></pre>
-    </section>
-
-    <section id="performance">
-      <h2>Indicateurs</h2>
-      <pre id="indicateurs-data"></pre>
-    </section>
-
-    <section id="audits">
-      <h2>Audits</h2>
-      <pre id="audits-data"></pre>
-    </section>
-
-    <section id="changements">
-      <h2>Changements</h2>
-      <pre id="changements-data"></pre>
-    </section>
-
+  <main class="content" id="app-root">
+    <!-- contenu injecté par app.js / ui.js -->
   </main>
 
-  <script>
-    async function loadJSON(id, file) {
-      const res = await fetch(file);
-      const data = await res.json();
-      document.getElementById(id).textContent = JSON.stringify(data, null, 2);
-    }
-
-    loadJSON("processus-data", "database/processus.json");
-    loadJSON("documents-data", "database/documents.json");
-    loadJSON("risques-data", "database/risques.json");
-    loadJSON("evenements-data", "database/evenements.json");
-    loadJSON("indicateurs-data", "database/indicateurs.json");
-    loadJSON("audits-data", "database/audits.json");
-    loadJSON("changements-data", "database/changements.json");
-  </script>
-
+  <script src="js/data.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>
