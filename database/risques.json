@@ -1,0 +1,10 @@
+[
+  {
+    "id": "r1",
+    "description": "Dépendance à un fournisseur unique",
+    "processus": "p1",
+    "probabilite": 3,
+    "gravite": 4,
+    "niveau": 12
+  }
+]
