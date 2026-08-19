@@ -1,0 +1,12 @@
+[
+  {
+    "id": "p1",
+    "name": "Achats",
+    "description": "Gérer les achats fournisseurs",
+    "documents": ["d1"],
+    "risques": ["r1"],
+    "indicateurs": ["i1"],
+    "evenements": ["e1"],
+    "audits": ["a1"]
+  }
+]
