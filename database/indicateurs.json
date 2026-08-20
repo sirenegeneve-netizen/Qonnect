@@ -1,9 +1,0 @@
-[
-  {
-    "id": "i1",
-    "name": "Taux de dépendance fournisseur",
-    "valeur": 85,
-    "cible": 50,
-    "tendance": "stable"
-  }
-]
