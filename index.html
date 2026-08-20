@@ -1,56 +1,18 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <title>Qonnect — Votre système de management, enfin connecté</title>
-  <link rel="stylesheet" href="css/style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Qonnect — Votre système de management, enfin connecté.</title>
+<meta name="description" content="Qonnect : la plateforme qui centralise et connecte votre système de management de la qualité.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect rx=%2224%22 width=%22100%22 height=%22100%22 fill=%22%232563EB%22/><text x=%2250%22 y=%2268%22 font-size=%2260%22 font-family=%22Arial%22 font-weight=%22800%22 fill=%22white%22 text-anchor=%22middle%22>Q</text></svg>">
+<link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <aside class="sidebar">
-    <div class="logo">QONNECT</div>
+<div id="root"></div>
 
-    <nav>
-      <a href="#" class="item active" data-view="dashboard">🏠 Vue d'ensemble</a>
-
-      <div class="group-title">🧩 Système de management</div>
-      <a href="#" class="item" data-view="processus">Processus</a>
-      <a href="#" class="item" data-view="risques">Risques & opportunités</a>
-      <a href="#" class="item" data-view="objectifs">Objectifs</a>
-      <a href="#" class="item" data-view="indicateurs">Indicateurs</a>
-      <a href="#" class="item" data-view="changements">Changements</a>
-
-      <div class="group-title">📚 Système documentaire</div>
-      <a href="#" class="item" data-view="documents">Documents</a>
-
-      <div class="group-title">🚨 Qualité & amélioration</div>
-      <a href="#" class="item" data-view="evenements">Événements</a>
-      <a href="#" class="item" data-view="actions">Actions</a>
-
-      <div class="group-title">🔍 Évaluation</div>
-      <a href="#" class="item" data-view="audits">Audits</a>
-      <a href="#" class="item" data-view="referentiels">Référentiels</a>
-      <a href="#" class="item" data-view="conformite">Conformité</a>
-
-      <a href="#" class="item" data-view="ai">🤖 Qonnect AI</a>
-    </nav>
-  </aside>
-
-  <header class="header">
-    <h1 id="page-title">Vue d'ensemble</h1>
-    <input class="search" id="global-search" placeholder="🔎 Rechercher dans Qonnect...">
-    <div class="header-actions">
-      <button class="icon">🔔</button>
-      <button class="icon">❔</button>
-      <button class="icon">👤</button>
-    </div>
-  </header>
-
-  <main class="content" id="app-root">
-    <!-- contenu injecté par app.js / ui.js -->
-  </main>
-
-  <script src="js/data.js"></script>
-  <script src="js/ui.js"></script>
-  <script src="js/app.js"></script>
+<script src="js/data.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>
