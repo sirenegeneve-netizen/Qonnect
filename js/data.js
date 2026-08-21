@@ -258,12 +258,21 @@ const LABELS = {
 };
 
 function loadDB(){
+  const seedCopy = JSON.parse(JSON.stringify(QONNECT_SEED));
   try{
     const raw = localStorage.getItem("qonnect_db_v1");
-    if(raw) return JSON.parse(raw);
-  }catch(e){}
-  const copy = JSON.parse(JSON.stringify(QONNECT_SEED));
-  return copy;
+    if(raw){
+      const cached = JSON.parse(raw);
+      // Fusionne : conserve les données déjà enregistrées par l'utilisateur, mais
+      // ajoute toute nouvelle section apparue dans une mise à jour de Qonnect
+      // (ex : le module Contexte & Stratégie) qui serait absente d'un ancien cache.
+      Object.keys(seedCopy).forEach(key=>{
+        if(!(key in cached)) cached[key] = seedCopy[key];
+      });
+      return cached;
+    }
+  }catch(e){ console.error("Qonnect: cache local invalide, réinitialisation.", e); }
+  return seedCopy;
 }
 function saveDB(){
   localStorage.setItem("qonnect_db_v1", JSON.stringify(DB));

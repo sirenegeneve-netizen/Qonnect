@@ -147,7 +147,13 @@ function render(){
     }
   }catch(err){
     console.error(err);
-    html = `<div class="empty-state">${emptyState("⚠️","Une erreur est survenue","Impossible d'afficher cette page.")}</div>`;
+    html = `<div class="empty-state">${emptyState("⚠️","Une erreur est survenue","Impossible d'afficher cette page.")}
+      <div class="card" style="text-align:left;max-width:640px;margin:16px auto 0;">
+        <p class="text-xs" style="font-weight:700;">DÉTAIL TECHNIQUE (pour le débogage)</p>
+        <p class="text-sm mt-2" style="font-family:monospace;color:var(--danger);word-break:break-word;">${esc(err.message)}</p>
+        <p class="text-xs mt-2">Route : ${esc(location.hash)}</p>
+      </div>
+    </div>`;
   }
   content.innerHTML = html;
   setActiveNav(mod);
