@@ -22,6 +22,12 @@ function badgeRaw(colorClass, text){
   return `<span class="badge badge-${colorClass}"><span class="badge-dot"></span>${esc(text)}</span>`;
 }
 
+function jsonAttr(obj){
+  // Safely embed a JS object as a single-quoted HTML attribute value: HTML-escaping
+  // handles apostrophes/quotes inside free text so the attribute never breaks early.
+  return esc(JSON.stringify(obj));
+}
+
 /* ---------- Toasts ---------- */
 function toast(msg, icon){
   let stack = document.getElementById("toast-stack");

@@ -152,6 +152,9 @@ const QONNECT_SEED = {
     { id:"ACT-008", title:"Mettre à jour l'affichage des modes opératoires en atelier", owner:"Thomas Petit", due:"2026-07-10", priority:"basse", status:"termine", origin:"evenement", originId:"EVT-003", processId:"PROC-004" },
     { id:"ACT-009", title:"Former les équipes achats à la nouvelle grille fournisseurs", owner:"Sophie Martin", due:"2026-09-20", priority:"moyenne", status:"a_faire", origin:"objectif", originId:"OBJ-003", processId:"PROC-007" },
     { id:"ACT-010", title:"Analyser les causes racines de l'écart d'inventaire", owner:"Sophie Martin", due:"2026-08-25", priority:"basse", status:"a_faire", origin:"evenement", originId:"EVT-006", processId:"PROC-007" },
+    { id:"ACT-011", title:"Qualifier un second fournisseur pour le composant stratégique", owner:"Sophie Martin", due:"2026-03-31", priority:"haute", status:"termine", origin:"revue_direction", originId:"RDDEC-001", processId:"PROC-007" },
+    { id:"ACT-012", title:"Réaliser un audit de sécurité du système d'information", owner:"Karim Belkacem", due:"2026-05-31", priority:"critique", status:"retard", origin:"revue_direction", originId:"RDDEC-002", processId:"PROC-008" },
+    { id:"ACT-013", title:"Renforcer le contrôle qualité en production", owner:"Thomas Petit", due:"2026-04-30", priority:"moyenne", status:"termine", origin:"revue_direction", originId:"RDDEC-003", processId:"PROC-004" },
   ],
 
   objectives: [
@@ -234,6 +237,39 @@ const QONNECT_SEED = {
     { id:"REQ-019", ref:"7.1.5", label:"Ressources pour la surveillance et la mesure", status:"a_renforcer", processId:"PROC-004" },
     { id:"REQ-020", ref:"8.2", label:"Exigences relatives aux produits et services", status:"maitrise", processId:"PROC-003" },
   ],
+
+  /* ---------- Revue de Direction ---------- */
+  managementReviews: [
+    {
+      id:"RD-2025-S2", periodLabel:"Semestre 2 2025", periodStart:"2025-07-01", periodEnd:"2025-12-31",
+      reviewDate:"2026-01-15", nextReviewDate:"2026-07-15", status:"cloturee", previousReviewId:null,
+      contextChanges:[
+        {id:"CTX-001", text:"Ouverture à un nouveau marché nécessitant une conformité réglementaire spécifique.", source:"externe", confirmed:true},
+        {id:"CTX-002", text:"Renforcement de la politique de cybersécurité suite à une hausse des tentatives d'intrusion.", source:"externe", confirmed:true},
+      ],
+      decisions:[
+        { id:"RDDEC-001", decision:"Renforcer le suivi du processus Achats", contexte:"Objectif de sécurisation des fournisseurs partiellement atteint (40 %).", justification:"Réduire la dépendance à un fournisseur unique identifiée en RISK-001.", responsable:"Sophie Martin", echeance:"2026-03-31", priorite:"haute", indicatorId:"IND-006", actionId:"ACT-011", statut:"realisee", preuve:"Second fournisseur qualifié en mars 2026, cf. CHG-002." },
+        { id:"RDDEC-002", decision:"Auditer la sécurité du système d'information", contexte:"Risque cyber (RISK-005) jugé critique.", justification:"Prévenir toute indisponibilité majeure du système d'information.", responsable:"Karim Belkacem", echeance:"2026-05-31", priorite:"critique", indicatorId:"IND-005", actionId:"ACT-012", statut:"en_retard", preuve:"" },
+        { id:"RDDEC-003", decision:"Améliorer le taux de clôture des non-conformités en production", contexte:"Non-conformités récurrentes en production.", justification:"Réduire l'impact qualité et les retards associés.", responsable:"Thomas Petit", echeance:"2026-04-30", priorite:"moyenne", indicatorId:"IND-007", actionId:"ACT-013", statut:"realisee", preuve:"Contrôle qualité renforcé sur la ligne A depuis avril 2026." },
+      ],
+      conclusion:{ smq:"adapte", performance:"conforme", ressources:"a_renforcer", amelioration:"actions_amelioration",
+        commentaire:"Le système reste globalement adapté aux besoins de l'organisation. Une vigilance particulière doit être maintenue sur la sécurité du système d'information et sur les compétences critiques identifiées." },
+    },
+    {
+      id:"RD-2026-S1", periodLabel:"Semestre 1 2026", periodStart:"2026-01-01", periodEnd:"2026-06-30",
+      reviewDate:"2026-07-15", nextReviewDate:"2027-01-15", status:"revue", previousReviewId:"RD-2025-S2",
+      contextChanges:[
+        {id:"CTX-003", text:"Migration vers un nouvel ERP en cours (CHG-001), impactant les processus Informatique, Finance et Achats.", source:"changement", confirmed:true},
+        {id:"CTX-004", text:"Qualification d'un second fournisseur stratégique (CHG-002).", source:"changement", confirmed:true},
+        {id:"CTX-005", text:"Évolution réglementaire sectorielle à anticiper sur le prochain semestre.", source:"externe", confirmed:false},
+      ],
+      decisions:[
+        { id:"RDDEC-004", decision:"Lancer un plan de formation pour réduire la pénurie de compétences", contexte:"Risque RISK-002 (perte de compétence clé) toujours ouvert.", justification:"Sécuriser la continuité d'activité sur les postes critiques.", responsable:"Paul Rousseau", echeance:"2026-12-31", priorite:"haute", indicatorId:null, actionId:null, statut:"a_faire", preuve:"" },
+        { id:"RDDEC-005", decision:"Réévaluer le fournisseur unique restant", contexte:"Risque RISK-001 toujours critique malgré la qualification d'un second fournisseur.", justification:"Poursuivre la sécurisation des approvisionnements stratégiques.", responsable:"Sophie Martin", echeance:"2026-11-30", priorite:"critique", indicatorId:"IND-006", actionId:null, statut:"a_faire", preuve:"" },
+      ],
+      conclusion:{ smq:"", performance:"", ressources:"", amelioration:"", commentaire:"" },
+    },
+  ],
 };
 
 /* Labels & couleurs partagés */
@@ -247,7 +283,7 @@ const LABELS = {
   eventStatus:{ ouvert:{l:"Ouvert",c:"warning"}, cloture:{l:"Clôturé",c:"success"} },
   priority:{ critique:{l:"Critique",c:"danger"}, haute:{l:"Haute",c:"warning"}, moyenne:{l:"Moyenne",c:"info"}, basse:{l:"Basse",c:"neutral"} },
   actionStatus:{ retard:{l:"En retard",c:"danger"}, en_cours:{l:"En cours",c:"warning"}, a_faire:{l:"À faire",c:"info"}, termine:{l:"Terminée",c:"success"} },
-  actionOrigin:{ evenement:"Événement", risque:"Risque", audit:"Audit", indicateur:"Indicateur", objectif:"Objectif", changement:"Changement" },
+  actionOrigin:{ evenement:"Événement", risque:"Risque", audit:"Audit", indicateur:"Indicateur", objectif:"Objectif", changement:"Changement", revue_direction:"Revue de direction" },
   objStatus:{ en_cours:{l:"En cours",c:"warning"}, atteint:{l:"Atteint",c:"success"}, en_retard:{l:"En retard",c:"danger"} },
   indStatus:{ vert:{l:"Sur cible",c:"success"}, orange:{l:"À surveiller",c:"warning"}, rouge:{l:"Hors cible",c:"danger"} },
   auditStatus:{ planifie:{l:"Planifié",c:"info"}, realise:{l:"Réalisé",c:"warning"}, cloture:{l:"Clôturé",c:"success"} },
@@ -255,6 +291,12 @@ const LABELS = {
   importance:{ haute:{l:"Haute",c:"danger"}, moyenne:{l:"Moyenne",c:"warning"}, basse:{l:"Basse",c:"neutral"} },
   stakeholderCat:{ client:"Client", patient:"Patient", collaborateur:"Collaborateur", fournisseur:"Fournisseur", autorite:"Autorité", certificateur:"Organisme certificateur", actionnaire:"Actionnaire", partenaire:"Partenaire", soustraitant:"Sous-traitant", autre:"Autre" },
   needType:{ besoin:"Besoin", attente:"Attente", exigence:"Exigence" },
+  reviewStatus:{ brouillon:{l:"Brouillon",c:"neutral"}, preparation:{l:"Préparation",c:"info"}, revue:{l:"En cours",c:"warning"}, validation:{l:"À valider",c:"warning"}, cloturee:{l:"Clôturée",c:"success"} },
+  decisionStatus:{ a_faire:{l:"À faire",c:"info"}, en_cours:{l:"En cours",c:"warning"}, realisee:{l:"Réalisée",c:"success"}, en_retard:{l:"En retard",c:"danger"}, abandonnee:{l:"Abandonnée",c:"neutral"} },
+  conclusionSmq:{ adapte:"Adapté", partiellement_adapte:"Partiellement adapté", a_revoir:"À revoir" },
+  conclusionPerf:{ conforme:"Conforme aux objectifs", a_surveiller:"À surveiller", insuffisante:"Insuffisante" },
+  conclusionRessources:{ suffisantes:"Suffisantes", a_renforcer:"À renforcer", insuffisantes:"Insuffisantes" },
+  conclusionAmelioration:{ aucune_action_majeure:"Aucune action majeure", actions_amelioration:"Actions d'amélioration nécessaires", actions_prioritaires:"Actions prioritaires nécessaires" },
 };
 
 function loadDB(){
@@ -300,6 +342,9 @@ const getChange = id => findBy(DB.changes,id);
 const getContextIssue = id => findBy(DB.contextExternal,id) || findBy(DB.contextInternal,id);
 const getStakeholder = id => findBy(DB.stakeholders,id);
 const getOrientation = id => findBy(DB.orientations,id);
+const getReview = id => findBy(DB.managementReviews,id);
+const getLatestReview = ()=> DB.managementReviews[DB.managementReviews.length-1];
+const getDecision = (review,id)=> review ? findBy(review.decisions,id) : null;
 
 function nextId(prefix, arr){
   let max = 0;

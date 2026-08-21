@@ -11,6 +11,9 @@ const NAV = [
       {route:"dashboard", icon:"🏠", label:"Vue d'ensemble"},
       {route:"contexte", icon:"🧭", label:"Contexte & Stratégie"},
   ]},
+  { title:"Pilotage", items:[
+      {route:"revue-direction", icon:"📅", label:"Revue de Direction"},
+  ]},
   { title:"Système de management", items:[
       {route:"processus", icon:"🧩", label:"Processus"},
       {route:"risques", icon:"⚠️", label:"Risques & opportunités"},
@@ -45,7 +48,7 @@ const NAV = [
 ];
 
 const PAGE_TITLES = {
-  dashboard:"Vue d'ensemble", contexte:"Contexte & Stratégie", processus:"Processus", risques:"Risques & opportunités",
+  dashboard:"Vue d'ensemble", contexte:"Contexte & Stratégie", "revue-direction":"Revue de Direction", processus:"Processus", risques:"Risques & opportunités",
   objectifs:"Objectifs & indicateurs", changements:"Changements", documents:"Documentation du SMQ",
   evenements:"Événements & non-conformités", actions:"Actions", audits:"Audits",
   referentiels:"Référentiels", conformite:"Conformité", connexions:"Connexions du système",
@@ -130,6 +133,10 @@ function render(){
     switch(mod){
       case "dashboard": html = pageDashboard(); break;
       case "contexte": html = pageContexte(parts[1], parts[2]); break;
+      case "revue-direction":
+        if(parts[2]==="resume"){ const rv = parts[1] ? getReview(parts[1]) : getLatestReview(); html = rv ? pageRevueSynthese(rv) : emptyState("📅","Revue introuvable","Cette revue de direction n'existe pas."); }
+        else html = pageRevueDirection(parts[1], parts[2]);
+        break;
       case "processus": html = parts[1] ? pageProcessFiche(parts[1], parts[2]||"general") : pageProcessCarto(); break;
       case "documents": html = parts[2] ? pageDocumentFiche(parts[2]) : pageDocuments(parts[1]||"all"); break;
       case "risques": html = parts[1] ? pageRiskFiche(parts[1]) : pageRisks(); break;
@@ -635,11 +642,11 @@ function renderAssistantSuggestion(text, s){
 
     <p class="text-sm mt-4">Validez les suggestions que vous souhaitez intégrer à votre système. Chaque élément créé restera tracé jusqu'à cet enjeu.</p>
     <div class="flex gap-2 mt-2" style="flex-wrap:wrap;">
-      <button class="btn btn-secondary btn-sm" data-accept-suggestion='{"kind":"issue","label":${JSON.stringify(s.enjeu)}}'>+ Ajouter l'enjeu</button>
-      ${s.risks.map(r=>`<button class="btn btn-secondary btn-sm" data-accept-suggestion='{"kind":"risk","label":${JSON.stringify(r)},"source":${JSON.stringify(s.enjeu)}}'>+ Risque : ${esc(r)}</button>`).join("")}
-      ${s.opportunities.map(o=>`<button class="btn btn-secondary btn-sm" data-accept-suggestion='{"kind":"opportunity","label":${JSON.stringify(o)},"source":${JSON.stringify(s.enjeu)}}'>+ Opportunité : ${esc(o)}</button>`).join("")}
-      ${s.objectives.map(o=>`<button class="btn btn-secondary btn-sm" data-accept-suggestion='{"kind":"objective","label":${JSON.stringify(o)},"source":${JSON.stringify(s.enjeu)}}'>+ Objectif : ${esc(o)}</button>`).join("")}
-      ${s.actions.map(a=>`<button class="btn btn-secondary btn-sm" data-accept-suggestion='{"kind":"action","label":${JSON.stringify(a)},"source":${JSON.stringify(s.enjeu)}}'>+ Action : ${esc(a)}</button>`).join("")}
+      <button class="btn btn-secondary btn-sm" data-accept-suggestion='${jsonAttr({kind:"issue",label:s.enjeu})}'>+ Ajouter l'enjeu</button>
+      ${s.risks.map(r=>`<button class="btn btn-secondary btn-sm" data-accept-suggestion='${jsonAttr({kind:"risk",label:r,source:s.enjeu})}'>+ Risque : ${esc(r)}</button>`).join("")}
+      ${s.opportunities.map(o=>`<button class="btn btn-secondary btn-sm" data-accept-suggestion='${jsonAttr({kind:"opportunity",label:o,source:s.enjeu})}'>+ Opportunité : ${esc(o)}</button>`).join("")}
+      ${s.objectives.map(o=>`<button class="btn btn-secondary btn-sm" data-accept-suggestion='${jsonAttr({kind:"objective",label:o,source:s.enjeu})}'>+ Objectif : ${esc(o)}</button>`).join("")}
+      ${s.actions.map(a=>`<button class="btn btn-secondary btn-sm" data-accept-suggestion='${jsonAttr({kind:"action",label:a,source:s.enjeu})}'>+ Action : ${esc(a)}</button>`).join("")}
     </div>
   </div>`;
 }
@@ -694,6 +701,514 @@ function pageContexteDirection(){
         <div class="kpi"><div class="val" style="color:var(--primary)">${pctConformite}%</div><div class="lbl">Maîtrise du référentiel</div></div>
       </div>
     </div>
+  </div>`;
+}
+
+/* ============================================================
+   5ter. REVUE DE DIRECTION — cockpit de pilotage
+   ============================================================ */
+function reviewProcessSynthesis(){
+  return DB.processes.map(p=>{
+    const critRisks = DB.risks.filter(r=>r.processId===p.id && r.type==="risque" && r.status==="ouvert" && r.level==="critique").length;
+    const lateActions = DB.actions.filter(a=>a.processId===p.id && a.status==="retard").length;
+    const openNc = DB.events.filter(e=>e.processId===p.id && e.type==="non_conformite" && e.status==="ouvert").length;
+    let status = "vert";
+    if(critRisks>0 || lateActions>=2) status = "rouge";
+    else if(lateActions>=1 || openNc>=1) status = "orange";
+    return {process:p, status, critRisks, lateActions, openNc};
+  });
+}
+
+function reviewAlerts(review){
+  const alerts = [];
+  const lateActions = DB.actions.filter(a=>a.status==="retard");
+  if(lateActions.length) alerts.push({level:"danger", text:`${lateActions.length} action(s) sont en retard.`});
+  const critRisksNoAction = DB.risks.filter(r=>r.type==="risque" && r.level==="critique" && r.status==="ouvert" && !DB.actions.some(a=>a.originId===r.id));
+  if(critRisksNoAction.length) alerts.push({level:"danger", text:`${critRisksNoAction.length} risque(s) critique(s) ne disposent d'aucune action de maîtrise.`});
+  const ncByProcess = {};
+  DB.events.filter(e=>e.type==="non_conformite").forEach(e=>{ ncByProcess[e.processId] = (ncByProcess[e.processId]||0)+1; });
+  Object.entries(ncByProcess).forEach(([pid,count])=>{ if(count>=2){ const p=getProcess(pid); alerts.push({level:"warning", text:`Les non-conformités se répètent sur le processus ${p?p.name:pid} (${count} occurrences).`}); } });
+  const indComplaint = getIndicator("IND-002");
+  if(indComplaint && indComplaint.trend>0) alerts.push({level:"warning", text:`Les réclamations augmentent (+${indComplaint.trend}).`});
+  const unfavorableAudits = DB.audits.filter(a=>a.findings.some(f=>f.type==="ecart") && a.status!=="cloture");
+  if(unfavorableAudits.length) alerts.push({level:"warning", text:`${unfavorableAudits.length} audit(s) présentent des écarts non encore clôturés.`});
+  const prevReview = review.previousReviewId ? getReview(review.previousReviewId) : null;
+  if(prevReview && prevReview.decisions.length){
+    const pct = Math.round(prevReview.decisions.filter(d=>d.statut==="realisee").length / prevReview.decisions.length * 100);
+    alerts.push({level: pct>=80?"success":"info", text:`${pct} % des décisions de la précédente revue sont clôturées.`});
+  }
+  if(!alerts.some(a=>a.level==="danger")) alerts.push({level:"success", text:"Aucun point bloquant majeur n'est détecté sur les données actuellement disponibles."});
+  return alerts;
+}
+
+function reviewScoreComponents(){
+  const objProgressAvg = Math.round(DB.objectives.reduce((s,o)=>s+o.progress,0)/Math.max(DB.objectives.length,1));
+  const auditsOk = DB.audits.filter(a=>!a.findings.some(f=>f.type==="ecart")).length;
+  const auditsPct = Math.round(auditsOk/Math.max(DB.audits.length,1)*100);
+  const ncTotal = DB.events.filter(e=>e.type==="non_conformite").length;
+  const ncClosed = DB.events.filter(e=>e.type==="non_conformite" && e.status==="cloture").length;
+  const ncPct = ncTotal ? Math.round(ncClosed/ncTotal*100) : 100;
+  const riskTotal = DB.risks.filter(r=>r.type==="risque").length;
+  const riskControlled = DB.risks.filter(r=>r.type==="risque" && r.status!=="ouvert").length;
+  const riskPct = riskTotal ? Math.round(riskControlled/riskTotal*100) : 100;
+  const satisfaction = parseInt(getIndicator("IND-001")?.value) || 0;
+  const actionsTotal = DB.actions.length;
+  const actionsOnTime = DB.actions.filter(a=>a.status!=="retard").length;
+  const actionsPct = actionsTotal ? Math.round(actionsOnTime/actionsTotal*100) : 100;
+  const processPct = Math.round(reviewProcessSynthesis().filter(p=>p.status==="vert").length/DB.processes.length*100);
+  const components = [
+    {label:"Performance (objectifs)", pct:objProgressAvg},
+    {label:"Audits", pct:auditsPct},
+    {label:"NC / CAPA", pct:ncPct},
+    {label:"Risques", pct:riskPct},
+    {label:"Satisfaction", pct:satisfaction},
+    {label:"Actions dans les délais", pct:actionsPct},
+    {label:"Processus maîtrisés", pct:processPct},
+  ];
+  const global = Math.round(components.reduce((s,c)=>s+c.pct,0)/components.length);
+  return {global, components};
+}
+
+function reviewAIAnalysis(review){
+  const score = reviewScoreComponents();
+  const bullets = [];
+  bullets.push(`Le niveau global du système de management est estimé à ${score.global} % sur la base des données disponibles.`);
+  const objAtteints = DB.objectives.filter(o=>o.status==="atteint").length;
+  bullets.push(`${objAtteints} objectif(s) sur ${DB.objectives.length} sont atteints à ce jour.`);
+  const lateActions = DB.actions.filter(a=>a.status==="retard").length;
+  if(lateActions) bullets.push(`${lateActions} action(s) sont en retard et méritent une priorisation.`);
+  const critOpen = DB.risks.filter(r=>r.type==="risque" && r.level==="critique" && r.status==="ouvert").length;
+  if(critOpen) bullets.push(`${critOpen} risque(s) critique(s) restent ouverts.`);
+  if(!lateActions && !critOpen) bullets.push(`Aucun point bloquant majeur n'est détecté sur les données actuellement disponibles.`);
+  return `<ul>${bullets.map(b=>`<li>${esc(b)}</li>`).join("")}</ul>
+    <p class="text-xs mt-4">Analyse générée à partir des données disponibles dans Qonnect. Validation par la Direction requise.</p>`;
+}
+
+function reviewImprovementOpportunities(){
+  const opps = [];
+  DB.indicators.filter(i=>i.status!=="vert").forEach(i=>{
+    opps.push({id:"OPP-IND-"+i.id, source:"Indicateur dégradé : "+i.name, analysis:`La valeur actuelle (${i.value}) est en dessous de la cible attendue.`, proposal:`Analyser les causes et définir un plan d'action sur l'indicateur ${i.name}.`});
+  });
+  const ncByProcess = {};
+  DB.events.filter(e=>e.type==="non_conformite").forEach(e=>{ (ncByProcess[e.processId]=ncByProcess[e.processId]||[]).push(e); });
+  Object.entries(ncByProcess).forEach(([pid,list])=>{ if(list.length>=2){ const p=getProcess(pid); opps.push({id:"OPP-NC-"+pid, source:"Récurrence de non-conformités — "+(p?p.name:pid), analysis:`${list.length} non-conformités ont été enregistrées sur ce processus.`, proposal:`Réaliser une analyse de cause racine transverse sur le processus ${p?p.name:pid}.`}); } });
+  DB.risks.filter(r=>r.type==="risque" && (r.level==="critique"||r.level==="eleve") && r.status==="ouvert").forEach(r=>{
+    opps.push({id:"OPP-RISK-"+r.id, source:`Risque ${LABELS.riskLevel[r.level].l.toLowerCase()} : ${r.name}`, analysis:r.description, proposal:`Renforcer le plan de maîtrise du risque « ${r.name} ».`});
+  });
+  DB.objectives.filter(o=>o.status==="en_retard" || (o.status==="en_cours" && o.progress<50)).forEach(o=>{
+    opps.push({id:"OPP-OBJ-"+o.id, source:"Objectif non atteint : "+o.title, analysis:`Progression actuelle : ${o.progress} %.`, proposal:`Revoir le plan d'action associé à l'objectif « ${o.title} ».`});
+  });
+  DB.audits.filter(a=>a.findings.some(f=>f.type==="ecart")).forEach(a=>{
+    opps.push({id:"OPP-AUD-"+a.id, source:"Écart d'audit : "+a.title, analysis:`${a.findings.filter(f=>f.type==="ecart").length} écart(s) relevé(s).`, proposal:`Vérifier l'efficacité des actions correctives associées.`});
+  });
+  return opps;
+}
+
+const REVIEW_STEPS = ["brouillon","preparation","revue","validation","cloturee"];
+const REVIEW_STEP_LABELS = ["Brouillon","Préparation","Revue","Validation","Clôture"];
+
+function reviewTabsHtml(review, active){
+  const tabs = [
+    {id:"synthese",label:"Synthèse"}, {id:"decisions-precedentes",label:"Décisions précédentes"},
+    {id:"contexte",label:"Contexte"}, {id:"performance",label:"Performance"}, {id:"satisfaction",label:"Satisfaction"},
+    {id:"processus",label:"Processus"}, {id:"nc-capa",label:"NC / CAPA"}, {id:"audits",label:"Audits"},
+    {id:"ressources",label:"Ressources"}, {id:"risques",label:"Risques"}, {id:"changements",label:"Changements"},
+    {id:"amelioration",label:"Amélioration"}, {id:"decisions",label:"Décisions"}, {id:"actions",label:"Actions"},
+    {id:"conclusion",label:"Conclusion"},
+  ];
+  return `<div class="tabs">${tabs.map(t=>`<button class="tab ${t.id===active?'active':''}" data-route="revue-direction/${review.id}/${t.id}">${esc(t.label)}</button>`).join("")}</div>`;
+}
+
+function pageRevueDirection(reviewId, tab){
+  const review = reviewId ? getReview(reviewId) : getLatestReview();
+  if(!review) return emptyState("📅","Aucune revue de direction","Créez votre première revue de direction.", `<button class="btn btn-primary" data-open-review-form>+ Préparer la revue de direction</button>`);
+  tab = tab || "synthese";
+  const prevReview = review.previousReviewId ? getReview(review.previousReviewId) : null;
+  const alerts = reviewAlerts(review);
+  const score = reviewScoreComponents();
+  const lateActionsCount = DB.actions.filter(a=>a.status==="retard").length;
+  const prevDecisionRate = prevReview && prevReview.decisions.length ? Math.round(prevReview.decisions.filter(d=>d.statut==="realisee").length/prevReview.decisions.length*100) : null;
+  const activeRef = DB.referentiels.find(r=>r.active);
+  const stepIndex = REVIEW_STEPS.indexOf(review.status);
+  const isClosed = review.status==="cloturee";
+
+  const selector = `<select id="review-picker" style="height:40px;border:1px solid var(--border);border-radius:8px;padding:0 12px;">
+    ${[...DB.managementReviews].reverse().map(r=>`<option value="${r.id}" ${r.id===review.id?"selected":""}>${esc(r.periodLabel)} — ${esc(LABELS.reviewStatus[r.status].l)}</option>`).join("")}
+  </select>`;
+
+  const header = `
+  ${pageHeader("Revue de Direction", "Le cockpit de pilotage de votre système de management.",
+    `${selector}<button class="btn btn-secondary" data-open-review-form>+ Nouvelle revue</button>`)}
+  <div class="card mb-2">
+    <div class="flex justify-between items-center" style="flex-wrap:wrap;gap:12px;">
+      <div>
+        <h2>${esc(review.periodLabel)}</h2>
+        <p class="section-sub mt-2">Du ${fmtDate(review.periodStart)} au ${fmtDate(review.periodEnd)} · Revue le ${fmtDate(review.reviewDate)||"—"} · Prochaine revue : ${fmtDate(review.nextReviewDate)||"—"}${activeRef?" · Référentiel : "+esc(activeRef.name):""}</p>
+      </div>
+      ${badge(LABELS.reviewStatus[review.status])}
+    </div>
+    <div class="mt-4">${workflowStepper(REVIEW_STEP_LABELS, stepIndex)}</div>
+    <div class="flex gap-2 mt-4" style="flex-wrap:wrap;">
+      ${!isClosed && stepIndex<REVIEW_STEPS.length-1 ? `<button class="btn btn-primary" data-advance-review="${review.id}">Passer à l'étape suivante : ${REVIEW_STEP_LABELS[stepIndex+1]}</button>` : ""}
+      ${isClosed ? `<button class="btn btn-secondary" data-new-review-version="${review.id}">Créer une nouvelle version</button>` : ""}
+    </div>
+  </div>
+  <div class="grid grid-4 mb-2">
+    <div class="card"><div class="kpi"><div class="val">${prevDecisionRate===null?"—":prevDecisionRate+" %"}</div><div class="lbl">Décisions précédentes clôturées</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:${lateActionsCount?'var(--danger)':'var(--success)'}">${lateActionsCount}</div><div class="lbl">Actions en retard</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--primary)">${score.global} %</div><div class="lbl">Niveau global de performance</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:${alerts.some(a=>a.level==='danger')?'var(--danger)':'var(--warning)'}">${alerts.length}</div><div class="lbl">Point(s) d'attention</div></div></div>
+  </div>
+  ${reviewTabsHtml(review, tab)}`;
+
+  let body = "";
+  if(tab==="synthese") body = reviewTabSynthese(review, alerts, score);
+  else if(tab==="decisions-precedentes") body = reviewTabDecisionsPrecedentes(review, prevReview);
+  else if(tab==="contexte") body = reviewTabContexte(review, isClosed);
+  else if(tab==="performance") body = reviewTabPerformance(review);
+  else if(tab==="satisfaction") body = reviewTabSatisfaction(review);
+  else if(tab==="processus") body = reviewTabProcessus(review);
+  else if(tab==="nc-capa") body = reviewTabNcCapa(review);
+  else if(tab==="audits") body = reviewTabAudits(review);
+  else if(tab==="ressources") body = reviewTabRessources(review);
+  else if(tab==="risques") body = reviewTabRisques(review);
+  else if(tab==="changements") body = reviewTabChangements(review);
+  else if(tab==="amelioration") body = reviewTabAmelioration(review, isClosed);
+  else if(tab==="decisions") body = reviewTabDecisions(review, isClosed);
+  else if(tab==="actions") body = reviewTabActions(review);
+  else if(tab==="conclusion") body = reviewTabConclusion(review, isClosed);
+
+  return header + body;
+}
+
+function reviewTabSynthese(review, alerts, score){
+  const kpi = (route, val, label, color)=>`<div class="card card-hover" data-route="${route}"><div class="kpi"><div class="val" style="color:${color||'var(--text-primary)'}">${val}</div><div class="lbl">${esc(label)}</div></div></div>`;
+  const objAtteints = DB.objectives.filter(o=>o.status==="atteint").length;
+  const ncOuvertes = DB.events.filter(e=>e.type==="non_conformite" && e.status==="ouvert").length;
+  const auditsPlanifies = DB.audits.filter(a=>a.status==="planifie").length;
+  const risquesOuverts = DB.risks.filter(r=>r.type==="risque" && r.status==="ouvert").length;
+  const satisf = getIndicator("IND-001");
+
+  return `
+  <div class="section">
+    <div class="section-head"><h2>Où en est mon système de management ?</h2></div>
+    <div class="grid grid-4">
+      ${kpi("objectifs", DB.objectives.length, "Objectifs ("+objAtteints+" atteints)")}
+      ${kpi("objectifs", DB.indicators.filter(i=>i.status!=="vert").length, "Indicateurs hors cible", "var(--warning)")}
+      ${kpi("audits", auditsPlanifies, "Audits à préparer")}
+      ${kpi("evenements/non_conformite", ncOuvertes, "Non-conformités ouvertes", ncOuvertes?"var(--danger)":"var(--success)")}
+      ${kpi("actions", DB.actions.filter(a=>a.status==="retard").length, "Actions / CAPA en retard", "var(--danger)")}
+      ${kpi("risques", risquesOuverts, "Risques ouverts", "var(--warning)")}
+      ${kpi("dashboard", satisf?satisf.value:"—", "Satisfaction / réclamations")}
+      ${kpi("processus", DB.processes.length, "Processus")}
+      ${kpi("changements", DB.changes.length, "Changements")}
+      ${kpi(`revue-direction/${review.id}/decisions-precedentes`, review.previousReviewId?getReview(review.previousReviewId).decisions.length:0, "Décisions précédentes")}
+    </div>
+  </div>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <h3 class="mb-2">🔔 Points nécessitant l'attention de la Direction</h3>
+      ${alerts.map(a=>`<div class="rel-link"><span class="rel-name">${a.level==="danger"?"🔴":a.level==="warning"?"🟠":a.level==="success"?"🟢":"🔵"} ${esc(a.text)}</span></div>`).join("")}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">🤖 Analyse proposée par Qonnect</h3>
+      ${reviewAIAnalysis(review)}
+    </div>
+  </div>
+
+  <div class="card mt-4">
+    <h3 class="mb-2">📈 État du système de management — ${score.global} %</h3>
+    ${score.components.map(c=>`
+      <div class="flex justify-between items-center mt-2"><span class="text-sm">${esc(c.label)}</span><span class="text-sm" style="font-weight:700;">${c.pct} %</span></div>
+      <div class="progress mt-2" style="margin-bottom:10px;"><div style="width:${c.pct}%;background:${c.pct>=70?'var(--success)':c.pct>=40?'var(--warning)':'var(--danger)'}"></div></div>
+    `).join("")}
+  </div>`;
+}
+
+function reviewTabDecisionsPrecedentes(review, prevReview){
+  if(!prevReview) return `<div class="card">${emptyState("📋","Aucune revue précédente","Il s'agit de la première revue de direction enregistrée.")}</div>`;
+  const rate = prevReview.decisions.length ? Math.round(prevReview.decisions.filter(d=>d.statut==="realisee").length/prevReview.decisions.length*100) : 0;
+  return `
+  <div class="card mb-4"><div class="kpi"><div class="val" style="color:var(--primary)">${rate} %</div><div class="lbl">Taux de réalisation des décisions de la revue « ${esc(prevReview.periodLabel)} »</div></div></div>
+  ${dataTable(
+    [ {label:"Décision", render:d=>`<div class="cell-title">${esc(d.decision)}</div>`},
+      {label:"Responsable", render:d=>esc(d.responsable)},
+      {label:"Échéance", render:d=>fmtDate(d.echeance)},
+      {label:"Statut", render:d=>badge(LABELS.decisionStatus[d.statut])},
+      {label:"Preuve", render:d=>esc(d.preuve||"—")},
+      {label:"", render:d=>`<button class="btn btn-secondary btn-sm" data-edit-decision='${jsonAttr({reviewId:prevReview.id,decisionId:d.id})}'>Mettre à jour</button>`} ],
+    prevReview.decisions
+  )}`;
+}
+
+function reviewTabContexte(review, isClosed){
+  return `
+  ${!isClosed?`<div class="flex justify-between items-center mb-2"><span></span><button class="btn btn-primary btn-sm" data-open-context-change-form="${review.id}">+ Ajouter un changement</button></div>`:""}
+  ${review.contextChanges.length ? review.contextChanges.map(c=>`
+    <div class="card mb-2">
+      <div class="flex justify-between items-center">
+        <p class="text-sm" style="color:var(--text-primary)">${esc(c.text)}</p>
+        ${c.confirmed?badgeRaw("success","Confirmé"):badgeRaw("warning","À confirmer")}
+      </div>
+      <p class="text-xs mt-2">Source : ${esc(c.source)}</p>
+      ${!isClosed && !c.confirmed ? `<button class="btn btn-secondary btn-sm mt-2" data-confirm-context-change='${jsonAttr({reviewId:review.id,changeId:c.id})}'>Confirmer</button>` : ""}
+    </div>`).join("")
+    : `<div class="card">${emptyState("🧭","Aucun changement de contexte","Aucune évolution significative du contexte n'a été enregistrée pour cette période.")}</div>`}`;
+}
+
+function reviewTabPerformance(review){
+  const objAtteints = DB.objectives.filter(o=>o.status==="atteint").length;
+  const objPartiels = DB.objectives.filter(o=>o.status==="en_cours").length;
+  const objNonAtteints = DB.objectives.filter(o=>o.status==="en_retard").length;
+  return `
+  <div class="grid grid-3 mb-4">
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--success)">${objAtteints}</div><div class="lbl">Objectifs atteints</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--warning)">${objPartiels}</div><div class="lbl">Objectifs partiellement atteints</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--danger)">${objNonAtteints}</div><div class="lbl">Objectifs non atteints</div></div></div>
+  </div>
+  <div class="card">
+    <h3 class="mb-2">Évolution des indicateurs</h3>
+    ${DB.indicators.map(i=>`<div class="rel-link" data-route="objectifs"><span class="rel-name">${esc(i.name)}</span><span class="text-sm">${esc(i.value)} · tendance ${i.trend>=0?"+":""}${i.trend} ${badge(LABELS.indStatus[i.status])}</span></div>`).join("")}
+  </div>`;
+}
+
+function reviewTabSatisfaction(review){
+  const satisf = getIndicator("IND-001");
+  const compl = getIndicator("IND-002");
+  const reclamations = DB.events.filter(e=>e.type==="reclamation");
+  return `
+  <div class="grid grid-2 mb-4">
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--success)">${satisf?satisf.value:"—"}</div><div class="lbl">Satisfaction globale (tendance ${satisf&&satisf.trend>=0?"+":""}${satisf?satisf.trend:"—"})</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--danger)">${compl?compl.value:"—"}</div><div class="lbl">Réclamations (tendance ${compl&&compl.trend>=0?"+":""}${compl?compl.trend:"—"})</div></div></div>
+  </div>
+  <div class="card">
+    <h3 class="mb-2">Réclamations enregistrées</h3>
+    ${reclamations.length ? dataTable(
+      [ {label:"Réclamation", render:e=>`<div class="cell-title">${esc(e.title)}</div>`},
+        {label:"Date", render:e=>fmtDate(e.date)},
+        {label:"Statut", render:e=>badge(LABELS.eventStatus[e.status])} ],
+      reclamations, {rowRoute:e=>`evenements/${e.type}/${e.id}`}
+    ) : `<p class="text-sm">Aucune réclamation enregistrée sur la période.</p>`}
+  </div>`;
+}
+
+function reviewTabProcessus(review){
+  const synth = reviewProcessSynthesis();
+  const groupLabel = {vert:"🟢 Processus maîtrisés", orange:"🟠 Processus à surveiller", rouge:"🔴 Processus nécessitant une action"};
+  return `<div class="grid grid-3">${["vert","orange","rouge"].map(st=>`
+    <div class="card">
+      <h3 class="mb-2">${groupLabel[st]}</h3>
+      ${synth.filter(s=>s.status===st).map(s=>`<div class="rel-link" data-route="processus/${s.process.id}"><span class="rel-name">${esc(s.process.name)}</span><span class="chev">›</span></div>`).join("") || `<p class="text-sm">Aucun</p>`}
+    </div>`).join("")}</div>`;
+}
+
+function reviewTabNcCapa(review){
+  const nc = DB.events.filter(e=>e.type==="non_conformite");
+  const open = nc.filter(e=>e.status==="ouvert").length;
+  const closed = nc.filter(e=>e.status==="cloture").length;
+  const capaActions = DB.actions.filter(a=>a.origin==="evenement" && nc.some(e=>e.id===a.originId));
+  const ncByProcess = {};
+  nc.forEach(e=>{ ncByProcess[e.processId]=(ncByProcess[e.processId]||0)+1; });
+  const trendAlerts = Object.entries(ncByProcess).filter(([,c])=>c>=2).map(([pid,c])=>{ const p=getProcess(pid); return `Les non-conformités liées au processus ${p?p.name:pid} sont au nombre de ${c} sur la période analysée.`; });
+  return `
+  <div class="grid grid-4 mb-4">
+    <div class="card"><div class="kpi"><div class="val">${nc.length}</div><div class="lbl">Non-conformités totales</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--warning)">${open}</div><div class="lbl">NC ouvertes</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--success)">${closed}</div><div class="lbl">NC clôturées</div></div></div>
+    <div class="card"><div class="kpi"><div class="val">${capaActions.length}</div><div class="lbl">CAPA associées</div></div></div>
+  </div>
+  ${trendAlerts.length?`<div class="card mb-4">
+    <h3 class="mb-2">Analyse des tendances</h3>
+    ${trendAlerts.map(t=>`<p class="text-sm mt-2">⚠️ ${esc(t)}</p>`).join("")}
+    <p class="text-xs mt-2">Constat généré à partir des données enregistrées dans Qonnect.</p>
+  </div>`:""}
+  ${dataTable(
+    [ {label:"Référence", render:e=>esc(e.ref)}, {label:"Non-conformité", render:e=>`<div class="cell-title">${esc(e.title)}</div>`},
+      {label:"Processus", render:e=>{const p=getProcess(e.processId); return p?esc(p.name):"—";}},
+      {label:"Priorité", render:e=>badge(LABELS.priority[e.priority])}, {label:"Statut", render:e=>badge(LABELS.eventStatus[e.status])} ],
+    nc, {rowRoute:e=>`evenements/${e.type}/${e.id}`}
+  )}`;
+}
+
+function reviewTabAudits(review){
+  const nbEcarts = DB.audits.reduce((s,a)=>s+a.findings.filter(f=>f.type==="ecart").length,0);
+  const actionsFromAudits = DB.actions.filter(a=>a.origin==="audit");
+  const cloturees = actionsFromAudits.filter(a=>a.status==="termine").length;
+  const tauxCloture = actionsFromAudits.length ? Math.round(cloturees/actionsFromAudits.length*100) : 100;
+  return `
+  <div class="grid grid-3 mb-4">
+    <div class="card"><div class="kpi"><div class="val">${DB.audits.length}</div><div class="lbl">Audits réalisés / planifiés</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:${nbEcarts?'var(--warning)':'var(--success)'}">${nbEcarts}</div><div class="lbl">Écarts relevés (toutes périodes)</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--primary)">${tauxCloture} %</div><div class="lbl">Taux de clôture des actions d'audit</div></div></div>
+  </div>
+  ${dataTable(
+    [ {label:"Audit", render:a=>`<div class="cell-title">${esc(a.title)}</div>`}, {label:"Date", render:a=>fmtDate(a.date)},
+      {label:"Écarts", render:a=>a.findings.filter(f=>f.type==="ecart").length}, {label:"Statut", render:a=>badge(LABELS.auditStatus[a.status])} ],
+    DB.audits, {rowRoute:a=>`audits/${a.id}`}
+  )}`;
+}
+
+function reviewTabRessources(review){
+  const skillsNeeded = [...new Set(DB.changes.flatMap(c=>c.impacted.skills||[]))];
+  const rh = getProcess("PROC-006");
+  const compRisk = getRisk("RISK-002");
+  return `
+  <div class="card mb-4">
+    <h3 class="mb-2">Évaluation des ressources</h3>
+    <p class="text-sm">${compRisk && compRisk.status==="ouvert" ? "⚠️ Besoins / insuffisances identifiés — voir le risque « "+esc(compRisk.name)+" »." : "🟢 Ressources jugées suffisantes sur la base des données disponibles."}</p>
+  </div>
+  <div class="grid grid-2">
+    <div class="card">
+      <h3 class="mb-2">Compétences à développer</h3>
+      ${skillsNeeded.length ? skillsNeeded.map(s=>`<div class="rel-link"><span class="rel-name">${esc(s)}</span></div>`).join("") : `<p class="text-sm">Aucun besoin de compétence identifié via les changements en cours.</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Risques liés aux ressources</h3>
+      ${rh ? `<div class="rel-link" data-route="processus/${rh.id}"><span class="rel-name">🧩 ${esc(rh.name)}</span><span class="chev">›</span></div>` : ""}
+      ${compRisk ? `<div class="rel-link" data-route="risques/${compRisk.id}"><span class="rel-name">⚠️ ${esc(compRisk.name)}</span>${badge(LABELS.riskLevel[compRisk.level])}</div>` : ""}
+    </div>
+  </div>`;
+}
+
+function reviewTabRisques(review){
+  const critiques = DB.risks.filter(r=>r.type==="risque"&&r.level==="critique"&&r.status==="ouvert");
+  const eleves = DB.risks.filter(r=>r.type==="risque"&&r.level==="eleve"&&r.status==="ouvert");
+  const maitrises = DB.risks.filter(r=>r.type==="risque"&&r.status!=="ouvert");
+  const opportunites = DB.risks.filter(r=>r.type==="opportunite");
+  return `
+  <div class="grid grid-4 mb-4">
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--danger)">${critiques.length}</div><div class="lbl">Risques critiques</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--warning)">${eleves.length}</div><div class="lbl">Risques élevés</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--success)">${maitrises.length}</div><div class="lbl">Risques maîtrisés</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--info)">${opportunites.length}</div><div class="lbl">Opportunités</div></div></div>
+  </div>
+  ${critiques.length?`<div class="card mb-4"><p class="text-sm">⚠️ ${critiques.length} risque(s) critique(s) restent ouverts${critiques.filter(r=>!DB.actions.some(a=>a.originId===r.id)).length?", dont "+critiques.filter(r=>!DB.actions.some(a=>a.originId===r.id)).length+" sans action arrivée à échéance":""}.</p></div>`:""}
+  <div class="mt-2"><button class="btn btn-secondary btn-sm" data-route="risques">Ouvrir le registre des risques →</button></div>`;
+}
+
+function reviewTabChangements(review){
+  return dataTable(
+    [ {label:"Changement", render:c=>`<div class="cell-title">${esc(c.title)}</div><div class="cell-sub">${esc(c.description)}</div>`},
+      {label:"Responsable", render:c=>esc(c.requestedBy)},
+      {label:"Étape", render:c=>esc(QONNECT_SEED.changeSteps[c.step])} ],
+    DB.changes, {rowRoute:c=>`changements/${c.id}`}
+  );
+}
+
+function reviewTabAmelioration(review, isClosed){
+  const opps = reviewImprovementOpportunities();
+  return opps.length ? opps.map(o=>`
+    <div class="card mb-2">
+      <div class="text-xs">OPPORTUNITÉ DÉTECTÉE</div>
+      <h3 class="mt-2">${esc(o.source)}</h3>
+      <p class="text-sm mt-2">${esc(o.analysis)}</p>
+      <div class="text-xs mt-4">PROPOSITION</div>
+      <p class="text-sm mt-2">${esc(o.proposal)}</p>
+      ${!isClosed?`<button class="btn btn-secondary btn-sm mt-4" data-convert-opportunity='${jsonAttr({reviewId:review.id,source:o.source,proposal:o.proposal})}'>+ Transformer en décision</button>`:""}
+    </div>`).join("")
+    : `<div class="card">${emptyState("🟢","Aucune opportunité détectée","Aucune faiblesse récurrente n'est détectée sur les données actuelles.")}</div>`;
+}
+
+function reviewTabDecisions(review, isClosed){
+  return `
+  ${!isClosed?`<div class="flex justify-between items-center mb-2"><span></span><button class="btn btn-primary btn-sm" data-open-decision-form="${review.id}">+ Nouvelle décision</button></div>`:""}
+  ${review.decisions.length ? review.decisions.map(d=>`
+    <div class="card mb-2">
+      <div class="flex justify-between items-center"><h3>${esc(d.decision)}</h3>${badge(LABELS.decisionStatus[d.statut])}</div>
+      <p class="text-sm mt-2"><strong>Contexte :</strong> ${esc(d.contexte)}</p>
+      <p class="text-sm mt-2"><strong>Justification :</strong> ${esc(d.justification)}</p>
+      <div class="grid grid-3 mt-4">
+        <div><div class="text-xs">RESPONSABLE</div><div class="text-sm" style="color:var(--text-primary)">${esc(d.responsable)}</div></div>
+        <div><div class="text-xs">ÉCHÉANCE</div><div class="text-sm" style="color:var(--text-primary)">${fmtDate(d.echeance)}</div></div>
+        <div><div class="text-xs">PRIORITÉ</div>${badge(LABELS.priority[d.priorite])}</div>
+      </div>
+      ${d.indicatorId?`<p class="text-xs mt-2">Indicateur associé : ${esc(getIndicator(d.indicatorId)?.name||d.indicatorId)}</p>`:""}
+      ${d.actionId?`<p class="text-xs mt-2">✅ Action créée : ${esc(getAction(d.actionId)?.title||d.actionId)} <span style="cursor:pointer;color:var(--primary);" data-route="actions">(voir)</span></p>`
+        : (!isClosed?`<button class="btn btn-secondary btn-sm mt-2" data-create-action-from-decision='${jsonAttr({reviewId:review.id,decisionId:d.id})}'>+ Créer l'action</button>`:"")}
+      ${!isClosed?`<button class="btn btn-secondary btn-sm mt-2" data-edit-decision='${jsonAttr({reviewId:review.id,decisionId:d.id})}'>Modifier le statut / la preuve</button>`:""}
+    </div>`).join("")
+    : `<div class="card">${emptyState("📝","Aucune décision","Ajoutez les décisions prises lors de cette revue de direction.")}</div>`}`;
+}
+
+function reviewTabActions(review){
+  const reviewActions = DB.actions.filter(a=>a.origin==="revue_direction");
+  return reviewActions.length ? actionTable(reviewActions) : `<div class="card">${emptyState("✅","Aucune action","Aucune action n'a encore été créée depuis une revue de direction.")}</div>`;
+}
+
+function reviewTabConclusion(review, isClosed){
+  const c = review.conclusion;
+  return `
+  <div class="card mb-4">
+    <h3 class="mb-2">Adéquation du système de management</h3>
+    <p class="text-sm">Pertinence : le système répond-il toujours aux besoins de l'organisation ? · Adéquation : les ressources sont-elles suffisantes ? · Efficacité : les résultats attendus sont-ils atteints ? · Amélioration : quels changements sont nécessaires ?</p>
+  </div>
+  <div class="card">
+    <h3 class="mb-2">Conclusion de la Direction</h3>
+    <div class="grid grid-2">
+      <div class="field"><label>Système de management</label>
+        <select id="concl-smq" ${isClosed?"disabled":""}>${Object.entries(LABELS.conclusionSmq).map(([v,l])=>`<option value="${v}" ${c.smq===v?"selected":""}>${esc(l)}</option>`).join("")}</select></div>
+      <div class="field"><label>Performance</label>
+        <select id="concl-performance" ${isClosed?"disabled":""}>${Object.entries(LABELS.conclusionPerf).map(([v,l])=>`<option value="${v}" ${c.performance===v?"selected":""}>${esc(l)}</option>`).join("")}</select></div>
+      <div class="field"><label>Ressources</label>
+        <select id="concl-ressources" ${isClosed?"disabled":""}>${Object.entries(LABELS.conclusionRessources).map(([v,l])=>`<option value="${v}" ${c.ressources===v?"selected":""}>${esc(l)}</option>`).join("")}</select></div>
+      <div class="field"><label>Amélioration</label>
+        <select id="concl-amelioration" ${isClosed?"disabled":""}>${Object.entries(LABELS.conclusionAmelioration).map(([v,l])=>`<option value="${v}" ${c.amelioration===v?"selected":""}>${esc(l)}</option>`).join("")}</select></div>
+    </div>
+    <div class="field mt-2"><label>Commentaires de la Direction</label><textarea id="concl-commentaire" ${isClosed?"disabled":""}>${esc(c.commentaire)}</textarea></div>
+    ${!isClosed?`<button class="btn btn-primary" data-save-conclusion="${review.id}">Enregistrer la conclusion</button>`:""}
+  </div>
+
+  <div class="card mt-4">
+    <h3 class="mb-2">Sorties de la revue de direction</h3>
+    <div class="quick-actions">
+      <button class="btn btn-secondary" data-generate-report="${review.id}">📄 Générer le compte-rendu</button>
+      <button class="btn btn-secondary" data-route="actions">🗂 Voir le plan d'actions</button>
+      <button class="btn btn-secondary" data-route="revue-direction/${review.id}/resume">📊 Voir la synthèse Direction</button>
+    </div>
+  </div>`;
+}
+
+/* ---------- Synthèse Direction (sortie courte) ---------- */
+function pageRevueSynthese(review){
+  const score = reviewScoreComponents();
+  const opps = reviewImprovementOpportunities().slice(0,5);
+  const alerts = reviewAlerts(review);
+  const forces = alerts.filter(a=>a.level==="success").concat(
+    DB.objectives.filter(o=>o.status==="atteint").map(o=>({text:"Objectif atteint : "+o.title}))
+  ).slice(0,5);
+  const vigilance = alerts.filter(a=>a.level==="danger"||a.level==="warning").slice(0,5);
+  const majorDecisions = review.decisions.slice(0,5);
+  const priorityActions = DB.actions.filter(a=>a.status!=="termine").sort((a,b)=>({critique:0,haute:1,moyenne:2,basse:3}[a.priority]-({critique:0,haute:1,moyenne:2,basse:3}[b.priority]))).slice(0,5);
+
+  return `
+  ${breadcrumb([{label:"Revue de Direction",href:"#/revue-direction/"+review.id},{label:"Synthèse Direction"}])}
+  ${pageHeader("Synthèse Direction — "+review.periodLabel, "L'essentiel à retenir de cette revue de direction.")}
+  <div class="grid grid-2">
+    <div class="card">
+      <h3 class="mb-2">5 chiffres clés</h3>
+      <p class="text-sm">Niveau global du SMQ : <strong>${score.global} %</strong></p>
+      <p class="text-sm mt-2">Objectifs atteints : <strong>${DB.objectives.filter(o=>o.status==="atteint").length}/${DB.objectives.length}</strong></p>
+      <p class="text-sm mt-2">Actions en retard : <strong>${DB.actions.filter(a=>a.status==="retard").length}</strong></p>
+      <p class="text-sm mt-2">Risques critiques ouverts : <strong>${DB.risks.filter(r=>r.type==="risque"&&r.level==="critique"&&r.status==="ouvert").length}</strong></p>
+      <p class="text-sm mt-2">Décisions de cette revue : <strong>${review.decisions.length}</strong></p>
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Points forts</h3>
+      ${forces.length?forces.map(f=>`<p class="text-sm mt-2">🟢 ${esc(f.text)}</p>`).join(""):`<p class="text-sm">—</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Points de vigilance</h3>
+      ${vigilance.length?vigilance.map(v=>`<p class="text-sm mt-2">${v.level==="danger"?"🔴":"🟠"} ${esc(v.text)}</p>`).join(""):`<p class="text-sm">—</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Décisions majeures</h3>
+      ${majorDecisions.length?majorDecisions.map(d=>`<p class="text-sm mt-2">• ${esc(d.decision)}</p>`).join(""):`<p class="text-sm">—</p>`}
+    </div>
+  </div>
+  <div class="card mt-4">
+    <h3 class="mb-2">Actions prioritaires</h3>
+    ${priorityActions.length?priorityActions.map(a=>`<div class="rel-link" data-route="actions"><span class="rel-name">${esc(a.title)}</span>${badge(LABELS.priority[a.priority])}</div>`).join(""):`<p class="text-sm">Aucune action prioritaire en cours.</p>`}
   </div>`;
 }
 
@@ -1978,6 +2493,143 @@ function acceptSuggestion(sugg){
 }
 
 /* ============================================================
+   19ter. FORMULAIRES — REVUE DE DIRECTION
+   ============================================================ */
+function openReviewForm(){
+  const latest = getLatestReview();
+  openModal({title:"Préparer la revue de direction",
+    bodyHtml:`
+      <div class="field"><label>Période à analyser</label>
+        <select id="qf-period">
+          <option value="trimestre">Dernier trimestre</option>
+          <option value="semestre" selected>Dernier semestre</option>
+          <option value="annee">Dernière année</option>
+          <option value="custom">Période personnalisée</option>
+        </select>
+      </div>
+      <div class="field-row" id="qf-custom-dates" style="display:none;">
+        <div class="field"><label>Début</label><input type="date" id="qf-start"></div>
+        <div class="field"><label>Fin</label><input type="date" id="qf-end"></div>
+      </div>
+      <p class="text-sm">Qonnect va analyser automatiquement les processus, indicateurs, audits, non-conformités, risques, actions et changements disponibles pour préparer cette revue.</p>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">Préparer la revue</button>`,
+    onMount:(o)=>{
+      o.querySelector("#qf-period").addEventListener("change", (e)=> o.querySelector("#qf-custom-dates").style.display = e.target.value==="custom" ? "flex" : "none");
+      o.querySelector("#qf-submit").addEventListener("click", ()=>{
+        const period = o.querySelector("#qf-period").value;
+        const today = new Date();
+        let start, end = today.toISOString().slice(0,10);
+        if(period==="custom"){ start = o.querySelector("#qf-start").value; end = o.querySelector("#qf-end").value || end; if(!start){ toast("Merci de renseigner une date de début","⚠️"); return; } }
+        else{
+          const months = period==="trimestre"?3:period==="annee"?12:6;
+          const d = new Date(today); d.setMonth(d.getMonth()-months);
+          start = d.toISOString().slice(0,10);
+        }
+        const id = "RD-"+String(Date.now()).slice(-6);
+        DB.managementReviews.push({
+          id, periodLabel:"Revue du "+fmtDate(start)+" au "+fmtDate(end), periodStart:start, periodEnd:end,
+          reviewDate:"", nextReviewDate:"", status:"preparation", previousReviewId: latest?latest.id:null,
+          contextChanges:[], decisions:[], conclusion:{smq:"",performance:"",ressources:"",amelioration:"",commentaire:""},
+        });
+        saveDB(); closeModal(); toast("Revue de direction préparée à partir des données disponibles");
+        navigate(`revue-direction/${id}`);
+      });
+    }
+  });
+}
+
+function openDecisionForm(reviewId, existing){
+  const review = getReview(reviewId);
+  openModal({title: existing ? "Modifier la décision" : "Nouvelle décision", wide:true,
+    bodyHtml:`
+      <div class="field"><label>Décision <span class="req">*</span></label><input type="text" id="qf-decision" value="${esc(existing?.decision||"")}" placeholder="Ex : Renforcer le suivi du processus X"></div>
+      <div class="field"><label>Contexte / constat</label><textarea id="qf-contexte">${esc(existing?.contexte||"")}</textarea></div>
+      <div class="field"><label>Justification</label><textarea id="qf-justification">${esc(existing?.justification||"")}</textarea></div>
+      <div class="field-row">
+        <div class="field"><label>Responsable</label><input type="text" id="qf-responsable" value="${esc(existing?.responsable||"")}"></div>
+        <div class="field"><label>Échéance</label><input type="date" id="qf-echeance" value="${existing?.echeance||""}"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Priorité</label><select id="qf-priorite">${["critique","haute","moyenne","basse"].map(p=>`<option value="${p}" ${existing?.priorite===p?"selected":""}>${LABELS.priority[p].l}</option>`).join("")}</select></div>
+        <div class="field"><label>Indicateur associé</label><select id="qf-indicator"><option value="">—</option>${DB.indicators.map(i=>`<option value="${i.id}" ${existing?.indicatorId===i.id?"selected":""}>${esc(i.name)}</option>`).join("")}</select></div>
+      </div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">${existing?"Enregistrer":"Ajouter la décision"}</button>`,
+    onMount:(o)=>{ o.querySelector("#qf-submit").addEventListener("click", ()=>{
+      const decisionText = o.querySelector("#qf-decision").value.trim();
+      if(!decisionText){ toast("Merci de saisir une décision","⚠️"); return; }
+      const payload = {
+        decision:decisionText, contexte:o.querySelector("#qf-contexte").value.trim()||"—",
+        justification:o.querySelector("#qf-justification").value.trim()||"—", responsable:o.querySelector("#qf-responsable").value.trim()||"Non assigné",
+        echeance:o.querySelector("#qf-echeance").value||"—", priorite:o.querySelector("#qf-priorite").value,
+        indicatorId:o.querySelector("#qf-indicator").value||null,
+      };
+      if(existing){ Object.assign(existing, payload); }
+      else{ review.decisions.push({ id:"RDDEC-"+String(Date.now()).slice(-6), ...payload, actionId:null, statut:"a_faire", preuve:"" }); }
+      saveDB(); closeModal(); toast(existing?"Décision mise à jour":"Décision ajoutée"); render();
+    });}
+  });
+}
+
+function openDecisionEditForm(reviewId, decisionId){
+  const review = getReview(reviewId);
+  const d = getDecision(review, decisionId);
+  if(!d) return;
+  openModal({title:"Mettre à jour la décision",
+    bodyHtml:`
+      <p class="text-sm mb-2"><strong>${esc(d.decision)}</strong></p>
+      <div class="field"><label>Statut</label><select id="qf-statut">${Object.entries(LABELS.decisionStatus).map(([v,l])=>`<option value="${v}" ${d.statut===v?"selected":""}>${l.l}</option>`).join("")}</select></div>
+      <div class="field"><label>Preuve associée</label><textarea id="qf-preuve" placeholder="Élément de preuve démontrant la réalisation">${esc(d.preuve)}</textarea></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">Enregistrer</button>`,
+    onMount:(o)=>{ o.querySelector("#qf-submit").addEventListener("click", ()=>{
+      d.statut = o.querySelector("#qf-statut").value;
+      d.preuve = o.querySelector("#qf-preuve").value.trim();
+      saveDB(); closeModal(); toast("Décision mise à jour"); render();
+    });}
+  });
+}
+
+function openContextChangeForm(reviewId){
+  const review = getReview(reviewId);
+  openModal({title:"Ajouter un changement de contexte",
+    bodyHtml:`
+      <div class="field"><label>Description <span class="req">*</span></label><textarea id="qf-text" placeholder="Ex : Nouvelle réglementation applicable au secteur"></textarea></div>
+      <div class="field"><label>Source</label><select id="qf-source"><option value="externe">Contexte externe</option><option value="interne">Contexte interne</option><option value="changement">Changement</option></select></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">Ajouter</button>`,
+    onMount:(o)=>{ o.querySelector("#qf-submit").addEventListener("click", ()=>{
+      const t = o.querySelector("#qf-text").value.trim();
+      if(!t){ toast("Merci de décrire le changement","⚠️"); return; }
+      review.contextChanges.push({id:"CTX-"+String(Date.now()).slice(-6), text:t, source:o.querySelector("#qf-source").value, confirmed:true});
+      saveDB(); closeModal(); toast("Changement de contexte ajouté"); render();
+    });}
+  });
+}
+
+function generateReviewReport(review){
+  const score = reviewScoreComponents();
+  const lines = [];
+  lines.push(`Compte-rendu de la Revue de Direction — ${review.periodLabel}`);
+  lines.push(`Période analysée : du ${fmtDate(review.periodStart)} au ${fmtDate(review.periodEnd)}. Date de revue : ${fmtDate(review.reviewDate)||"—"}.`);
+  lines.push(`Niveau global du système de management : ${score.global} %.`);
+  lines.push("");
+  lines.push("Résultats analysés : "+DB.objectives.filter(o=>o.status==="atteint").length+"/"+DB.objectives.length+" objectifs atteints, "
+    +DB.actions.filter(a=>a.status==="retard").length+" action(s) en retard, "
+    +DB.risks.filter(r=>r.type==="risque"&&r.level==="critique"&&r.status==="ouvert").length+" risque(s) critique(s) ouvert(s), "
+    +DB.audits.length+" audit(s) réalisés ou planifiés.");
+  lines.push("");
+  lines.push("Décisions de la Direction :");
+  review.decisions.forEach(d=> lines.push("- "+d.decision+" (responsable : "+d.responsable+", échéance : "+fmtDate(d.echeance)+", statut : "+(LABELS.decisionStatus[d.statut]?.l||d.statut)+")"));
+  lines.push("");
+  const c = review.conclusion;
+  lines.push("Conclusion de la Direction :");
+  lines.push("- Système de management : "+(LABELS.conclusionSmq[c.smq]||"non renseigné"));
+  lines.push("- Performance : "+(LABELS.conclusionPerf[c.performance]||"non renseignée"));
+  lines.push("- Ressources : "+(LABELS.conclusionRessources[c.ressources]||"non renseignées"));
+  lines.push("- Amélioration : "+(LABELS.conclusionAmelioration[c.amelioration]||"non renseignée"));
+  if(c.commentaire) lines.push("- Commentaires : "+c.commentaire);
+  return lines.join("\n");
+}
+
+/* ============================================================
    20. DÉLÉGATION D'ÉVÉNEMENTS GLOBALE
    ============================================================ */
 function initGlobalEvents(){
@@ -2130,6 +2782,103 @@ function initGlobalEvents(){
       });
       return;
     }
+
+    /* ---- Revue de Direction ---- */
+    if(e.target.closest("[data-open-review-form]")){ openReviewForm(); return; }
+    const advRevEl = e.target.closest("[data-advance-review]");
+    if(advRevEl){
+      const rv = getReview(advRevEl.getAttribute("data-advance-review"));
+      const idx = REVIEW_STEPS.indexOf(rv.status);
+      if(idx < REVIEW_STEPS.length-1){
+        rv.status = REVIEW_STEPS[idx+1];
+        if(rv.status==="revue" && !rv.reviewDate) rv.reviewDate = new Date().toISOString().slice(0,10);
+        if(rv.status==="cloturee" && !rv.nextReviewDate){
+          const d = new Date(rv.periodEnd || Date.now()); d.setMonth(d.getMonth()+6);
+          rv.nextReviewDate = d.toISOString().slice(0,10);
+        }
+        saveDB(); toast("Revue passée à l'étape : "+REVIEW_STEP_LABELS[idx+1]); render();
+      }
+      return;
+    }
+    const newVerEl = e.target.closest("[data-new-review-version]");
+    if(newVerEl){
+      confirmDialog("Créer une nouvelle version de cette revue de direction (nouvelle période, à partir de celle-ci) ?", ()=>{
+        const old = getReview(newVerEl.getAttribute("data-new-review-version"));
+        const id = "RD-"+String(Date.now()).slice(-6);
+        DB.managementReviews.push({
+          id, periodLabel:"Nouvelle période — suite de "+old.periodLabel, periodStart:old.periodEnd, periodEnd:"",
+          reviewDate:"", nextReviewDate:"", status:"brouillon", previousReviewId:old.id,
+          contextChanges:[], decisions:[], conclusion:{smq:"",performance:"",ressources:"",amelioration:"",commentaire:""},
+        });
+        saveDB(); toast("Nouvelle version créée"); navigate(`revue-direction/${id}`);
+      });
+      return;
+    }
+    const openDecEl = e.target.closest("[data-open-decision-form]");
+    if(openDecEl){ openDecisionForm(openDecEl.getAttribute("data-open-decision-form"), null); return; }
+    const editDecEl = e.target.closest("[data-edit-decision]");
+    if(editDecEl){
+      const payload = JSON.parse(editDecEl.getAttribute("data-edit-decision"));
+      openDecisionEditForm(payload.reviewId, payload.decisionId);
+      return;
+    }
+    const ctxFormEl = e.target.closest("[data-open-context-change-form]");
+    if(ctxFormEl){ openContextChangeForm(ctxFormEl.getAttribute("data-open-context-change-form")); return; }
+    const confirmCtxEl = e.target.closest("[data-confirm-context-change]");
+    if(confirmCtxEl){
+      const payload = JSON.parse(confirmCtxEl.getAttribute("data-confirm-context-change"));
+      const rv = getReview(payload.reviewId);
+      const chg = rv.contextChanges.find(c=>c.id===payload.changeId);
+      if(chg){ chg.confirmed = true; saveDB(); toast("Changement confirmé"); render(); }
+      return;
+    }
+    const convOppEl = e.target.closest("[data-convert-opportunity]");
+    if(convOppEl){
+      const payload = JSON.parse(convOppEl.getAttribute("data-convert-opportunity"));
+      openDecisionForm(payload.reviewId, null);
+      const o = document.getElementById("active-overlay");
+      if(o){
+        o.querySelector("#qf-decision").value = payload.proposal;
+        o.querySelector("#qf-contexte").value = payload.source;
+      }
+      return;
+    }
+    const createActEl = e.target.closest("[data-create-action-from-decision]");
+    if(createActEl){
+      const payload = JSON.parse(createActEl.getAttribute("data-create-action-from-decision"));
+      const rv = getReview(payload.reviewId);
+      const d = getDecision(rv, payload.decisionId);
+      const id = nextId("ACT", DB.actions);
+      DB.actions.push({ id, title:d.decision, owner:d.responsable, due:d.echeance!=="—"?d.echeance:new Date().toISOString().slice(0,10),
+        priority:d.priorite, status:"a_faire", origin:"revue_direction", originId:d.id, processId:null });
+      d.actionId = id;
+      saveDB(); toast("Action créée à partir de la décision"); render();
+      return;
+    }
+    const saveConclEl = e.target.closest("[data-save-conclusion]");
+    if(saveConclEl){
+      const rv = getReview(saveConclEl.getAttribute("data-save-conclusion"));
+      rv.conclusion = {
+        smq: document.getElementById("concl-smq").value,
+        performance: document.getElementById("concl-performance").value,
+        ressources: document.getElementById("concl-ressources").value,
+        amelioration: document.getElementById("concl-amelioration").value,
+        commentaire: document.getElementById("concl-commentaire").value.trim(),
+      };
+      saveDB(); toast("Conclusion enregistrée"); render();
+      return;
+    }
+    const genReportEl = e.target.closest("[data-generate-report]");
+    if(genReportEl){
+      const rv = getReview(genReportEl.getAttribute("data-generate-report"));
+      const id = nextId("DOC", DB.documents);
+      const ref = "CR-RD-"+rv.id;
+      DB.documents.push({ id, ref, title:"Compte-rendu — Revue de Direction "+rv.periodLabel, type:"enregistrement", version:"1.0",
+        status:"en_vigueur", processId:"PROC-001", author:"Direction", approver:"Direction", date:new Date().toISOString().slice(0,10),
+        nextReview:"—", body:generateReviewReport(rv) });
+      saveDB(); toast("Compte-rendu généré"); navigate(`documents/enregistrement/${id}`);
+      return;
+    }
     if(e.target.closest("[data-ai-suggest]")){
       const q = e.target.closest("[data-ai-suggest]").getAttribute("data-ai-suggest");
       aiSend(q);
@@ -2167,6 +2916,7 @@ function initGlobalEvents(){
       if(zone==="evt") applyEventFilters();
       if(zone==="act") applyActionFilters();
     }
+    if(e.target.id==="review-picker"){ navigate("revue-direction/"+e.target.value); }
   });
 }
 
