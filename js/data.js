@@ -24,7 +24,7 @@ const QONNECT_SEED = {
     { id:"PI-003", name:"Fournisseurs", category:"fournisseur", importance:"moyenne", influence:"moyenne", needs:[ {id:"NB-006", text:"Visibilité sur les volumes", type:"attente"} ] },
     { id:"PI-004", name:"Autorités", category:"autorite", importance:"haute", influence:"haute", needs:[ {id:"NB-007", text:"Conformité réglementaire", type:"exigence"} ] },
   ],
-  climate: { q1:true, q2:false, q3:true, q4:false, q5:false, criticality:"moyenne" },
+  climate: { q1:true, q2:false, q3:true, q4:false, q5:false, criticality:"moyenne", evaluated:true },
   orientations: [
     { id:"ORI-001", title:"Améliorer la satisfaction client", description:"Renforcer l'écoute client et réduire les réclamations.", responsible:"Nadia Amrani", due:"2027-01-01", priority:"haute" },
     { id:"ORI-002", title:"Sécuriser le système d'information", description:"Renforcer la sécurité et la disponibilité du SI.", responsible:"Karim Belkacem", due:"2027-06-01", priority:"haute" },
@@ -269,6 +269,7 @@ function loadDB(){
       Object.keys(seedCopy).forEach(key=>{
         if(!(key in cached)) cached[key] = seedCopy[key];
       });
+      if(cached.climate && typeof cached.climate.evaluated === "undefined") cached.climate.evaluated = true;
       return cached;
     }
   }catch(e){ console.error("Qonnect: cache local invalide, réinitialisation.", e); }

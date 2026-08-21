@@ -53,9 +53,14 @@ Principaux modules : Vue d'ensemble · **Contexte & Stratégie** · Processus ·
 
 Ce module est le point de départ du système : il permet de décrire les enjeux externes et internes de l'organisation, ses parties intéressées et leurs besoins/attentes/exigences, ses enjeux climatiques et ses orientations stratégiques.
 
-Un **assistant de construction** (`#/contexte/assistant`) permet de décrire une difficulté en langage naturel ; Qonnect suggère alors un enjeu, des parties intéressées concernées, des risques, des opportunités, des objectifs et des actions. Chaque élément accepté est créé dans le module correspondant et reste **tracé** jusqu'à l'enjeu d'origine (`sourceContext`), visible sur la fiche risque et sur la carte objectif.
+La page d'accueil du module (« Notre organisation ») met en avant :
+- l'**assistant stratégique**, en haut de page, pour décrire une difficulté en langage naturel et obtenir des suggestions d'enjeux, risques, opportunités, objectifs et actions ;
+- un bloc **Impact sur votre système de management** avec des compteurs cliquables (risques, opportunités, objectifs, indicateurs, actions et changements générés depuis le contexte) ;
+- un score de **maturité du contexte** avec les points restant à compléter ;
+- la **carte stratégique**, directement visible et interactive (chaque nœud est cliquable) ;
+- une **Vue Direction** dédiée, sans vocabulaire ISO, pour une synthèse en un coup d'œil.
 
-La **carte stratégique** (`#/contexte/carte`) donne une vue d'ensemble du flux Contexte → Risques/Opportunités → Objectifs → Actions → Indicateurs → Résultats.
+Chaque élément accepté depuis une suggestion est créé dans le module correspondant et reste **tracé** jusqu'à l'enjeu d'origine (`sourceContext`), visible sur la fiche risque et sur la carte objectif. Ajouter un enjeu déclenche aussi automatiquement une proposition de suggestions.
 
 ## Limites du prototype
 

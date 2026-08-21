@@ -270,7 +270,7 @@ function pageDashboard(){
 }
 
 /* ============================================================
-   5bis. CONTEXTE & STRATÉGIE
+   5bis. CONTEXTE & STRATÉGIE — fondation du système de management
    ============================================================ */
 function contextCounts(){
   return {
@@ -278,8 +278,41 @@ function contextCounts(){
     internal: DB.contextInternal.length,
     stakeholders: DB.stakeholders.length,
     needs: DB.stakeholders.reduce((n,s)=>n+s.needs.length,0),
+    exigences: DB.stakeholders.reduce((n,s)=>n+s.needs.filter(x=>x.type==="exigence").length,0),
     orientations: DB.orientations.length,
   };
+}
+
+function contextImpactStats(){
+  const riskIdsFromContext = DB.risks.filter(r=>r.sourceContext).map(r=>r.id);
+  const changesImpacted = DB.changes.filter(c=>(c.impacted.risks||[]).some(rid=>riskIdsFromContext.includes(rid))).length;
+  return {
+    risks: DB.risks.filter(r=>r.sourceContext && r.type==="risque").length,
+    opportunities: DB.risks.filter(r=>r.sourceContext && r.type==="opportunite").length,
+    objectives: DB.objectives.filter(o=>o.sourceContext).length,
+    indicators: DB.indicators.filter(i=>i.objectiveId && getObjective(i.objectiveId) && getObjective(i.objectiveId).sourceContext).length,
+    actions: DB.actions.filter(a=>a.sourceContext).length,
+    changes: changesImpacted,
+  };
+}
+
+function contextMaturity(){
+  const checks = [
+    {ok: DB.contextExternal.length>0, label:"Enjeux externes définis"},
+    {ok: DB.contextInternal.length>0, label:"Enjeux internes définis"},
+    {ok: DB.stakeholders.length>0, label:"Parties intéressées définies"},
+    {ok: DB.stakeholders.some(s=>s.needs.length>0), label:"Besoins et attentes définis"},
+    {ok: !!DB.climate.evaluated, label:"Enjeux climatiques évalués"},
+    {ok: DB.orientations.length>0, label:"Orientations stratégiques définies"},
+    {ok: DB.risks.some(r=>r.sourceContext) || DB.objectives.some(o=>o.sourceContext) || DB.actions.some(a=>a.sourceContext), label:"Liens créés avec le SMQ"},
+  ];
+  const pct = Math.round(checks.filter(c=>c.ok).length / checks.length * 100);
+  const gaps = [];
+  if(!DB.stakeholders.some(s=>s.category==="fournisseur" && s.needs.length>0)) gaps.push("Aucune attente fournisseur définie");
+  if(!DB.climate.evaluated) gaps.push("Enjeux climatiques non analysés");
+  if(DB.orientations.length<2) gaps.push("Objectifs stratégiques incomplets");
+  checks.forEach(c=>{ if(!c.ok && gaps.length<6 && !gaps.some(g=>g.includes(c.label.split(" ")[0]))) gaps.push(c.label.replace("définis","non définis").replace("définies","non définies").replace("évalués","non évalués")); });
+  return {pct, checks, gaps:gaps.slice(0,6)};
 }
 
 function pageContexte(sub, id){
@@ -287,15 +320,20 @@ function pageContexte(sub, id){
   if(sub==="external") return pageContexteIssues("external");
   if(sub==="internal") return pageContexteIssues("internal");
   if(sub==="stakeholders") return id ? pageStakeholderFiche(id) : pageStakeholders();
+  if(sub==="besoins") return pageContexteBesoins();
   if(sub==="climate") return pageContexteClimate();
   if(sub==="orientations") return pageOrientations();
   if(sub==="assistant") return pageContexteAssistant();
   if(sub==="carte") return pageContexteCarte();
+  if(sub==="direction") return pageContexteDirection();
   return pageContexteHub();
 }
 
 function pageContexteHub(){
   const c = contextCounts();
+  const impact = contextImpactStats();
+  const mat = contextMaturity();
+
   const blockCard = (route, emoji, title, desc, countLabel)=>`
     <div class="card card-hover" data-route="contexte/${route}">
       <div class="picon" style="margin-bottom:10px;">${emoji}</div>
@@ -304,30 +342,101 @@ function pageContexteHub(){
       <p class="text-xs mt-4" style="font-weight:700;color:var(--primary);">${esc(countLabel)}</p>
     </div>`;
 
+  const kpi = (route, emoji, count, label)=>`
+    <div class="card card-hover" data-route="${route}">
+      <div class="kpi"><div class="val">${emoji} ${count}</div><div class="lbl">${esc(label)}</div></div>
+    </div>`;
+
   return `
-  ${pageHeader("Notre organisation","La base de votre système de management : ce qui influence votre activité, vos parties prenantes et vos orientations.",
-    `<button class="btn btn-secondary" data-route="contexte/carte">🗺️ Carte stratégique</button><button class="btn btn-primary" data-route="contexte/assistant">🧠 Assistant de construction</button>`)}
+  ${pageHeader("Notre organisation","Le contexte n'est pas une formalité : c'est le point de départ de tout le système Qonnect.",
+    `<button class="btn btn-secondary" data-route="contexte/direction">🧭 Vue Direction</button>`)}
+
+  ${assistantEmbedHtml()}
 
   <div class="section">
     <div class="grid grid-3">
       ${blockCard("external","🌍","Enjeux externes","Qu'est-ce qui peut influencer votre activité depuis l'extérieur ?", c.external+" enjeu(x) identifié(s)")}
       ${blockCard("internal","🏢","Enjeux internes","Qu'est-ce qui influence votre organisation de l'intérieur ?", c.internal+" enjeu(x) identifié(s)")}
-      ${blockCard("stakeholders","🤝","Parties intéressées","Qui a des attentes vis-à-vis de votre organisation ?", c.stakeholders+" partie(s) · "+c.needs+" besoin(s)/attente(s)")}
+      ${blockCard("stakeholders","🤝","Parties intéressées","Qui a des attentes vis-à-vis de votre organisation ?", c.stakeholders+" partie(s) intéressée(s)")}
+      ${blockCard("besoins","📋","Besoins & Attentes","Qu'attendent réellement vos parties intéressées ?", c.needs+" besoin(s)/attente(s) · "+c.exigences+" exigence(s)")}
       ${blockCard("climate","🌱","Enjeux climatiques","Votre activité et le changement climatique.", "Criticité : "+esc(LABELS.importance[DB.climate.criticality]?.l||DB.climate.criticality))}
       ${blockCard("orientations","🎯","Orientations stratégiques","Quels sont les objectifs stratégiques de votre organisation ?", c.orientations+" orientation(s)")}
-      ${blockCard("assistant","🧠","Assistant de construction","Décrivez une difficulté, Qonnect suggère enjeux, risques, objectifs et actions.", "Démarrer une analyse guidée")}
     </div>
   </div>
 
   <div class="section">
-    <div class="card">
-      <div class="flex justify-between items-center">
-        <h3>Ce contexte alimente automatiquement tout votre SMQ</h3>
-        <button class="btn btn-secondary btn-sm" data-route="contexte/carte">Voir la carte stratégique →</button>
-      </div>
-      <p class="text-sm mt-2">Les enjeux, parties intéressées et orientations définis ici peuvent générer automatiquement des risques, des opportunités, des objectifs et des actions, reliés au reste du système.</p>
+    <div class="section-head"><h2>🎯 Impact sur votre système de management</h2></div>
+    <p class="section-sub mt-2" style="margin-bottom:16px;">Les informations définies dans votre contexte ont déjà généré les éléments suivants dans votre système.</p>
+    <div class="grid grid-3">
+      ${kpi("risques","🛡️",impact.risks,"Risques générés")}
+      ${kpi("risques","🚀",impact.opportunities,"Opportunités générées")}
+      ${kpi("objectifs","🎯",impact.objectives,"Objectifs générés")}
+      ${kpi("objectifs","📊",impact.indicators,"Indicateurs générés")}
+      ${kpi("actions","✅",impact.actions,"Actions générées")}
+      ${kpi("changements","🔄",impact.changes,"Changements impactés")}
     </div>
+  </div>
+
+  <div class="section">
+    <div class="grid" style="grid-template-columns:1fr 1fr;gap:24px;">
+      <div class="card">
+        <h3 class="mb-2">📈 Maturité du contexte</h3>
+        <div class="flex items-center gap-3">
+          ${ringGauge(mat.pct, "var(--primary)", 72)}
+          <div class="kpi"><div class="val">${mat.pct} %</div><div class="lbl">du contexte est structuré</div></div>
+        </div>
+        ${mat.gaps.length ? `<div class="mt-4">
+          <div class="text-xs mb-2">POINTS À COMPLÉTER</div>
+          ${mat.gaps.map(g=>`<p class="text-sm mt-2">⚠️ ${esc(g)}</p>`).join("")}
+        </div>` : `<p class="text-sm mt-4">🟢 Votre contexte est complet.</p>`}
+      </div>
+      <div class="card">
+        <h3 class="mb-2">Comment Qonnect construit votre système</h3>
+        <p class="text-sm mb-2">Chaque étape ci-dessous affiche les nombres réels de votre système.</p>
+        ${contextImpactFlowHtml()}
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-head"><h2>🗺 Carte stratégique</h2></div>
+    <p class="section-sub mt-2" style="margin-bottom:16px;">Cliquez sur un élément pour explorer ses relations.</p>
+    <div class="card">${contextStrategicMapHtml()}</div>
   </div>`;
+}
+
+/* ---------- Diagrammes réutilisables ---------- */
+function contextImpactFlowHtml(){
+  const stage = (label,count)=>`<div class="rel-link"><span class="rel-name">${esc(label)}</span><span class="text-sm" style="font-weight:700;color:var(--primary)">${count}</span></div>`;
+  return `
+    ${stage("Contexte", DB.contextExternal.length + DB.contextInternal.length + DB.stakeholders.length)}
+    ${stage("Enjeux", DB.contextExternal.length + DB.contextInternal.length)}
+    ${stage("Risques & Opportunités", DB.risks.length)}
+    ${stage("Objectifs", DB.objectives.length)}
+    ${stage("Actions", DB.actions.length)}
+    ${stage("Indicateurs", DB.indicators.length)}
+    ${stage("Performance", Math.round((DB.requirements.filter(r=>r.status==="maitrise").length/Math.max(DB.requirements.length,1))*100)+" % de maîtrise")}
+  `;
+}
+
+function contextStrategicMapHtml(){
+  const node = (route, emoji, label, count)=>`<div class="conn-node" data-route="${route}"><div class="cn-count">${count}</div><div class="cn-label">${emoji} ${esc(label)}</div></div>`;
+  return `
+    <div class="conn-diagram" style="gap:16px;">
+      ${node("contexte/external","🌍","Enjeux externes", DB.contextExternal.length)}
+      <div class="conn-arrow"></div>
+      ${node("contexte/internal","🏢","Enjeux internes", DB.contextInternal.length)}
+      <div class="conn-arrow"></div>
+      ${node("contexte/stakeholders","🤝","Parties intéressées", DB.stakeholders.length)}
+      <div class="conn-arrow"></div>
+      ${node("risques","⚠️","Risques & opportunités", DB.risks.length)}
+      <div class="conn-arrow"></div>
+      ${node("objectifs","🎯","Objectifs", DB.objectives.length)}
+      <div class="conn-arrow"></div>
+      ${node("objectifs","📊","Indicateurs", DB.indicators.length)}
+      <div class="conn-arrow"></div>
+      ${node("objectifs","🏁","Résultats", DB.objectives.filter(o=>o.status==="atteint").length)}
+    </div>`;
 }
 
 function pageContexteIssues(kind){
@@ -381,6 +490,26 @@ function pageStakeholderFiche(id){
   </div>`;
 }
 
+function pageContexteBesoins(){
+  const rows = [];
+  DB.stakeholders.forEach(s=> s.needs.forEach(n=> rows.push({stakeholder:s, need:n})));
+  const c = contextCounts();
+  return `
+  ${breadcrumb([{label:"Contexte & Stratégie",href:"#/contexte"},{label:"Besoins & Attentes"}])}
+  ${pageHeader("Besoins & Attentes","Qu'attendent réellement vos parties intéressées ?", `<button class="btn btn-primary" data-open-need-global>+ Ajouter un besoin</button>`)}
+  <div class="grid grid-3 mb-4">
+    <div class="card"><div class="kpi"><div class="val">${c.needs}</div><div class="lbl">Besoin(s) / attente(s) identifié(s)</div></div></div>
+    <div class="card"><div class="kpi"><div class="val">${c.exigences}</div><div class="lbl">Exigence(s) associée(s)</div></div></div>
+    <div class="card"><div class="kpi"><div class="val">${DB.stakeholders.length}</div><div class="lbl">Partie(s) intéressée(s) concernée(s)</div></div></div>
+  </div>
+  ${rows.length ? dataTable(
+    [ {label:"Besoin / attente / exigence", render:r=>`<div class="cell-title">${esc(r.need.text)}</div>`},
+      {label:"Partie intéressée", render:r=>esc(r.stakeholder.name)},
+      {label:"Type", render:r=>badgeRaw("info",LABELS.needType[r.need.type]||r.need.type)} ],
+    rows, {rowRoute:r=>`contexte/stakeholders/${r.stakeholder.id}`}
+  ) : `<div class="card">${emptyState("📋","Aucun besoin identifié","Ajoutez les besoins, attentes et exigences de vos parties intéressées.")}</div>`}`;
+}
+
 function pageContexteClimate(){
   const c = DB.climate;
   const q = (key,label)=>`<div class="field">
@@ -401,6 +530,7 @@ function pageContexteClimate(){
   <div class="card" style="max-width:640px;">
     <h3 class="mb-2">Score de criticité</h3>
     ${badge(LABELS.importance[c.criticality])}
+    ${!c.evaluated?`<p class="text-sm mt-2">⚠️ Cette évaluation n'a pas encore été enregistrée.</p>`:""}
   </div>`;
 }
 
@@ -417,7 +547,7 @@ function pageOrientations(){
   ) : `<div class="card">${emptyState("🎯","Aucune orientation","Ajoutez les objectifs stratégiques de votre organisation.")}</div>`}`;
 }
 
-/* ---------- Assistant de construction du contexte ---------- */
+/* ---------- Assistant stratégique ---------- */
 function contextAssistantSuggest(text){
   const low = text.toLowerCase();
   let base = {
@@ -430,13 +560,13 @@ function contextAssistantSuggest(text){
       opportunities:["Formation interne","Automatisation","Réorganisation des équipes"],
       objectives:["Réduction du turnover","Développement des compétences"],
       actions:["Plan de formation","Plan de recrutement","Cartographie des compétences"] };
-  } else if(/fournisseur|approvisionnement|rupture/.test(low)){
+  } else if(/fournisseur|approvisionnement|rupture|d[ée]pendons/.test(low)){
     base = { enjeu:"Dépendance fournisseur", parties:["Clients","Fournisseurs"],
       risks:["Rupture d'approvisionnement","Hausse des coûts"],
       opportunities:["Diversification du panel fournisseurs"],
       objectives:["Sécuriser le panel fournisseurs stratégiques"],
       actions:["Qualifier un second fournisseur","Auditer le fournisseur actuel"] };
-  } else if(/cyber|informatique|si |syst[eè]me d'information|donn[ée]es/.test(low)){
+  } else if(/cyber|informatique|si |syst[eè]me d'information|donn[ée]es|erp/.test(low)){
     base = { enjeu:"Exposition aux cybermenaces", parties:["Clients","Collaborateurs","Autorités"],
       risks:["Indisponibilité du système d'information","Fuite de données"],
       opportunities:["Modernisation du système d'information"],
@@ -448,22 +578,45 @@ function contextAssistantSuggest(text){
       opportunities:["Amélioration de la relation client"],
       objectives:["Réduire les réclamations clients","Maintenir la satisfaction client"],
       actions:["Analyser les causes de réclamation","Renforcer le support client"] };
+  } else if(/certifi|iso ?9001|iso9001/.test(low)){
+    base = { enjeu:"Projet de certification ISO 9001", parties:["Clients","Autorités","Organismes certificateurs"],
+      risks:["Non-conformité aux exigences de la norme","Délai de préparation insuffisant"],
+      opportunities:["Amélioration de l'image et de la confiance client"],
+      objectives:["Obtenir la certification ISO 9001"],
+      actions:["Réaliser un diagnostic de maturité","Planifier un audit à blanc"] };
   }
   return base;
 }
 
+function assistantEmbedHtml(){
+  const examples = [
+    "Nous avons des difficultés à recruter.",
+    "Nous souhaitons nous certifier ISO 9001.",
+    "Nous dépendons trop d'un fournisseur.",
+    "Nous voulons améliorer la satisfaction client.",
+    "Nous déployons un nouvel ERP.",
+  ];
+  return `
+  <div class="section">
+    <div class="card" style="background:linear-gradient(135deg,var(--primary-soft),var(--surface));border-color:var(--primary-soft);">
+      <h2>🤖 Assistant stratégique</h2>
+      <p class="section-sub mt-2">Décrivez une difficulté, un changement ou une ambition. Qonnect vous aide à construire votre système.</p>
+      <div class="field mt-4" style="max-width:720px;">
+        <textarea id="ctx-assist-input" placeholder="Ex : Nous avons des difficultés à recruter."></textarea>
+      </div>
+      <div class="quick-actions mb-2">
+        ${examples.map(ex=>`<button class="chip" data-ai-suggest-fill="${esc(ex)}">${esc(ex)}</button>`).join("")}
+      </div>
+      <button class="btn btn-primary" id="ctx-assist-run">Analyser</button>
+    </div>
+    <div id="ctx-assist-result" class="mt-4"></div>
+  </div>`;
+}
+
 function pageContexteAssistant(){
   return `
-  ${breadcrumb([{label:"Contexte & Stratégie",href:"#/contexte"},{label:"Assistant de construction"}])}
-  ${pageHeader("Assistant de construction","Décrivez une difficulté ou un enjeu de votre organisation. Qonnect vous suggère automatiquement des enjeux, risques, opportunités, objectifs et actions.")}
-  <div class="card mb-2" style="max-width:720px;">
-    <div class="field">
-      <label>Qu'est-ce qui pourrait empêcher votre organisation d'atteindre ses objectifs ?</label>
-      <textarea id="ctx-assist-input" placeholder="Ex : Pénurie de personnel qualifié"></textarea>
-    </div>
-    <button class="btn btn-primary" id="ctx-assist-run">🧠 Analyser</button>
-  </div>
-  <div id="ctx-assist-result"></div>`;
+  ${breadcrumb([{label:"Contexte & Stratégie",href:"#/contexte"},{label:"Assistant stratégique"}])}
+  ${assistantEmbedHtml()}`;
 }
 
 function renderAssistantSuggestion(text, s){
@@ -484,42 +637,63 @@ function renderAssistantSuggestion(text, s){
     <div class="flex gap-2 mt-2" style="flex-wrap:wrap;">
       <button class="btn btn-secondary btn-sm" data-accept-suggestion='{"kind":"issue","label":${JSON.stringify(s.enjeu)}}'>+ Ajouter l'enjeu</button>
       ${s.risks.map(r=>`<button class="btn btn-secondary btn-sm" data-accept-suggestion='{"kind":"risk","label":${JSON.stringify(r)},"source":${JSON.stringify(s.enjeu)}}'>+ Risque : ${esc(r)}</button>`).join("")}
+      ${s.opportunities.map(o=>`<button class="btn btn-secondary btn-sm" data-accept-suggestion='{"kind":"opportunity","label":${JSON.stringify(o)},"source":${JSON.stringify(s.enjeu)}}'>+ Opportunité : ${esc(o)}</button>`).join("")}
       ${s.objectives.map(o=>`<button class="btn btn-secondary btn-sm" data-accept-suggestion='{"kind":"objective","label":${JSON.stringify(o)},"source":${JSON.stringify(s.enjeu)}}'>+ Objectif : ${esc(o)}</button>`).join("")}
       ${s.actions.map(a=>`<button class="btn btn-secondary btn-sm" data-accept-suggestion='{"kind":"action","label":${JSON.stringify(a)},"source":${JSON.stringify(s.enjeu)}}'>+ Action : ${esc(a)}</button>`).join("")}
     </div>
   </div>`;
 }
 
-/* ---------- Carte stratégique ---------- */
+/* ---------- Carte stratégique (page dédiée, lien profond) ---------- */
 function pageContexteCarte(){
-  const c = contextCounts();
   const nbRisksFromContext = DB.risks.filter(r=>r.sourceContext).length;
   const nbObjFromContext = DB.objectives.filter(o=>o.sourceContext).length;
   const nbActFromContext = DB.actions.filter(a=>a.sourceContext).length;
-  const stage = (emoji,label,count)=>`<div class="conn-node"><div class="cn-count">${count}</div><div class="cn-label">${emoji} ${esc(label)}</div></div>`;
   return `
   ${breadcrumb([{label:"Contexte & Stratégie",href:"#/contexte"},{label:"Carte stratégique"}])}
   ${pageHeader("Carte stratégique de l'organisation","Du contexte jusqu'aux résultats : la logique de construction de votre système de management.")}
-  <div class="card">
-    <div class="conn-diagram" style="gap:18px;">
-      ${stage("🌍","Enjeux externes", c.external)}
-      <div class="conn-arrow"></div>
-      ${stage("🏢","Enjeux internes", c.internal)}
-      <div class="conn-arrow"></div>
-      ${stage("⚠️","Risques & opportunités", DB.risks.length)}
-      <div class="conn-arrow"></div>
-      ${stage("🎯","Objectifs", DB.objectives.length)}
-      <div class="conn-arrow"></div>
-      ${stage("✅","Actions", DB.actions.length)}
-      <div class="conn-arrow"></div>
-      ${stage("📊","Indicateurs", DB.indicators.length)}
-      <div class="conn-arrow"></div>
-      ${stage("🏁","Résultats", DB.objectives.filter(o=>o.status==='atteint').length+" atteint(s)")}
-    </div>
-  </div>
+  <div class="card">${contextStrategicMapHtml()}</div>
   <div class="card mt-4">
     <h3 class="mb-2">Traçabilité issue du contexte</h3>
     <p class="text-sm">${nbRisksFromContext} risque(s), ${nbObjFromContext} objectif(s) et ${nbActFromContext} action(s) sont directement issus d'un enjeu du contexte.</p>
+  </div>`;
+}
+
+/* ---------- Vue Direction ---------- */
+function pageContexteDirection(){
+  const topIssues = [...DB.contextExternal, ...DB.contextInternal].filter(i=>i.importance==="haute").slice(0,4);
+  const topRisks = DB.risks.filter(r=>r.type==="risque" && r.status==="ouvert").sort((a,b)=>(b.probability*b.impact)-(a.probability*a.impact)).slice(0,4);
+  const objs = DB.objectives.slice(0,4);
+  const pctAtteints = Math.round((DB.objectives.filter(o=>o.status==="atteint").length/Math.max(DB.objectives.length,1))*100);
+  const pctConformite = Math.round((DB.requirements.filter(r=>r.status==="maitrise").length/Math.max(DB.requirements.length,1))*100);
+
+  return `
+  ${breadcrumb([{label:"Contexte & Stratégie",href:"#/contexte"},{label:"Vue Direction"}])}
+  ${pageHeader("Vue Direction","Une synthèse claire, sans jargon qualité, pour comprendre où en est l'organisation.")}
+
+  <div class="grid grid-2">
+    <div class="card">
+      <h3 class="mb-2">Quels sont nos principaux enjeux ?</h3>
+      ${topIssues.length ? topIssues.map(i=>`<div class="rel-link"><span class="rel-name">${esc(i.title)}</span>${badge(LABELS.importance[i.importance])}</div>`).join("")
+        : `<p class="text-sm">Aucun enjeu majeur identifié pour le moment.</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Quels sont nos principaux risques ?</h3>
+      ${topRisks.length ? topRisks.map(r=>`<div class="rel-link"><span class="rel-name">${esc(r.name)}</span>${badge(LABELS.riskLevel[r.level])}</div>`).join("")
+        : `<p class="text-sm">Aucun risque majeur ouvert actuellement.</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Quels objectifs soutiennent notre stratégie ?</h3>
+      ${objs.length ? objs.map(o=>`<div class="rel-link"><span class="rel-name">${esc(o.title)}</span><span class="text-sm" style="font-weight:700;">${o.progress}%</span></div>`).join("")
+        : `<p class="text-sm">Aucun objectif défini pour le moment.</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Quels résultats obtenons-nous ?</h3>
+      <div class="grid grid-2">
+        <div class="kpi"><div class="val" style="color:var(--success)">${pctAtteints}%</div><div class="lbl">Objectifs atteints</div></div>
+        <div class="kpi"><div class="val" style="color:var(--primary)">${pctConformite}%</div><div class="lbl">Maîtrise du référentiel</div></div>
+      </div>
+    </div>
   </div>`;
 }
 
@@ -1666,7 +1840,8 @@ function openIssueForm(kind){
       const arr = kind==="external" ? DB.contextExternal : DB.contextInternal;
       const id = nextId(kind==="external"?"ISS-EXT":"ISS-INT", arr);
       arr.push({ id, title:t, description:o.querySelector("#qf-desc").value.trim()||"—", impact:o.querySelector("#qf-impact").value.trim()||"—", importance:o.querySelector("#qf-importance").value });
-      saveDB(); closeModal(); toast("Enjeu ajouté avec succès"); render();
+      saveDB(); closeModal(); toast("Enjeu ajouté avec succès");
+      showAutoSuggestions(t);
     });}
   });
 }
@@ -1708,6 +1883,33 @@ function openNeedForm(stakeholderId){
   });
 }
 
+function openNeedFormGlobal(){
+  if(!DB.stakeholders.length){
+    openModal({title:"Ajouter un besoin",
+      bodyHtml:`<p class="text-sm">Ajoutez d'abord une partie intéressée avant de lui associer un besoin, une attente ou une exigence.</p>`,
+      footHtml:`<button class="btn btn-secondary" data-close-modal>Fermer</button><button class="btn btn-primary" id="qf-goto">+ Ajouter une partie intéressée</button>`,
+      onMount:(o)=>{ o.querySelector("#qf-goto").addEventListener("click", ()=>{ closeModal(); openStakeholderForm(); }); }
+    });
+    return;
+  }
+  openModal({title:"Ajouter un besoin / une attente / une exigence",
+    bodyHtml:`
+      <div class="field"><label>Partie intéressée <span class="req">*</span></label>
+        <select id="qf-stakeholder">${DB.stakeholders.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></div>
+      <div class="field"><label>Type</label><select id="qf-type"><option value="besoin">Besoin</option><option value="attente">Attente</option><option value="exigence">Exigence</option></select></div>
+      <div class="field"><label>Description <span class="req">*</span></label><input type="text" id="qf-title" placeholder="Ex : Respect des délais"></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">Ajouter</button>`,
+    onMount:(o)=>{ o.querySelector("#qf-submit").addEventListener("click", ()=>{
+      const t = o.querySelector("#qf-title").value.trim();
+      if(!t){ toast("Merci de saisir une description","⚠️"); return; }
+      const s = getStakeholder(o.querySelector("#qf-stakeholder").value);
+      const id = "NB-"+String(Date.now()).slice(-5);
+      s.needs.push({id, text:t, type:o.querySelector("#qf-type").value});
+      saveDB(); closeModal(); toast("Ajouté avec succès"); render();
+    });}
+  });
+}
+
 function openOrientationForm(){
   openModal({title:"Ajouter une orientation stratégique",
     bodyHtml:`
@@ -1732,6 +1934,14 @@ function openOrientationForm(){
   });
 }
 
+function showAutoSuggestions(text){
+  const s = contextAssistantSuggest(text);
+  openModal({title:"🧠 Suggestions automatiques", wide:true,
+    bodyHtml:`<p class="text-sm mb-2">Qonnect a analysé « ${esc(text)} » et propose ces éléments pour votre système.</p>${renderAssistantSuggestion(text, s)}`,
+    footHtml:`<button class="btn btn-primary" data-close-modal>Terminer</button>`,
+  });
+}
+
 function acceptSuggestion(sugg){
   if(sugg.kind==="issue"){
     const id = nextId("ISS-EXT", DB.contextExternal);
@@ -1744,6 +1954,13 @@ function acceptSuggestion(sugg){
       description:"Risque suggéré par l'assistant à partir de l'enjeu « "+sugg.source+" ».", probability:3, impact:3,
       sourceContext:{type:"enjeu", label:sugg.source} });
     saveDB(); toast("Risque créé et rattaché à l'enjeu"); return;
+  }
+  if(sugg.kind==="opportunity"){
+    const id = nextId("OPP", DB.risks);
+    DB.risks.push({ id, name:sugg.label, level:"opportunite", processId:null, owner:"Non assigné", status:"ouvert", type:"opportunite",
+      description:"Opportunité suggérée par l'assistant à partir de l'enjeu « "+sugg.source+" ».", probability:3, impact:3,
+      sourceContext:{type:"enjeu", label:sugg.source} });
+    saveDB(); toast("Opportunité créée et rattachée à l'enjeu"); return;
   }
   if(sugg.kind==="objective"){
     const id = nextId("OBJ", DB.objectives);
@@ -1799,7 +2016,14 @@ function initGlobalEvents(){
     if(e.target.closest("[data-open-stakeholder-form]")){ openStakeholderForm(); return; }
     const needFormEl = e.target.closest("[data-open-need-form]");
     if(needFormEl){ openNeedForm(needFormEl.getAttribute("data-open-need-form")); return; }
+    if(e.target.closest("[data-open-need-global]")){ openNeedFormGlobal(); return; }
     if(e.target.closest("[data-open-orientation-form]")){ openOrientationForm(); return; }
+    const fillEl = e.target.closest("[data-ai-suggest-fill]");
+    if(fillEl){
+      const input = document.getElementById("ctx-assist-input");
+      if(input) input.value = fillEl.getAttribute("data-ai-suggest-fill");
+      return;
+    }
     const suggestIssueEl = e.target.closest("[data-open-contexte-suggest]");
     if(suggestIssueEl){
       const iss = getContextIssue(suggestIssueEl.getAttribute("data-open-contexte-suggest"));
