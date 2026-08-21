@@ -5,6 +5,31 @@
 
 const QONNECT_SEED = {
 
+  /* ---------- Contexte & Stratégie ---------- */
+  contextExternal: [
+    { id:"ISS-EXT-001", title:"Réglementation", description:"Évolution des exigences réglementaires applicables à notre secteur.", impact:"Peut imposer de nouvelles obligations de conformité.", importance:"haute" },
+    { id:"ISS-EXT-002", title:"Disponibilité des fournisseurs", description:"Dépendance à certains fournisseurs stratégiques.", impact:"Risque de rupture d'approvisionnement.", importance:"haute" },
+    { id:"ISS-EXT-003", title:"Pénurie de main-d'œuvre", description:"Difficulté à recruter des profils qualifiés sur certains métiers.", impact:"Risque de dégradation de la qualité et des délais.", importance:"haute" },
+    { id:"ISS-EXT-004", title:"Cybersécurité", description:"Multiplication des cybermenaces visant les systèmes d'information.", impact:"Risque d'indisponibilité ou de perte de données.", importance:"moyenne" },
+  ],
+  contextInternal: [
+    { id:"ISS-INT-001", title:"Compétences", description:"Certaines compétences critiques reposent sur un nombre limité de personnes.", impact:"Risque de perte de savoir-faire.", importance:"haute" },
+    { id:"ISS-INT-002", title:"Système d'information", description:"Vieillissement de certains outils internes.", impact:"Peut freiner la performance et la sécurité.", importance:"moyenne" },
+  ],
+  stakeholders: [
+    { id:"PI-001", name:"Clients", category:"client", importance:"haute", influence:"haute",
+      needs:[ {id:"NB-001", text:"Qualité constante des produits/services", type:"besoin"}, {id:"NB-002", text:"Respect des délais", type:"attente"}, {id:"NB-003", text:"Support réactif", type:"attente"} ] },
+    { id:"PI-002", name:"Collaborateurs", category:"collaborateur", importance:"haute", influence:"moyenne",
+      needs:[ {id:"NB-004", text:"Conditions de travail adaptées", type:"attente"}, {id:"NB-005", text:"Outils adaptés", type:"besoin"} ] },
+    { id:"PI-003", name:"Fournisseurs", category:"fournisseur", importance:"moyenne", influence:"moyenne", needs:[ {id:"NB-006", text:"Visibilité sur les volumes", type:"attente"} ] },
+    { id:"PI-004", name:"Autorités", category:"autorite", importance:"haute", influence:"haute", needs:[ {id:"NB-007", text:"Conformité réglementaire", type:"exigence"} ] },
+  ],
+  climate: { q1:true, q2:false, q3:true, q4:false, q5:false, criticality:"moyenne" },
+  orientations: [
+    { id:"ORI-001", title:"Améliorer la satisfaction client", description:"Renforcer l'écoute client et réduire les réclamations.", responsible:"Nadia Amrani", due:"2027-01-01", priority:"haute" },
+    { id:"ORI-002", title:"Sécuriser le système d'information", description:"Renforcer la sécurité et la disponibilité du SI.", responsible:"Karim Belkacem", due:"2027-06-01", priority:"haute" },
+  ],
+
   processes: [
     { id:"PROC-001", name:"Direction",            group:"management",   pilot:"Claire Dubreuil", purpose:"Définir la stratégie, la politique qualité et les objectifs de l'organisation, et en assurer le pilotage.", icon:"🧭" },
     { id:"PROC-002", name:"Qualité & amélioration",group:"management",   pilot:"Marc Lenoir",     purpose:"Animer le système de management de la qualité et piloter l'amélioration continue.", icon:"✅" },
@@ -227,6 +252,9 @@ const LABELS = {
   indStatus:{ vert:{l:"Sur cible",c:"success"}, orange:{l:"À surveiller",c:"warning"}, rouge:{l:"Hors cible",c:"danger"} },
   auditStatus:{ planifie:{l:"Planifié",c:"info"}, realise:{l:"Réalisé",c:"warning"}, cloture:{l:"Clôturé",c:"success"} },
   reqStatus:{ maitrise:{l:"Maîtrisée",c:"success"}, a_renforcer:{l:"À renforcer",c:"warning"}, non_couvert:{l:"Non couverte",c:"danger"} },
+  importance:{ haute:{l:"Haute",c:"danger"}, moyenne:{l:"Moyenne",c:"warning"}, basse:{l:"Basse",c:"neutral"} },
+  stakeholderCat:{ client:"Client", patient:"Patient", collaborateur:"Collaborateur", fournisseur:"Fournisseur", autorite:"Autorité", certificateur:"Organisme certificateur", actionnaire:"Actionnaire", partenaire:"Partenaire", soustraitant:"Sous-traitant", autre:"Autre" },
+  needType:{ besoin:"Besoin", attente:"Attente", exigence:"Exigence" },
 };
 
 function loadDB(){
@@ -259,6 +287,9 @@ const getObjective = id => findBy(DB.objectives,id);
 const getIndicator = id => findBy(DB.indicators,id);
 const getAudit = id => findBy(DB.audits,id);
 const getChange = id => findBy(DB.changes,id);
+const getContextIssue = id => findBy(DB.contextExternal,id) || findBy(DB.contextInternal,id);
+const getStakeholder = id => findBy(DB.stakeholders,id);
+const getOrientation = id => findBy(DB.orientations,id);
 
 function nextId(prefix, arr){
   let max = 0;

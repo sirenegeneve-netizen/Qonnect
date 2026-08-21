@@ -7,7 +7,10 @@
    1. CONFIGURATION DE LA NAVIGATION
    --------------------------------------------------------- */
 const NAV = [
-  { items:[ {route:"dashboard", icon:"🏠", label:"Vue d'ensemble"} ] },
+  { items:[
+      {route:"dashboard", icon:"🏠", label:"Vue d'ensemble"},
+      {route:"contexte", icon:"🧭", label:"Contexte & Stratégie"},
+  ]},
   { title:"Système de management", items:[
       {route:"processus", icon:"🧩", label:"Processus"},
       {route:"risques", icon:"⚠️", label:"Risques & opportunités"},
@@ -42,7 +45,7 @@ const NAV = [
 ];
 
 const PAGE_TITLES = {
-  dashboard:"Vue d'ensemble", processus:"Processus", risques:"Risques & opportunités",
+  dashboard:"Vue d'ensemble", contexte:"Contexte & Stratégie", processus:"Processus", risques:"Risques & opportunités",
   objectifs:"Objectifs & indicateurs", changements:"Changements", documents:"Documentation du SMQ",
   evenements:"Événements & non-conformités", actions:"Actions", audits:"Audits",
   referentiels:"Référentiels", conformite:"Conformité", connexions:"Connexions du système",
@@ -126,6 +129,7 @@ function render(){
   try{
     switch(mod){
       case "dashboard": html = pageDashboard(); break;
+      case "contexte": html = pageContexte(parts[1], parts[2]); break;
       case "processus": html = parts[1] ? pageProcessFiche(parts[1], parts[2]||"general") : pageProcessCarto(); break;
       case "documents": html = parts[2] ? pageDocumentFiche(parts[2]) : pageDocuments(parts[1]||"all"); break;
       case "risques": html = parts[1] ? pageRiskFiche(parts[1]) : pageRisks(); break;
@@ -256,6 +260,260 @@ function pageDashboard(){
       <button class="qa-btn" data-open-quick="audit">➕ Créer un audit</button>
       <button class="qa-btn" data-open-quick="change">➕ Déclarer un changement</button>
     </div>
+  </div>`;
+}
+
+/* ============================================================
+   5bis. CONTEXTE & STRATÉGIE
+   ============================================================ */
+function contextCounts(){
+  return {
+    external: DB.contextExternal.length,
+    internal: DB.contextInternal.length,
+    stakeholders: DB.stakeholders.length,
+    needs: DB.stakeholders.reduce((n,s)=>n+s.needs.length,0),
+    orientations: DB.orientations.length,
+  };
+}
+
+function pageContexte(sub, id){
+  if(!sub) return pageContexteHub();
+  if(sub==="external") return pageContexteIssues("external");
+  if(sub==="internal") return pageContexteIssues("internal");
+  if(sub==="stakeholders") return id ? pageStakeholderFiche(id) : pageStakeholders();
+  if(sub==="climate") return pageContexteClimate();
+  if(sub==="orientations") return pageOrientations();
+  if(sub==="assistant") return pageContexteAssistant();
+  if(sub==="carte") return pageContexteCarte();
+  return pageContexteHub();
+}
+
+function pageContexteHub(){
+  const c = contextCounts();
+  const blockCard = (route, emoji, title, desc, countLabel)=>`
+    <div class="card card-hover" data-route="contexte/${route}">
+      <div class="picon" style="margin-bottom:10px;">${emoji}</div>
+      <h3>${esc(title)}</h3>
+      <p class="text-sm mt-2">${esc(desc)}</p>
+      <p class="text-xs mt-4" style="font-weight:700;color:var(--primary);">${esc(countLabel)}</p>
+    </div>`;
+
+  return `
+  ${pageHeader("Notre organisation","La base de votre système de management : ce qui influence votre activité, vos parties prenantes et vos orientations.",
+    `<button class="btn btn-secondary" data-route="contexte/carte">🗺️ Carte stratégique</button><button class="btn btn-primary" data-route="contexte/assistant">🧠 Assistant de construction</button>`)}
+
+  <div class="section">
+    <div class="grid grid-3">
+      ${blockCard("external","🌍","Enjeux externes","Qu'est-ce qui peut influencer votre activité depuis l'extérieur ?", c.external+" enjeu(x) identifié(s)")}
+      ${blockCard("internal","🏢","Enjeux internes","Qu'est-ce qui influence votre organisation de l'intérieur ?", c.internal+" enjeu(x) identifié(s)")}
+      ${blockCard("stakeholders","🤝","Parties intéressées","Qui a des attentes vis-à-vis de votre organisation ?", c.stakeholders+" partie(s) · "+c.needs+" besoin(s)/attente(s)")}
+      ${blockCard("climate","🌱","Enjeux climatiques","Votre activité et le changement climatique.", "Criticité : "+esc(LABELS.importance[DB.climate.criticality]?.l||DB.climate.criticality))}
+      ${blockCard("orientations","🎯","Orientations stratégiques","Quels sont les objectifs stratégiques de votre organisation ?", c.orientations+" orientation(s)")}
+      ${blockCard("assistant","🧠","Assistant de construction","Décrivez une difficulté, Qonnect suggère enjeux, risques, objectifs et actions.", "Démarrer une analyse guidée")}
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="card">
+      <div class="flex justify-between items-center">
+        <h3>Ce contexte alimente automatiquement tout votre SMQ</h3>
+        <button class="btn btn-secondary btn-sm" data-route="contexte/carte">Voir la carte stratégique →</button>
+      </div>
+      <p class="text-sm mt-2">Les enjeux, parties intéressées et orientations définis ici peuvent générer automatiquement des risques, des opportunités, des objectifs et des actions, reliés au reste du système.</p>
+    </div>
+  </div>`;
+}
+
+function pageContexteIssues(kind){
+  const list = kind==="external" ? DB.contextExternal : DB.contextInternal;
+  const title = kind==="external" ? "Enjeux externes" : "Enjeux internes";
+  const question = kind==="external" ? "Qu'est-ce qui peut influencer votre activité depuis l'extérieur ?" : "Qu'est-ce qui influence votre organisation de l'intérieur ?";
+  return `
+  ${breadcrumb([{label:"Contexte & Stratégie",href:"#/contexte"},{label:title}])}
+  ${pageHeader(title, question, `<button class="btn btn-primary" data-open-issue-form="${kind}">+ Ajouter un enjeu</button>`)}
+  ${list.length ? `<div class="grid grid-3">${list.map(iss=>`
+    <div class="card">
+      <div class="flex justify-between items-center"><h3>${esc(iss.title)}</h3>${badge(LABELS.importance[iss.importance])}</div>
+      <p class="text-sm mt-2">${esc(iss.description)}</p>
+      <p class="text-xs mt-4">IMPACT POTENTIEL</p>
+      <p class="text-sm">${esc(iss.impact)}</p>
+      <button class="btn btn-secondary btn-sm mt-4" data-open-contexte-suggest="${iss.id}">🧠 Générer des suggestions</button>
+    </div>`).join("")}</div>`
+    : `<div class="card">${emptyState("🌍","Aucun enjeu identifié","Ajoutez les éléments qui influencent votre activité.")}</div>`}`;
+}
+
+function pageStakeholders(){
+  return `
+  ${breadcrumb([{label:"Contexte & Stratégie",href:"#/contexte"},{label:"Parties intéressées"}])}
+  ${pageHeader("Parties intéressées","Qui a des attentes vis-à-vis de votre organisation ?", `<button class="btn btn-primary" data-open-stakeholder-form>+ Ajouter une partie intéressée</button>`)}
+  ${DB.stakeholders.length ? `<div class="grid grid-3">${DB.stakeholders.map(s=>`
+    <div class="card card-hover" data-route="contexte/stakeholders/${s.id}">
+      <div class="flex justify-between items-center"><h3>${esc(s.name)}</h3>${badge(LABELS.importance[s.importance])}</div>
+      <p class="text-sm mt-2">${esc(LABELS.stakeholderCat[s.category]||s.category)} · Influence ${esc(LABELS.importance[s.influence]?.l||s.influence)}</p>
+      <p class="text-xs mt-4">${s.needs.length} besoin(s)/attente(s)/exigence(s)</p>
+    </div>`).join("")}</div>`
+    : `<div class="card">${emptyState("🤝","Aucune partie intéressée","Ajoutez les parties qui ont des attentes vis-à-vis de votre organisation.")}</div>`}`;
+}
+
+function pageStakeholderFiche(id){
+  const s = getStakeholder(id);
+  if(!s) return emptyState("🤝","Partie intéressée introuvable","Cet élément n'existe pas.");
+  return `
+  ${breadcrumb([{label:"Contexte & Stratégie",href:"#/contexte"},{label:"Parties intéressées",href:"#/contexte/stakeholders"},{label:s.name}])}
+  <div class="card mb-2">
+    <div class="flex justify-between items-center">${badge(LABELS.importance[s.importance])}</div>
+    <h1 class="mt-2">${esc(s.name)}</h1>
+    <p class="section-sub mt-2">${esc(LABELS.stakeholderCat[s.category]||s.category)} · Niveau d'influence : ${esc(LABELS.importance[s.influence]?.l||s.influence)}</p>
+  </div>
+  <div class="card">
+    <div class="flex justify-between items-center mb-2">
+      <h3>Besoins, attentes et exigences</h3>
+      <button class="btn btn-secondary btn-sm" data-open-need-form="${s.id}">+ Ajouter</button>
+    </div>
+    ${s.needs.length ? s.needs.map(n=>`<div class="rel-link"><span class="rel-name">${esc(n.text)}</span>${badgeRaw("info",LABELS.needType[n.type]||n.type)}</div>`).join("")
+      : `<p class="text-sm">Aucun besoin renseigné pour le moment.</p>`}
+  </div>`;
+}
+
+function pageContexteClimate(){
+  const c = DB.climate;
+  const q = (key,label)=>`<div class="field">
+    <label>${esc(label)}</label>
+    <select id="climate-${key}"><option value="true" ${c[key]?"selected":""}>Oui</option><option value="false" ${!c[key]?"selected":""}>Non</option></select>
+  </div>`;
+  return `
+  ${breadcrumb([{label:"Contexte & Stratégie",href:"#/contexte"},{label:"Enjeux climatiques"}])}
+  ${pageHeader("Enjeux climatiques","Répondez à ces questions guidées pour évaluer l'exposition de votre organisation.")}
+  <div class="card mb-2" style="max-width:640px;">
+    ${q("q1","Le changement climatique peut-il avoir un impact sur votre activité ?")}
+    ${q("q2","Votre activité a-t-elle un impact environnemental significatif ?")}
+    ${q("q3","Vos fournisseurs sont-ils exposés ?")}
+    ${q("q4","Vos infrastructures sont-elles exposées ?")}
+    ${q("q5","Vos clients sont-ils concernés ?")}
+    <button class="btn btn-primary" id="save-climate-btn">Enregistrer et calculer le score</button>
+  </div>
+  <div class="card" style="max-width:640px;">
+    <h3 class="mb-2">Score de criticité</h3>
+    ${badge(LABELS.importance[c.criticality])}
+  </div>`;
+}
+
+function pageOrientations(){
+  return `
+  ${breadcrumb([{label:"Contexte & Stratégie",href:"#/contexte"},{label:"Orientations stratégiques"}])}
+  ${pageHeader("Orientations stratégiques","Quels sont les objectifs stratégiques de votre organisation ?", `<button class="btn btn-primary" data-open-orientation-form>+ Ajouter une orientation</button>`)}
+  ${DB.orientations.length ? dataTable(
+    [ {label:"Orientation", render:o=>`<div class="cell-title">${esc(o.title)}</div><div class="cell-sub">${esc(o.description)}</div>`},
+      {label:"Responsable", render:o=>esc(o.responsible)},
+      {label:"Échéance", render:o=>fmtDate(o.due)},
+      {label:"Priorité", render:o=>badge(LABELS.priority[o.priority])} ],
+    DB.orientations
+  ) : `<div class="card">${emptyState("🎯","Aucune orientation","Ajoutez les objectifs stratégiques de votre organisation.")}</div>`}`;
+}
+
+/* ---------- Assistant de construction du contexte ---------- */
+function contextAssistantSuggest(text){
+  const low = text.toLowerCase();
+  let base = {
+    enjeu:"Difficulté identifiée", parties:["Collaborateurs"], risks:["Impact opérationnel à préciser"],
+    opportunities:["Amélioration organisationnelle"], objectives:["Réduire l'impact identifié"], actions:["Analyser la situation et définir un plan d'action"],
+  };
+  if(/p[ée]nurie|recrut|personnel|comp[ée]tence/.test(low)){
+    base = { enjeu:"Difficulté de recrutement", parties:["Clients","Collaborateurs"],
+      risks:["Dégradation de la qualité","Retards de production ou de service","Surcharge de travail"],
+      opportunities:["Formation interne","Automatisation","Réorganisation des équipes"],
+      objectives:["Réduction du turnover","Développement des compétences"],
+      actions:["Plan de formation","Plan de recrutement","Cartographie des compétences"] };
+  } else if(/fournisseur|approvisionnement|rupture/.test(low)){
+    base = { enjeu:"Dépendance fournisseur", parties:["Clients","Fournisseurs"],
+      risks:["Rupture d'approvisionnement","Hausse des coûts"],
+      opportunities:["Diversification du panel fournisseurs"],
+      objectives:["Sécuriser le panel fournisseurs stratégiques"],
+      actions:["Qualifier un second fournisseur","Auditer le fournisseur actuel"] };
+  } else if(/cyber|informatique|si |syst[eè]me d'information|donn[ée]es/.test(low)){
+    base = { enjeu:"Exposition aux cybermenaces", parties:["Clients","Collaborateurs","Autorités"],
+      risks:["Indisponibilité du système d'information","Fuite de données"],
+      opportunities:["Modernisation du système d'information"],
+      objectives:["Renforcer la sécurité du système d'information"],
+      actions:["Déployer l'authentification multi-facteurs","Réaliser un audit de sécurité"] };
+  } else if(/client|r[ée]clamation|satisfaction|d[ée]lai/.test(low)){
+    base = { enjeu:"Insatisfaction client", parties:["Clients"],
+      risks:["Perte de clients","Dégradation de l'image"],
+      opportunities:["Amélioration de la relation client"],
+      objectives:["Réduire les réclamations clients","Maintenir la satisfaction client"],
+      actions:["Analyser les causes de réclamation","Renforcer le support client"] };
+  }
+  return base;
+}
+
+function pageContexteAssistant(){
+  return `
+  ${breadcrumb([{label:"Contexte & Stratégie",href:"#/contexte"},{label:"Assistant de construction"}])}
+  ${pageHeader("Assistant de construction","Décrivez une difficulté ou un enjeu de votre organisation. Qonnect vous suggère automatiquement des enjeux, risques, opportunités, objectifs et actions.")}
+  <div class="card mb-2" style="max-width:720px;">
+    <div class="field">
+      <label>Qu'est-ce qui pourrait empêcher votre organisation d'atteindre ses objectifs ?</label>
+      <textarea id="ctx-assist-input" placeholder="Ex : Pénurie de personnel qualifié"></textarea>
+    </div>
+    <button class="btn btn-primary" id="ctx-assist-run">🧠 Analyser</button>
+  </div>
+  <div id="ctx-assist-result"></div>`;
+}
+
+function renderAssistantSuggestion(text, s){
+  const chipList = arr => arr.map(t=>`<span class="badge badge-neutral mb-2" style="margin-right:6px;">${esc(t)}</span>`).join("");
+  return `
+  <div class="card" style="max-width:720px;">
+    <div class="text-xs">ENJEU SUGGÉRÉ</div>
+    <h3 class="mt-2">${esc(s.enjeu)}</h3>
+    <p class="text-sm mt-2">à partir de : « ${esc(text)} »</p>
+
+    <div class="mt-4"><div class="text-xs mb-2">PARTIES INTÉRESSÉES CONCERNÉES</div>${chipList(s.parties)}</div>
+    <div class="mt-4"><div class="text-xs mb-2">RISQUES POSSIBLES</div>${chipList(s.risks)}</div>
+    <div class="mt-4"><div class="text-xs mb-2">OPPORTUNITÉS</div>${chipList(s.opportunities)}</div>
+    <div class="mt-4"><div class="text-xs mb-2">OBJECTIFS POSSIBLES</div>${chipList(s.objectives)}</div>
+    <div class="mt-4"><div class="text-xs mb-2">ACTIONS POSSIBLES</div>${chipList(s.actions)}</div>
+
+    <p class="text-sm mt-4">Validez les suggestions que vous souhaitez intégrer à votre système. Chaque élément créé restera tracé jusqu'à cet enjeu.</p>
+    <div class="flex gap-2 mt-2" style="flex-wrap:wrap;">
+      <button class="btn btn-secondary btn-sm" data-accept-suggestion='{"kind":"issue","label":${JSON.stringify(s.enjeu)}}'>+ Ajouter l'enjeu</button>
+      ${s.risks.map(r=>`<button class="btn btn-secondary btn-sm" data-accept-suggestion='{"kind":"risk","label":${JSON.stringify(r)},"source":${JSON.stringify(s.enjeu)}}'>+ Risque : ${esc(r)}</button>`).join("")}
+      ${s.objectives.map(o=>`<button class="btn btn-secondary btn-sm" data-accept-suggestion='{"kind":"objective","label":${JSON.stringify(o)},"source":${JSON.stringify(s.enjeu)}}'>+ Objectif : ${esc(o)}</button>`).join("")}
+      ${s.actions.map(a=>`<button class="btn btn-secondary btn-sm" data-accept-suggestion='{"kind":"action","label":${JSON.stringify(a)},"source":${JSON.stringify(s.enjeu)}}'>+ Action : ${esc(a)}</button>`).join("")}
+    </div>
+  </div>`;
+}
+
+/* ---------- Carte stratégique ---------- */
+function pageContexteCarte(){
+  const c = contextCounts();
+  const nbRisksFromContext = DB.risks.filter(r=>r.sourceContext).length;
+  const nbObjFromContext = DB.objectives.filter(o=>o.sourceContext).length;
+  const nbActFromContext = DB.actions.filter(a=>a.sourceContext).length;
+  const stage = (emoji,label,count)=>`<div class="conn-node"><div class="cn-count">${count}</div><div class="cn-label">${emoji} ${esc(label)}</div></div>`;
+  return `
+  ${breadcrumb([{label:"Contexte & Stratégie",href:"#/contexte"},{label:"Carte stratégique"}])}
+  ${pageHeader("Carte stratégique de l'organisation","Du contexte jusqu'aux résultats : la logique de construction de votre système de management.")}
+  <div class="card">
+    <div class="conn-diagram" style="gap:18px;">
+      ${stage("🌍","Enjeux externes", c.external)}
+      <div class="conn-arrow"></div>
+      ${stage("🏢","Enjeux internes", c.internal)}
+      <div class="conn-arrow"></div>
+      ${stage("⚠️","Risques & opportunités", DB.risks.length)}
+      <div class="conn-arrow"></div>
+      ${stage("🎯","Objectifs", DB.objectives.length)}
+      <div class="conn-arrow"></div>
+      ${stage("✅","Actions", DB.actions.length)}
+      <div class="conn-arrow"></div>
+      ${stage("📊","Indicateurs", DB.indicators.length)}
+      <div class="conn-arrow"></div>
+      ${stage("🏁","Résultats", DB.objectives.filter(o=>o.status==='atteint').length+" atteint(s)")}
+    </div>
+  </div>
+  <div class="card mt-4">
+    <h3 class="mb-2">Traçabilité issue du contexte</h3>
+    <p class="text-sm">${nbRisksFromContext} risque(s), ${nbObjFromContext} objectif(s) et ${nbActFromContext} action(s) sont directement issus d'un enjeu du contexte.</p>
   </div>`;
 }
 
@@ -566,6 +824,7 @@ function pageRiskFiche(id){
         <div class="flex justify-between items-center">
           ${badge(LABELS.riskLevel[r.level])}${badge(LABELS.riskStatus[r.status])}
         </div>
+        ${r.sourceContext?`<p class="text-xs mt-2">🧭 Ce risque existe parce qu'il est issu de l'enjeu « ${esc(r.sourceContext.label)} »</p>`:""}
         <h1 class="mt-2">${esc(r.name)}</h1>
         <p class="section-sub mt-2">Processus : ${p?esc(p.name):"—"} · Responsable : ${esc(r.owner)}</p>
         <p class="text-sm mt-4" style="color:var(--text-primary);line-height:1.7;">${esc(r.description)}</p>
@@ -622,6 +881,7 @@ function pageObjectives(){
           <div class="flex justify-between items-center">
             <h3>${esc(o.title)}</h3>${badge(LABELS.objStatus[o.status])}
           </div>
+          ${o.sourceContext?`<p class="text-xs mt-2">🧭 Issu de l'enjeu « ${esc(o.sourceContext.label)} »</p>`:""}
           <p class="text-sm mt-2">Cible : ${esc(o.target)} · Processus : ${p?esc(p.name):"—"}</p>
           <div class="flex justify-between items-center mt-4"><span class="text-sm">Progression</span><span class="text-sm" style="font-weight:700;color:var(--text-primary)">${o.progress}%</span></div>
           <div class="progress mt-2"><div style="width:${o.progress}%"></div></div>
@@ -762,7 +1022,7 @@ function actionTable(rows){
       {label:"Responsable", render:a=>esc(a.owner)},
       {label:"Échéance", render:a=>fmtDate(a.due)},
       {label:"Priorité", render:a=>badge(LABELS.priority[a.priority])},
-      {label:"Origine", render:a=>esc(LABELS.actionOrigin[a.origin]||a.origin)},
+      {label:"Origine", render:a=>esc(LABELS.actionOrigin[a.origin]||a.origin) + (a.sourceContext?` <span class="text-xs" title="Issu de l'enjeu ${esc(a.sourceContext.label)}">🧭</span>`:"")},
       {label:"Statut", render:a=>badge(LABELS.actionStatus[a.status])},
       {label:"", render:a=> a.status!=="termine" ? `<button class="btn btn-secondary btn-sm" data-complete-action="${a.id}">Marquer terminée</button>` : "" } ],
     sorted, {emptyEmoji:"✅", emptyTitle:"Aucune action", emptyText:"Aucune action ne correspond à ces filtres."}
@@ -1377,6 +1637,124 @@ function openQuickForm(kind, presets, triggerEl){
 }
 
 /* ============================================================
+   19bis. FORMULAIRES — CONTEXTE & STRATÉGIE
+   ============================================================ */
+function openIssueForm(kind){
+  const title = kind==="external" ? "Ajouter un enjeu externe" : "Ajouter un enjeu interne";
+  const suggestions = kind==="external"
+    ? ["Réglementation","Marché","Concurrence","Économie","Technologie","Cybersécurité","Évolution climatique","Attentes sociétales","Disponibilité des fournisseurs","Pénurie de main-d'œuvre"]
+    : ["Compétences","Ressources humaines","Culture d'entreprise","Organisation","Système d'information","Outils","Finances","Infrastructures","Équipements"];
+  openModal({title,
+    bodyHtml:`
+      <div class="field"><label>Enjeu <span class="req">*</span></label>
+        <input type="text" id="qf-title" list="issue-suggestions" placeholder="Choisissez ou saisissez librement">
+        <datalist id="issue-suggestions">${suggestions.map(s=>`<option value="${esc(s)}">`).join("")}</datalist>
+      </div>
+      <div class="field"><label>Description</label><textarea id="qf-desc" placeholder="En quoi cet enjeu concerne votre organisation ?"></textarea></div>
+      <div class="field"><label>Impact potentiel</label><textarea id="qf-impact" placeholder="Quel impact cela peut-il avoir ?"></textarea></div>
+      <div class="field"><label>Niveau d'importance</label><select id="qf-importance"><option value="haute">Haute</option><option value="moyenne" selected>Moyenne</option><option value="basse">Basse</option></select></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">Ajouter</button>`,
+    onMount:(o)=>{ o.querySelector("#qf-submit").addEventListener("click", ()=>{
+      const t = o.querySelector("#qf-title").value.trim();
+      if(!t){ toast("Merci de saisir un enjeu","⚠️"); return; }
+      const arr = kind==="external" ? DB.contextExternal : DB.contextInternal;
+      const id = nextId(kind==="external"?"ISS-EXT":"ISS-INT", arr);
+      arr.push({ id, title:t, description:o.querySelector("#qf-desc").value.trim()||"—", impact:o.querySelector("#qf-impact").value.trim()||"—", importance:o.querySelector("#qf-importance").value });
+      saveDB(); closeModal(); toast("Enjeu ajouté avec succès"); render();
+    });}
+  });
+}
+
+function openStakeholderForm(){
+  openModal({title:"Ajouter une partie intéressée",
+    bodyHtml:`
+      <div class="field"><label>Nom <span class="req">*</span></label><input type="text" id="qf-title" placeholder="Ex : Clients, Autorités, Fournisseurs…"></div>
+      <div class="field-row">
+        <div class="field"><label>Catégorie</label><select id="qf-cat">${Object.entries(LABELS.stakeholderCat).map(([v,l])=>`<option value="${v}">${esc(l)}</option>`).join("")}</select></div>
+        <div class="field"><label>Importance</label><select id="qf-importance"><option value="haute">Haute</option><option value="moyenne" selected>Moyenne</option><option value="basse">Basse</option></select></div>
+      </div>
+      <div class="field"><label>Niveau d'influence</label><select id="qf-influence"><option value="haute">Haute</option><option value="moyenne" selected>Moyenne</option><option value="basse">Basse</option></select></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">Ajouter</button>`,
+    onMount:(o)=>{ o.querySelector("#qf-submit").addEventListener("click", ()=>{
+      const t = o.querySelector("#qf-title").value.trim();
+      if(!t){ toast("Merci de saisir un nom","⚠️"); return; }
+      const id = nextId("PI", DB.stakeholders);
+      DB.stakeholders.push({ id, name:t, category:o.querySelector("#qf-cat").value, importance:o.querySelector("#qf-importance").value, influence:o.querySelector("#qf-influence").value, needs:[] });
+      saveDB(); closeModal(); toast("Partie intéressée ajoutée"); navigate(`contexte/stakeholders/${id}`);
+    });}
+  });
+}
+
+function openNeedForm(stakeholderId){
+  openModal({title:"Ajouter un besoin / une attente / une exigence",
+    bodyHtml:`
+      <div class="field"><label>Type</label><select id="qf-type"><option value="besoin">Besoin</option><option value="attente">Attente</option><option value="exigence">Exigence</option></select></div>
+      <div class="field"><label>Description <span class="req">*</span></label><input type="text" id="qf-title" placeholder="Ex : Respect des délais"></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">Ajouter</button>`,
+    onMount:(o)=>{ o.querySelector("#qf-submit").addEventListener("click", ()=>{
+      const t = o.querySelector("#qf-title").value.trim();
+      if(!t){ toast("Merci de saisir une description","⚠️"); return; }
+      const s = getStakeholder(stakeholderId);
+      const id = "NB-"+String(Date.now()).slice(-5);
+      s.needs.push({id, text:t, type:o.querySelector("#qf-type").value});
+      saveDB(); closeModal(); toast("Ajouté avec succès"); render();
+    });}
+  });
+}
+
+function openOrientationForm(){
+  openModal({title:"Ajouter une orientation stratégique",
+    bodyHtml:`
+      <div class="field"><label>Orientation <span class="req">*</span></label>
+        <input type="text" id="qf-title" list="ori-suggestions" placeholder="Choisissez ou saisissez librement">
+        <datalist id="ori-suggestions">${["Croissance","Satisfaction client","Qualité","Rentabilité","Innovation","Développement durable","Digitalisation","Certification","Sécurité de l'information"].map(s=>`<option value="${esc(s)}">`).join("")}</datalist>
+      </div>
+      <div class="field"><label>Description</label><textarea id="qf-desc"></textarea></div>
+      <div class="field-row">
+        <div class="field"><label>Responsable</label><input type="text" id="qf-owner"></div>
+        <div class="field"><label>Échéance</label><input type="date" id="qf-due"></div>
+      </div>
+      <div class="field"><label>Priorité</label><select id="qf-priority"><option value="haute">Haute</option><option value="moyenne" selected>Moyenne</option><option value="basse">Basse</option></select></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">Ajouter</button>`,
+    onMount:(o)=>{ o.querySelector("#qf-submit").addEventListener("click", ()=>{
+      const t = o.querySelector("#qf-title").value.trim();
+      if(!t){ toast("Merci de saisir une orientation","⚠️"); return; }
+      const id = nextId("ORI", DB.orientations);
+      DB.orientations.push({ id, title:t, description:o.querySelector("#qf-desc").value.trim()||"—", responsible:o.querySelector("#qf-owner").value.trim()||"Non assigné", due:o.querySelector("#qf-due").value||"—", priority:o.querySelector("#qf-priority").value });
+      saveDB(); closeModal(); toast("Orientation ajoutée"); render();
+    });}
+  });
+}
+
+function acceptSuggestion(sugg){
+  if(sugg.kind==="issue"){
+    const id = nextId("ISS-EXT", DB.contextExternal);
+    DB.contextExternal.push({id, title:sugg.label, description:"Enjeu identifié via l'assistant de construction.", impact:"À préciser.", importance:"moyenne"});
+    saveDB(); toast("Enjeu ajouté au contexte"); return;
+  }
+  if(sugg.kind==="risk"){
+    const id = nextId("RISK", DB.risks);
+    DB.risks.push({ id, name:sugg.label, level:"eleve", processId:null, owner:"Non assigné", status:"ouvert", type:"risque",
+      description:"Risque suggéré par l'assistant à partir de l'enjeu « "+sugg.source+" ».", probability:3, impact:3,
+      sourceContext:{type:"enjeu", label:sugg.source} });
+    saveDB(); toast("Risque créé et rattaché à l'enjeu"); return;
+  }
+  if(sugg.kind==="objective"){
+    const id = nextId("OBJ", DB.objectives);
+    DB.objectives.push({ id, title:sugg.label, target:"À définir", progress:0, status:"en_cours", processId:null, indicatorIds:[],
+      sourceContext:{type:"enjeu", label:sugg.source} });
+    saveDB(); toast("Objectif créé et rattaché à l'enjeu"); return;
+  }
+  if(sugg.kind==="action"){
+    const id = nextId("ACT", DB.actions);
+    DB.actions.push({ id, title:sugg.label, owner:"Non assigné", due:new Date(Date.now()+30*86400000).toISOString().slice(0,10),
+      priority:"moyenne", status:"a_faire", origin:"objectif", originId:null, processId:null,
+      sourceContext:{type:"enjeu", label:sugg.source} });
+    saveDB(); toast("Action créée et rattachée à l'enjeu"); return;
+  }
+}
+
+/* ============================================================
    20. DÉLÉGATION D'ÉVÉNEMENTS GLOBALE
    ============================================================ */
 function initGlobalEvents(){
@@ -1408,6 +1786,45 @@ function initGlobalEvents(){
         originId: quickEl.getAttribute("data-preset-origin-id")||null,
         auditId: quickEl.getAttribute("data-preset-audit")||null,
       });
+      return;
+    }
+    const issueFormEl = e.target.closest("[data-open-issue-form]");
+    if(issueFormEl){ openIssueForm(issueFormEl.getAttribute("data-open-issue-form")); return; }
+    if(e.target.closest("[data-open-stakeholder-form]")){ openStakeholderForm(); return; }
+    const needFormEl = e.target.closest("[data-open-need-form]");
+    if(needFormEl){ openNeedForm(needFormEl.getAttribute("data-open-need-form")); return; }
+    if(e.target.closest("[data-open-orientation-form]")){ openOrientationForm(); return; }
+    const suggestIssueEl = e.target.closest("[data-open-contexte-suggest]");
+    if(suggestIssueEl){
+      const iss = getContextIssue(suggestIssueEl.getAttribute("data-open-contexte-suggest"));
+      navigate("contexte/assistant");
+      setTimeout(()=>{
+        const input = document.getElementById("ctx-assist-input");
+        if(input && iss){ input.value = iss.title; document.getElementById("ctx-assist-run")?.click(); }
+      }, 0);
+      return;
+    }
+    if(e.target.id==="ctx-assist-run"){
+      const val = document.getElementById("ctx-assist-input").value.trim();
+      if(!val){ toast("Décrivez d'abord une difficulté","⚠️"); return; }
+      const s = contextAssistantSuggest(val);
+      document.getElementById("ctx-assist-result").innerHTML = renderAssistantSuggestion(val, s);
+      return;
+    }
+    const acceptEl = e.target.closest("[data-accept-suggestion]");
+    if(acceptEl){
+      const sugg = JSON.parse(acceptEl.getAttribute("data-accept-suggestion"));
+      acceptSuggestion(sugg);
+      acceptEl.disabled = true;
+      acceptEl.textContent = "✓ Ajouté";
+      return;
+    }
+    if(e.target.id==="save-climate-btn"){
+      const c = DB.climate;
+      ["q1","q2","q3","q4","q5"].forEach(k=>{ c[k] = document.getElementById("climate-"+k).value==="true"; });
+      const trueCount = ["q1","q2","q3","q4","q5"].filter(k=>c[k]).length;
+      c.criticality = trueCount>=4 ? "haute" : trueCount>=2 ? "moyenne" : "basse";
+      saveDB(); toast("Enjeux climatiques enregistrés"); render();
       return;
     }
     if(e.target.closest("#collapse-btn")){
