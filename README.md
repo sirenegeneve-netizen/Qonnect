@@ -75,6 +75,19 @@ Le cockpit de pilotage du système de management (`#/revue-direction`). Il ne du
 - **Workflow de validation** avec verrouillage en écriture une fois la revue clôturée, et fonction « Créer une nouvelle version » pour la traçabilité.
 - **Sorties** : génération d'un compte-rendu (créé comme un vrai document dans la Documentation du SMQ), accès direct au plan d'actions, et une page **Synthèse Direction** courte (5 chiffres clés, points forts, points de vigilance, décisions majeures, actions prioritaires).
 
+### Documentation du SMQ — système documentaire intelligent
+
+Chaque document n'est plus un fichier isolé : il est relié en direct aux processus, risques, audits, indicateurs, actions, changements et exigences qu'il impacte.
+
+- **Assistant de création** (`+ Nouveau document`) : formulaire progressif en 4 étapes (type → processus → référentiels → structure), qui génère automatiquement la trame standard d'une procédure (Objet, Domaine d'application, Responsabilités, Description, Enregistrements, Risques, Indicateurs, Références…) et suggère les exigences ISO 9001 déjà associées au processus choisi.
+- **Bibliothèque de modèles** (`#/documents/modeles`) : 16 modèles prêts à l'emploi pour ISO 9001, ISO 13485 et ISO 27001.
+- **Fiche document repensée** avec 7 onglets : Contenu (avec 4 vues — Direction / Responsable / Opérationnelle / Auditeur, et logigramme automatique pour les procédures qui décrivent des étapes), Relations, Exigences, Impact, Historique, Formation, Santé documentaire.
+- **Analyse d'impact** : en un coup d'œil, combien de processus, risques, audits, actions, formations et autres documents seraient concernés par une modification.
+- **Santé documentaire** (`#/documents/sante`) : moteur de cohérence détectant documents à réviser en retard, références brisées, doublons potentiels — classés 🟢 Conforme / 🟠 Vigilance / 🔴 Action requise.
+- **Cartographie normative** (`#/documents/cartographie`) : quelle exigence est couverte par quel document, et inversement.
+- **Assistant documentaire** (`#/documents/assistant`) : détecte les processus sans procédure, les exigences non couvertes et les documents qui se recoupent — toujours basé sur les données réelles, jamais inventé.
+- **Formation et prise de connaissance** : lancer une campagne de lecture depuis un document, suivre qui a validé.
+
 ## Limites du prototype
 
 - Les exigences du référentiel ISO 9001:2026 affichées sont **simplifiées à des fins de démonstration** et ne reproduisent pas le texte officiel de la norme.

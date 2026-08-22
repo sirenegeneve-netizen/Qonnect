@@ -54,17 +54,23 @@ const QONNECT_SEED = {
     { id:"DOC-PROC-PRD", ref:"PR-PRD-001", title:"Processus Production", type:"processus", version:"3.2", status:"en_vigueur", processId:"PROC-004", author:"Thomas Petit", approver:"Marc Lenoir", date:"2026-01-20", nextReview:"2027-01-20", body:"Fiche descriptive du processus Production." },
 
     { id:"DOC-004", ref:"PR-004", title:"Gestion des non-conformités", type:"procedure", version:"3.0", status:"en_vigueur", processId:"PROC-002", author:"Marc Lenoir", approver:"Claire Dubreuil", date:"2026-08-15", nextReview:"2027-08-15",
-      body:"Objet : décrire le traitement des non-conformités depuis la déclaration jusqu'à la clôture. Champ d'application : tous les processus." },
+      body:"Objet : décrire le traitement des non-conformités depuis la déclaration jusqu'à la clôture. Champ d'application : tous les processus.",
+      requirementIds:["REQ-017","REQ-009"], riskIds:["RISK-001"], auditIds:["AUD-002"], indicatorIds:["IND-007"], actionIds:["ACT-002","ACT-013"], crossDocIds:["DOC-013","DOC-016"], flowSteps:["Déclaration","Qualification","Analyse","Action","Vérification","Clôture"] },
     { id:"DOC-005", ref:"PR-005", title:"Gestion des achats et évaluation fournisseurs", type:"procedure", version:"2.1", status:"en_vigueur", processId:"PROC-007", author:"Sophie Martin", approver:"Marc Lenoir", date:"2025-11-03", nextReview:"2026-11-03",
-      body:"Objet : décrire le processus de sélection, d'évaluation et de suivi des fournisseurs." },
+      body:"Objet : décrire le processus de sélection, d'évaluation et de suivi des fournisseurs.",
+      requirementIds:["REQ-011","REQ-018"], riskIds:["RISK-001"], auditIds:["AUD-001"], indicatorIds:["IND-006"], actionIds:["ACT-001","ACT-011"], crossDocIds:["DOC-014","DOC-010"], flowSteps:[] },
     { id:"DOC-006", ref:"PR-006", title:"Gestion documentaire", type:"procedure", version:"1.4", status:"a_reviser", processId:"PROC-002", author:"Marc Lenoir", approver:"Claire Dubreuil", date:"2024-05-10", nextReview:"2026-09-05",
-      body:"Objet : décrire les règles de création, validation, diffusion et archivage des documents du SMQ." },
+      body:"Objet : décrire les règles de création, validation, diffusion et archivage des documents du SMQ.",
+      requirementIds:["REQ-009"], riskIds:[], auditIds:["AUD-002"], indicatorIds:["IND-004"], actionIds:["ACT-007"], crossDocIds:[], flowSteps:[] },
     { id:"DOC-007", ref:"PR-007", title:"Gestion des audits internes", type:"procedure", version:"2.0", status:"en_vigueur", processId:"PROC-002", author:"Marc Lenoir", approver:"Claire Dubreuil", date:"2026-03-01", nextReview:"2027-03-01",
-      body:"Objet : planifier, réaliser et suivre les audits internes du système de management." },
+      body:"Objet : planifier, réaliser et suivre les audits internes du système de management.",
+      requirementIds:["REQ-015"], riskIds:[], auditIds:["AUD-001","AUD-002","AUD-003","AUD-004"], indicatorIds:[], actionIds:[], crossDocIds:["DOC-015"], flowSteps:[] },
     { id:"DOC-008", ref:"PR-008", title:"Gestion des compétences", type:"procedure", version:"1.2", status:"en_vigueur", processId:"PROC-006", author:"Paul Rousseau", approver:"Marc Lenoir", date:"2025-06-12", nextReview:"2026-06-12",
-      body:"Objet : identifier, développer et maintenir les compétences nécessaires aux activités." },
+      body:"Objet : identifier, développer et maintenir les compétences nécessaires aux activités.",
+      requirementIds:["REQ-008"], riskIds:["RISK-002"], auditIds:[], indicatorIds:[], actionIds:["ACT-005"], crossDocIds:[], flowSteps:[] },
     { id:"DOC-009", ref:"PR-009", title:"Gestion des changements", type:"procedure", version:"1.0", status:"en_vigueur", processId:"PROC-002", author:"Marc Lenoir", approver:"Claire Dubreuil", date:"2026-04-18", nextReview:"2027-04-18",
-      body:"Objet : maîtriser les changements planifiés pouvant impacter le SMQ." },
+      body:"Objet : maîtriser les changements planifiés pouvant impacter le SMQ.",
+      requirementIds:[], riskIds:[], auditIds:[], indicatorIds:[], actionIds:[], crossDocIds:[], flowSteps:["Déclaré","Analyse d'impact","Risques","Plan d'action","Mise en œuvre","Vérification","Clôturé"] },
 
     { id:"DOC-010", ref:"MO-010", title:"Contrôle réception fournisseur", type:"mode_operatoire", version:"1.3", status:"en_vigueur", processId:"PROC-007", author:"Sophie Martin", approver:"Thomas Petit", date:"2025-10-01", nextReview:"2026-10-01",
       body:"Décrit les étapes de contrôle qualité à réception des livraisons fournisseurs." },
@@ -81,6 +87,30 @@ const QONNECT_SEED = {
     { id:"DOC-017", ref:"EN-017", title:"Compte-rendu revue de direction S1 2026", type:"enregistrement", version:"1.0", status:"en_vigueur", processId:"PROC-001", author:"Claire Dubreuil", approver:"Claire Dubreuil", date:"2026-06-30", nextReview:"—", body:"Compte-rendu de la revue de direction du premier semestre 2026." },
 
     { id:"DOC-018", ref:"PR-018", title:"Ancienne procédure de gestion des réclamations", type:"procedure", version:"1.0", status:"obsolete", processId:"PROC-005", author:"Nadia Amrani", approver:"Marc Lenoir", date:"2022-04-01", nextReview:"—", body:"Document remplacé par MO-012." },
+  ],
+
+  documentTemplates: [
+    { id:"TPL-001", title:"Gestion documentaire", referentiel:"ISO 9001", forType:"procedure", sections:["Objet","Domaine d'application","Définitions","Responsabilités","Description du processus","Enregistrements associés","Risques associés","Indicateurs associés","Références normatives","Historique des versions"] },
+    { id:"TPL-002", title:"Audit interne", referentiel:"ISO 9001", forType:"procedure", sections:["Objet","Domaine d'application","Définitions","Responsabilités","Programme et critères d'audit","Réalisation de l'audit","Constats et rapport","Suivi des actions","Enregistrements associés","Références normatives"] },
+    { id:"TPL-003", title:"Gestion des non-conformités", referentiel:"ISO 9001", forType:"procedure", sections:["Objet","Domaine d'application","Définitions","Responsabilités","Déclaration et qualification","Analyse des causes","Traitement et vérification","Clôture","Enregistrements associés","Indicateurs associés"] },
+    { id:"TPL-004", title:"Gestion des risques et opportunités", referentiel:"ISO 9001", forType:"procedure", sections:["Objet","Domaine d'application","Définitions","Responsabilités","Identification des risques","Évaluation et cotation","Plan de maîtrise","Suivi et revue","Enregistrements associés","Références normatives"] },
+    { id:"TPL-005", title:"Revue de direction", referentiel:"ISO 9001", forType:"procedure", sections:["Objet","Domaine d'application","Responsabilités","Données d'entrée","Déroulement de la revue","Décisions et actions","Enregistrements associés","Références normatives"] },
+    { id:"TPL-006", title:"Gestion des compétences", referentiel:"ISO 9001", forType:"procedure", sections:["Objet","Domaine d'application","Définitions","Responsabilités","Identification des besoins","Plan de formation","Évaluation de l'efficacité","Enregistrements associés"] },
+    { id:"TPL-007", title:"Gestion des fournisseurs", referentiel:"ISO 9001", forType:"procedure", sections:["Objet","Domaine d'application","Définitions","Responsabilités","Sélection et qualification","Évaluation périodique","Traitement des non-conformités fournisseurs","Enregistrements associés"] },
+    { id:"TPL-008", title:"CAPA", referentiel:"ISO 13485", forType:"procedure", sections:["Objet","Domaine d'application","Définitions","Responsabilités","Ouverture de la CAPA","Analyse de cause racine","Plan d'action correctif/préventif","Vérification d'efficacité","Enregistrements associés"] },
+    { id:"TPL-009", title:"Gestion des risques produit", referentiel:"ISO 13485", forType:"procedure", sections:["Objet","Domaine d'application","Définitions","Responsabilités","Analyse de risque produit","Mesures de maîtrise","Revue post-production","Enregistrements associés"] },
+    { id:"TPL-010", title:"Validation logicielle", referentiel:"ISO 13485", forType:"procedure", sections:["Objet","Domaine d'application","Définitions","Responsabilités","Plan de validation","Protocoles de test","Rapport de validation","Enregistrements associés"] },
+    { id:"TPL-011", title:"Vigilance / matériovigilance", referentiel:"ISO 13485", forType:"procedure", sections:["Objet","Domaine d'application","Définitions","Responsabilités","Déclaration d'incident","Analyse et signalement","Actions correctives","Enregistrements associés"] },
+    { id:"TPL-012", title:"Gestion des modifications", referentiel:"ISO 13485", forType:"procedure", sections:["Objet","Domaine d'application","Définitions","Responsabilités","Analyse d'impact","Validation du changement","Mise en œuvre","Enregistrements associés"] },
+    { id:"TPL-013", title:"Gestion des accès", referentiel:"ISO 27001", forType:"procedure", sections:["Objet","Domaine d'application","Définitions","Responsabilités","Attribution des droits","Revue périodique des accès","Révocation","Enregistrements associés"] },
+    { id:"TPL-014", title:"Sauvegardes", referentiel:"ISO 27001", forType:"procedure", sections:["Objet","Domaine d'application","Responsabilités","Politique de sauvegarde","Fréquence et rétention","Tests de restauration","Enregistrements associés"] },
+    { id:"TPL-015", title:"Gestion des incidents de sécurité", referentiel:"ISO 27001", forType:"procedure", sections:["Objet","Domaine d'application","Définitions","Responsabilités","Détection et déclaration","Analyse et confinement","Retour d'expérience","Enregistrements associés"] },
+    { id:"TPL-016", title:"Sécurité des actifs", referentiel:"ISO 27001", forType:"procedure", sections:["Objet","Domaine d'application","Définitions","Responsabilités","Inventaire des actifs","Classification","Mesures de protection","Enregistrements associés"] },
+  ],
+
+  trainings: [
+    { id:"TRN-001", documentId:"DOC-004", title:"Prise de connaissance — Gestion des non-conformités v3.0", audience:["Sophie Martin","Thomas Petit","Nadia Amrani","Marc Lenoir"], completedBy:["Marc Lenoir","Thomas Petit"], quiz:true, dueDate:"2026-09-15" },
+    { id:"TRN-002", documentId:"DOC-005", title:"Prise de connaissance — Gestion des achats v2.1", audience:["Sophie Martin","Karim Belkacem"], completedBy:["Sophie Martin","Karim Belkacem"], quiz:false, dueDate:"2026-01-15" },
   ],
 
   documentHistory: {
@@ -277,6 +307,7 @@ const LABELS = {
   processGroup:{ management:"Processus de management", operationnel:"Processus opérationnels", support:"Processus support" },
   docType:{ politique:"Politique", charte:"Charte", manuel:"Manuel", processus:"Fiche processus", procedure:"Procédure", mode_operatoire:"Mode opératoire", formulaire:"Formulaire", enregistrement:"Enregistrement", instruction:"Instruction" },
   docStatus:{ en_vigueur:{l:"En vigueur",c:"success"}, a_reviser:{l:"À réviser",c:"warning"}, obsolete:{l:"Obsolète",c:"neutral"}, brouillon:{l:"Brouillon",c:"info"} },
+  docHealth:{ vert:{l:"Conforme",c:"success"}, orange:{l:"Vigilance",c:"warning"}, rouge:{l:"Action requise",c:"danger"} },
   riskLevel:{ critique:{l:"Critique",c:"danger"}, eleve:{l:"Élevé",c:"warning"}, faible:{l:"Faible",c:"success"}, opportunite:{l:"Opportunité",c:"info"} },
   riskStatus:{ ouvert:{l:"Ouvert",c:"warning"}, maitrise:{l:"Maîtrisé",c:"success"}, cloture:{l:"Clôturé",c:"neutral"} },
   eventType:{ non_conformite:"Non-conformité", incident:"Incident", reclamation:"Réclamation", anomalie:"Anomalie", suggestion:"Suggestion", amelioration:"Amélioration" },
@@ -299,6 +330,20 @@ const LABELS = {
   conclusionAmelioration:{ aucune_action_majeure:"Aucune action majeure", actions_amelioration:"Actions d'amélioration nécessaires", actions_prioritaires:"Actions prioritaires nécessaires" },
 };
 
+function normalizeDocuments(){
+  DB.documents.forEach(d=>{
+    d.requirementIds = d.requirementIds || [];
+    d.riskIds = d.riskIds || [];
+    d.auditIds = d.auditIds || [];
+    d.indicatorIds = d.indicatorIds || [];
+    d.actionIds = d.actionIds || [];
+    d.crossDocIds = d.crossDocIds || [];
+    d.flowSteps = d.flowSteps || [];
+    d.referentiels = d.referentiels || ["ISO 9001"];
+  });
+  if(!DB.trainings) DB.trainings = [];
+  if(!DB.documentTemplates) DB.documentTemplates = JSON.parse(JSON.stringify(QONNECT_SEED.documentTemplates));
+}
 function loadDB(){
   const seedCopy = JSON.parse(JSON.stringify(QONNECT_SEED));
   try{
@@ -323,10 +368,12 @@ function saveDB(){
 function resetDB(){
   localStorage.removeItem("qonnect_db_v1");
   DB = JSON.parse(JSON.stringify(QONNECT_SEED));
+  normalizeDocuments();
   saveDB();
 }
 
 let DB = loadDB();
+normalizeDocuments();
 
 /* ---------- helpers d'accès ---------- */
 const findBy = (arr,id)=> arr.find(x=>x.id===id);
@@ -345,6 +392,7 @@ const getOrientation = id => findBy(DB.orientations,id);
 const getReview = id => findBy(DB.managementReviews,id);
 const getLatestReview = ()=> DB.managementReviews[DB.managementReviews.length-1];
 const getDecision = (review,id)=> review ? findBy(review.decisions,id) : null;
+const getTemplate = id => findBy(DB.documentTemplates,id);
 
 function nextId(prefix, arr){
   let max = 0;

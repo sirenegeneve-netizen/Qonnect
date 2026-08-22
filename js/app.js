@@ -138,7 +138,13 @@ function render(){
         else html = pageRevueDirection(parts[1], parts[2]);
         break;
       case "processus": html = parts[1] ? pageProcessFiche(parts[1], parts[2]||"general") : pageProcessCarto(); break;
-      case "documents": html = parts[2] ? pageDocumentFiche(parts[2]) : pageDocuments(parts[1]||"all"); break;
+      case "documents":
+        if(["sante","cartographie","assistant","modeles"].includes(parts[1]) && !parts[2]){
+          html = parts[1]==="sante" ? pageDocumentSante() : parts[1]==="cartographie" ? pageDocumentCartographie() : parts[1]==="assistant" ? pageDocumentAssistant() : pageDocumentTemplates();
+        } else {
+          html = parts[2] ? pageDocumentFiche(parts[2], parts[3], parts[4]) : pageDocuments(parts[1]||"all");
+        }
+        break;
       case "risques": html = parts[1] ? pageRiskFiche(parts[1]) : pageRisks(); break;
       case "objectifs": html = pageObjectives(); break;
       case "evenements": html = parts[2] ? pageEventFiche(parts[2]) : pageEvents(parts[1]||"all"); break;
@@ -1367,7 +1373,7 @@ function indicatorCard(i){
 }
 
 /* ============================================================
-   7. DOCUMENTS
+   7. DOCUMENTS — système documentaire intelligent
    ============================================================ */
 const DOC_SECTIONS = [
   {key:"all", label:"Tous les documents"},
@@ -1382,6 +1388,67 @@ const DOC_SECTIONS = [
   {key:"obsolete", label:"Documents obsolètes"},
 ];
 
+/* ---------- Relations, santé documentaire, IA ---------- */
+function docRelations(doc){
+  const process = doc.processId ? getProcess(doc.processId) : null;
+  const isWorkDoc = doc.type==="procedure" || doc.type==="mode_operatoire" || doc.type==="instruction";
+  const risks = [...new Set([...(doc.riskIds||[]), ...(process && isWorkDoc ? DB.risks.filter(r=>r.processId===process.id && r.type==="risque").map(r=>r.id) : [])])].map(getRisk).filter(Boolean);
+  const audits = [...new Set([...(doc.auditIds||[]), ...(process ? DB.audits.filter(a=>a.processId===process.id).map(a=>a.id) : [])])].map(getAudit).filter(Boolean);
+  const indicators = [...new Set([...(doc.indicatorIds||[]), ...(process ? DB.indicators.filter(i=>i.processId===process.id).map(i=>i.id) : [])])].map(getIndicator).filter(Boolean);
+  const actions = [...new Set([...(doc.actionIds||[]), ...(process && isWorkDoc ? DB.actions.filter(a=>a.processId===process.id).map(a=>a.id) : [])])].map(getAction).filter(Boolean);
+  const requirements = (doc.requirementIds||[]).map(id=>findBy(DB.requirements,id)).filter(Boolean);
+  const trainings = DB.trainings.filter(t=>t.documentId===doc.id);
+  const changes = DB.changes.filter(c=>(c.impacted.documents||[]).includes(doc.id));
+  const events = process ? DB.events.filter(e=>e.processId===process.id && (e.type==="non_conformite"||e.type==="reclamation")) : [];
+  const crossDocs = (doc.crossDocIds||[]).map(getDocument).filter(Boolean);
+  return {process, risks, audits, indicators, actions, requirements, trainings, changes, events, crossDocs};
+}
+
+function documentHealthIssues(doc){
+  const issues = [];
+  const today = new Date();
+  if(doc.status==="a_reviser") issues.push({level:"warning", text:"Ce document est en attente de révision."});
+  if(doc.nextReview && doc.nextReview!=="—"){
+    const nr = new Date(doc.nextReview+"T00:00:00");
+    if(!isNaN(nr) && nr<today && doc.status!=="obsolete") issues.push({level:"danger", text:"La date de révision prévue ("+fmtDate(doc.nextReview)+") est dépassée."});
+  }
+  const rel = docRelations(doc);
+  rel.crossDocs.forEach(cd=>{ if(cd.status==="obsolete") issues.push({level:"danger", text:"Ce document référence un document obsolète : « "+cd.title+" »."}); });
+  (doc.riskIds||[]).forEach(id=>{ if(!getRisk(id)) issues.push({level:"danger", text:"Référence brisée vers un risque inexistant ("+id+")."}); });
+  (doc.auditIds||[]).forEach(id=>{ if(!getAudit(id)) issues.push({level:"danger", text:"Référence brisée vers un audit inexistant ("+id+")."}); });
+  if(doc.type==="procedure" && rel.risks.length===0) issues.push({level:"warning", text:"Aucun risque n'est associé à cette procédure."});
+  const dup = DB.documents.find(d=>d.id!==doc.id && d.processId===doc.processId && d.type===doc.type && d.status!=="obsolete" &&
+    d.title.toLowerCase().split(" ").filter(w=>w.length>4).some(w=>doc.title.toLowerCase().includes(w)));
+  if(dup) issues.push({level:"warning", text:"Ce document semble recouper « "+dup.title+" »."});
+  return issues;
+}
+function documentHealthStatus(doc){
+  const issues = documentHealthIssues(doc);
+  if(issues.some(i=>i.level==="danger")) return "rouge";
+  if(issues.some(i=>i.level==="warning")) return "orange";
+  return "vert";
+}
+
+function documentAIInsights(){
+  const insights = [];
+  DB.processes.forEach(p=>{
+    const hasProc = DB.documents.some(d=>d.processId===p.id && d.type==="procedure" && d.status!=="obsolete");
+    if(!hasProc) insights.push("Aucune procédure ne couvre actuellement le processus « "+p.name+" ».");
+  });
+  DB.requirements.filter(r=>r.status==="non_couvert").forEach(r=> insights.push("L'exigence "+r.ref+" — "+r.label+" — n'est couverte par aucun document."));
+  const aReviser = DB.documents.filter(d=>d.status==="a_reviser");
+  if(aReviser.length) insights.push(aReviser.length+" document(s) sont en attente de révision : "+aReviser.map(d=>d.ref).join(", ")+".");
+  const flagged = new Set();
+  DB.documents.filter(d=>d.status!=="obsolete").forEach(d=>{
+    const dup = DB.documents.find(d2=>d2.id!==d.id && d2.status!=="obsolete" && d2.processId===d.processId && d2.type===d.type &&
+      !flagged.has(d.id+"|"+d2.id) && !flagged.has(d2.id+"|"+d.id) &&
+      d.title.toLowerCase().split(" ").filter(w=>w.length>4).some(w=>d2.title.toLowerCase().includes(w)));
+    if(dup){ insights.push("Les documents « "+d.title+" » et « "+dup.title+" » semblent couvrir un sujet proche."); flagged.add(d.id+"|"+dup.id); }
+  });
+  return insights;
+}
+
+/* ---------- Hub documentaire ---------- */
 function pageDocuments(section){
   let docs;
   let title;
@@ -1390,13 +1457,16 @@ function pageDocuments(section){
   else { docs = DB.documents.filter(d=>d.type===section); title = DOC_SECTIONS.find(s=>s.key===section)?.label || "Documents"; }
 
   const chips = DOC_SECTIONS.map(s=>`<a class="chip ${s.key===section?'active':''}" data-route="documents/${s.key}">${esc(s.label)}</a>`).join("");
+  const healthCounts = {vert:0,orange:0,rouge:0};
+  DB.documents.filter(d=>d.status!=="obsolete").forEach(d=> healthCounts[documentHealthStatus(d)]++);
 
   const cards = docs.map(d=>{
     const p = getProcess(d.processId);
+    const health = documentHealthStatus(d);
     return `<div class="card card-hover" data-route="documents/${d.type}/${d.id}">
       <div class="flex justify-between items-center">
         <span class="text-xs" style="font-weight:700;">${esc(d.ref)}</span>
-        ${badge(LABELS.docStatus[d.status])}
+        <span class="flex gap-2 items-center">${health!=="vert"?badge(LABELS.docHealth[health]):""}${badge(LABELS.docStatus[d.status])}</span>
       </div>
       <h3 class="mt-2">${esc(d.title)}</h3>
       <p class="text-sm mt-2">${esc(LABELS.docType[d.type]||d.type)} · Version ${esc(d.version)}</p>
@@ -1405,65 +1475,245 @@ function pageDocuments(section){
   }).join("");
 
   return `
-  ${pageHeader("Documentation du SMQ", "Politique, charte, manuel, procédures, modes opératoires et enregistrements.",
+  ${pageHeader("Documentation du SMQ", "Chaque document est relié aux processus, risques, audits, indicateurs et actions qu'il impacte.",
     `<button class="btn btn-primary" data-open-quick="document">+ Nouveau document</button>`)}
+  <div class="quick-actions mb-4">
+    <button class="qa-btn" data-route="documents/sante">🏥 Santé documentaire ${healthCounts.rouge?`<span class="badge badge-danger" style="margin-left:4px;"><span class="badge-dot"></span>${healthCounts.rouge}</span>`:""}</button>
+    <button class="qa-btn" data-route="documents/cartographie">📐 Cartographie normative</button>
+    <button class="qa-btn" data-route="documents/assistant">🤖 Assistant documentaire</button>
+    <button class="qa-btn" data-route="documents/modeles">📚 Bibliothèque de modèles</button>
+  </div>
   <div class="filters-bar">${chips}</div>
   <h2 class="mb-2" style="font-size:15px;color:var(--text-secondary);font-weight:650;">${esc(title)} (${docs.length})</h2>
   ${docs.length ? `<div class="grid grid-3">${cards}</div>` : `<div class="card">${emptyState("📭","Aucun document","Aucun document dans cette catégorie pour le moment.")}</div>`}`;
 }
 
-function pageDocumentFiche(id){
+function pageDocumentSante(){
+  const docs = DB.documents.filter(d=>d.status!=="obsolete");
+  const withStatus = docs.map(d=>({doc:d, status:documentHealthStatus(d), issues:documentHealthIssues(d)}));
+  const groupLabel = {vert:"🟢 Conforme", orange:"🟠 Vigilance", rouge:"🔴 Action requise"};
+  return `
+  ${breadcrumb([{label:"Documents",href:"#/documents/all"},{label:"Santé documentaire"}])}
+  ${pageHeader("Santé documentaire","Détection automatique des incohérences, références brisées et documents à surveiller.")}
+  <div class="grid grid-3">${["rouge","orange","vert"].map(st=>`
+    <div class="card">
+      <h3 class="mb-2">${groupLabel[st]} (${withStatus.filter(w=>w.status===st).length})</h3>
+      ${withStatus.filter(w=>w.status===st).map(w=>`<div class="rel-link" data-route="documents/${w.doc.type}/${w.doc.id}/sante"><span class="rel-name">${esc(w.doc.title)}</span><span class="text-xs">${w.issues.length?w.issues.length+" point(s)":""}</span></div>`).join("") || `<p class="text-sm">Aucun</p>`}
+    </div>`).join("")}</div>`;
+}
+
+function pageDocumentCartographie(){
+  return `
+  ${breadcrumb([{label:"Documents",href:"#/documents/all"},{label:"Cartographie normative"}])}
+  ${pageHeader("Cartographie normative","Quelle exigence est couverte par quel document — et inversement.")}
+  ${dataTable(
+    [ {label:"Exigence", render:r=>`<strong>${esc(r.ref)}</strong> — ${esc(r.label)}`},
+      {label:"Processus", render:r=>{const p=getProcess(r.processId); return p?esc(p.name):"—";}},
+      {label:"Couverture", render:r=>{
+        const docs = DB.documents.filter(d=>(d.requirementIds||[]).includes(r.id) && d.status!=="obsolete");
+        return docs.length ? badgeRaw("success","Oui — "+docs.map(d=>d.ref).join(", ")) : badgeRaw(r.status==="non_couvert"?"danger":"neutral","Non");
+      }} ],
+    DB.requirements
+  )}`;
+}
+
+function pageDocumentAssistant(){
+  const insights = documentAIInsights();
+  return `
+  ${breadcrumb([{label:"Documents",href:"#/documents/all"},{label:"Assistant documentaire"}])}
+  ${pageHeader("Assistant documentaire","Analyse automatique de la documentation du SMQ à partir des données réelles.")}
+  <div class="card">
+    ${insights.length ? `<ul>${insights.map(i=>`<li class="text-sm mt-2">${esc(i)}</li>`).join("")}</ul>` : `<p class="text-sm">Aucune incohérence détectée sur la documentation actuelle. 👍</p>`}
+    <p class="text-xs mt-4">Analyse générée à partir des données disponibles dans Qonnect. Ne remplace pas le jugement du responsable qualité.</p>
+  </div>`;
+}
+
+function pageDocumentTemplates(){
+  return `
+  ${breadcrumb([{label:"Documents",href:"#/documents/all"},{label:"Bibliothèque de modèles"}])}
+  ${pageHeader("Bibliothèque de modèles","Modèles prêts à l'emploi pour ISO 9001, ISO 13485 et ISO 27001. Choisissez-en un puis adaptez-le.")}
+  <div class="grid grid-3">${DB.documentTemplates.map(t=>`
+    <div class="card">
+      <span class="badge badge-info">${esc(t.referentiel)}</span>
+      <h3 class="mt-2">${esc(t.title)}</h3>
+      <p class="text-xs mt-2">${t.sections.length} sections : ${t.sections.slice(0,3).map(esc).join(", ")}${t.sections.length>3?"…":""}</p>
+      <button class="btn btn-secondary btn-sm mt-4" data-open-quick="document" data-preset-template="${t.id}">Utiliser ce modèle</button>
+    </div>`).join("")}</div>`;
+}
+
+/* ---------- Fiche document ---------- */
+const DOC_VIEWS = [{id:"direction",l:"Vue Direction"},{id:"responsable",l:"Vue Responsable"},{id:"operationnelle",l:"Vue Opérationnelle"},{id:"auditeur",l:"Vue Auditeur"}];
+
+function docTabsHtml(doc, active){
+  const tabs = [
+    {id:"contenu",label:"Contenu"}, {id:"relations",label:"Relations"}, {id:"exigences",label:"Exigences"},
+    {id:"impact",label:"Impact"}, {id:"historique",label:"Historique"}, {id:"formation",label:"Formation"}, {id:"sante",label:"Santé documentaire"},
+  ];
+  return `<div class="tabs">${tabs.map(t=>`<button class="tab ${t.id===active?'active':''}" data-route="documents/${doc.type}/${doc.id}/${t.id}">${esc(t.label)}</button>`).join("")}</div>`;
+}
+
+function docFlowchartHtml(steps){
+  return `<div class="conn-diagram" style="gap:10px;">${steps.map((s,i)=>`${i>0?'<div class="conn-arrow"></div>':''}<div class="conn-node" style="cursor:default;"><div class="cn-label" style="font-weight:700;">${esc(s)}</div></div>`).join("")}</div>`;
+}
+
+function pageDocumentFiche(id, tab, view){
   const d = getDocument(id);
   if(!d) return emptyState("📄","Document introuvable","Ce document n'existe pas.");
-  const p = getProcess(d.processId);
-  const relatedRisks = DB.risks.filter(r=>d.type==="procedure" && r.processId===d.processId).slice(0,3);
-  const relatedActions = DB.actions.filter(a=>a.processId===d.processId).slice(0,3);
-  const relatedAudits = DB.audits.filter(a=>a.processId===d.processId).slice(0,2);
-  const history = DB.documentHistory[d.id] || [{version:d.version, date:d.date, note:"Version en vigueur"}];
+  tab = tab || "contenu";
+  view = view || "responsable";
+  const rel = docRelations(d);
+  const health = documentHealthStatus(d);
+  const p = rel.process;
 
-  return `
+  const header = `
   ${breadcrumb([{label:"Documents",href:"#/documents/all"},{label:LABELS.docType[d.type]||d.type,href:"#/documents/"+d.type},{label:d.title}])}
-  <div class="grid" style="grid-template-columns:2fr 1fr;gap:24px;">
-    <div>
-      <div class="card mb-2">
-        <div class="flex justify-between items-center">
-          <span class="badge badge-neutral">${esc(d.ref)}</span>
-          ${badge(LABELS.docStatus[d.status])}
-        </div>
-        <h1 class="mt-2">${esc(d.title)}</h1>
-        <p class="section-sub mt-2">${esc(LABELS.docType[d.type]||d.type)} · Version ${esc(d.version)}</p>
-        <div class="grid grid-2 mt-4">
-          <div><div class="text-xs">AUTEUR</div><div class="text-sm" style="color:var(--text-primary)">${esc(d.author)}</div></div>
-          <div><div class="text-xs">APPROBATEUR</div><div class="text-sm" style="color:var(--text-primary)">${esc(d.approver)}</div></div>
-          <div><div class="text-xs">DATE</div><div class="text-sm" style="color:var(--text-primary)">${fmtDate(d.date)}</div></div>
-          <div><div class="text-xs">PROCHAINE RÉVISION</div><div class="text-sm" style="color:var(--text-primary)">${fmtDate(d.nextReview)}</div></div>
-        </div>
+  <div class="card mb-2">
+    <div class="flex justify-between items-center" style="flex-wrap:wrap;gap:10px;">
+      <div class="flex gap-2 items-center">
+        <span class="badge badge-neutral">${esc(d.ref)}</span>
+        ${badge(LABELS.docStatus[d.status])}
+        ${badge(LABELS.docHealth[health])}
       </div>
-      <div class="card mb-2">
-        <h3 class="mb-2">Contenu</h3>
-        <p class="text-sm" style="color:var(--text-primary);line-height:1.7;">${esc(d.body)}</p>
-      </div>
-      <div class="card">
-        <h3 class="mb-2">Historique</h3>
-        ${history.map(h=>`<div class="rel-link"><span class="rel-name">Version ${esc(h.version)}</span><span class="text-sm">${fmtDate(h.date)}${h.note?" · "+esc(h.note):""}</span></div>`).join("")}
+      <div class="flex gap-2">
+        <button class="btn btn-secondary btn-sm" data-print>🖨 Exporter (démo)</button>
+        <button class="btn btn-danger btn-sm" data-archive-doc="${d.id}">Archiver</button>
       </div>
     </div>
-    <div>
-      <div class="card mb-2">
-        <h3 class="mb-2">Document associé à</h3>
-        ${p?`<div class="rel-link" data-route="processus/${p.id}"><span class="rel-name">🧩 ${esc(p.name)}</span><span class="chev">›</span></div>`:""}
-        ${relatedRisks.map(r=>`<div class="rel-link" data-route="risques/${r.id}"><span class="rel-name">⚠️ ${esc(r.name)}</span><span class="chev">›</span></div>`).join("")}
-        ${relatedActions.map(a=>`<div class="rel-link" data-route="actions"><span class="rel-name">✅ ${esc(a.title)}</span><span class="chev">›</span></div>`).join("")}
-        ${relatedAudits.map(a=>`<div class="rel-link" data-route="audits/${a.id}"><span class="rel-name">🔍 ${esc(a.title)}</span><span class="chev">›</span></div>`).join("")}
-        ${(!p && !relatedRisks.length && !relatedActions.length && !relatedAudits.length)?`<p class="text-sm">Aucune relation enregistrée.</p>`:""}
-      </div>
-      <div class="card">
-        <h3 class="mb-2">Actions</h3>
-        <button class="btn btn-secondary btn-block mb-2" data-print>🖨 Exporter en PDF (démo)</button>
-        <button class="btn btn-danger btn-block" data-archive-doc="${d.id}">Archiver</button>
-      </div>
+    <h1 class="mt-2">${esc(d.title)}</h1>
+    <p class="section-sub mt-2">${esc(LABELS.docType[d.type]||d.type)} · Version ${esc(d.version)}${p?" · Processus : "+esc(p.name):""}</p>
+    <div class="grid grid-4 mt-4">
+      <div><div class="text-xs">AUTEUR</div><div class="text-sm" style="color:var(--text-primary)">${esc(d.author)}</div></div>
+      <div><div class="text-xs">APPROBATEUR</div><div class="text-sm" style="color:var(--text-primary)">${esc(d.approver)}</div></div>
+      <div><div class="text-xs">DATE</div><div class="text-sm" style="color:var(--text-primary)">${fmtDate(d.date)}</div></div>
+      <div><div class="text-xs">PROCHAINE RÉVISION</div><div class="text-sm" style="color:var(--text-primary)">${fmtDate(d.nextReview)}</div></div>
     </div>
-  </div>`;
+  </div>
+  ${docTabsHtml(d, tab)}`;
+
+  let body = "";
+  if(tab==="contenu") body = docTabContenu(d, rel, view);
+  else if(tab==="relations") body = docTabRelations(d, rel);
+  else if(tab==="exigences") body = docTabExigences(d, rel);
+  else if(tab==="impact") body = docTabImpact(d, rel);
+  else if(tab==="historique") body = docTabHistorique(d);
+  else if(tab==="formation") body = docTabFormation(d, rel);
+  else if(tab==="sante") body = docTabSante(d);
+
+  return header + body;
+}
+
+function docTabContenu(d, rel, view){
+  const chips = DOC_VIEWS.map(v=>`<a class="chip ${v.id===view?'active':''}" data-route="documents/${d.type}/${d.id}/contenu/${v.id}">${esc(v.l)}</a>`).join("");
+  let inner = "";
+  if(view==="direction"){
+    const summary = d.body.split("\n")[0].slice(0,240);
+    inner = `<div class="card">
+      <h3 class="mb-2">Résumé exécutif</h3>
+      <p class="text-sm" style="color:var(--text-primary)">${esc(summary)}${d.body.length>240?"…":""}</p>
+      <div class="grid grid-4 mt-4">
+        <div class="kpi"><div class="val">${rel.risks.length}</div><div class="lbl">Risques</div></div>
+        <div class="kpi"><div class="val">${rel.audits.length}</div><div class="lbl">Audits</div></div>
+        <div class="kpi"><div class="val">${rel.actions.length}</div><div class="lbl">Actions</div></div>
+        <div class="kpi"><div class="val">${rel.requirements.length}</div><div class="lbl">Exigences</div></div>
+      </div>
+    </div>`;
+  } else if(view==="operationnelle"){
+    inner = `<div class="card">
+      ${d.flowSteps.length?`<h3 class="mb-2">Étapes</h3>${docFlowchartHtml(d.flowSteps)}`:""}
+      <h3 class="mb-2 mt-4">L'essentiel</h3>
+      <p class="text-sm" style="color:var(--text-primary);line-height:1.7;">${esc(d.body.split("\n").slice(0,4).join(" "))}</p>
+      ${rel.crossDocs.length?`<h3 class="mb-2 mt-4">Formulaires et enregistrements associés</h3>${rel.crossDocs.map(cd=>`<div class="rel-link" data-route="documents/${cd.type}/${cd.id}"><span class="rel-name">${esc(cd.title)}</span></div>`).join("")}`:""}
+    </div>`;
+  } else if(view==="auditeur"){
+    inner = `<div class="card">
+      <h3 class="mb-2">Contenu</h3>
+      <p class="text-sm" style="color:var(--text-primary);line-height:1.7;white-space:pre-line;">${esc(d.body)}</p>
+      <h3 class="mb-2 mt-4">Exigences couvertes</h3>
+      ${rel.requirements.length?rel.requirements.map(r=>`<div class="rel-link"><span class="rel-name">${esc(r.ref)} — ${esc(r.label)}</span>${badgeRaw("success","Couverte")}</div>`).join(""):`<p class="text-sm">Aucune exigence explicitement associée.</p>`}
+      <h3 class="mb-2 mt-4">Preuves associées</h3>
+      ${rel.audits.map(a=>`<div class="rel-link" data-route="audits/${a.id}"><span class="rel-name">🔍 ${esc(a.title)}</span></div>`).join("")}
+      ${rel.actions.map(a=>`<div class="rel-link" data-route="actions"><span class="rel-name">✅ ${esc(a.title)}</span></div>`).join("")}
+      ${(!rel.audits.length && !rel.actions.length)?`<p class="text-sm">Aucune preuve associée pour le moment.</p>`:""}
+    </div>`;
+  } else {
+    inner = `<div class="card">
+      ${d.flowSteps.length?`<h3 class="mb-2">Logigramme</h3>${docFlowchartHtml(d.flowSteps)}<div class="mt-4"></div>`:""}
+      <h3 class="mb-2">Contenu</h3>
+      <p class="text-sm" style="color:var(--text-primary);line-height:1.7;white-space:pre-line;">${esc(d.body)}</p>
+    </div>`;
+  }
+  return `<div class="filters-bar">${chips}</div>${inner}`;
+}
+
+function docTabRelations(d, rel){
+  const section = (title, items, routeFn, icon)=> items.length? `<div class="card mb-2"><h3 class="mb-2">${esc(title)}</h3>${items.map(x=>`<div class="rel-link" data-route="${routeFn(x)}"><span class="rel-name">${icon} ${esc(x.name||x.title)}</span><span class="chev">›</span></div>`).join("")}</div>` : "";
+  const hasAny = rel.process || rel.risks.length || rel.audits.length || rel.indicators.length || rel.actions.length || rel.changes.length || rel.crossDocs.length || rel.events.length;
+  return `
+  ${rel.process?`<div class="card mb-2"><h3 class="mb-2">Processus</h3><div class="rel-link" data-route="processus/${rel.process.id}"><span class="rel-name">🧩 ${esc(rel.process.name)}</span><span class="chev">›</span></div></div>`:""}
+  ${section("Risques associés", rel.risks, r=>"risques/"+r.id, "⚠️")}
+  ${section("Audits associés", rel.audits, a=>"audits/"+a.id, "🔍")}
+  ${section("Indicateurs associés", rel.indicators, i=>"objectifs", "📊")}
+  ${section("Actions associées", rel.actions, a=>"actions", "✅")}
+  ${section("Changements associés", rel.changes, c=>"changements/"+c.id, "🔄")}
+  ${section("Non-conformités / réclamations associées", rel.events, e=>"evenements/"+e.type+"/"+e.id, "🚨")}
+  ${section("Documents liés", rel.crossDocs, cd=>"documents/"+cd.type+"/"+cd.id, "📄")}
+  ${!hasAny ? `<div class="card">${emptyState("🔗","Aucune relation","Ce document n'est pas encore relié à d'autres éléments du SMQ.")}</div>` : ""}
+  `;
+}
+
+function docTabExigences(d, rel){
+  return `
+  <div class="card mb-2"><p class="text-sm">Référentiel(s) associé(s) : ${(d.referentiels||[]).map(esc).join(", ")||"—"}</p></div>
+  ${rel.requirements.length? dataTable(
+    [ {label:"Exigence", render:r=>`<strong>${esc(r.ref)}</strong>`}, {label:"Libellé", render:r=>esc(r.label)}, {label:"Couverture", render:()=>badgeRaw("success","Oui")} ],
+    rel.requirements
+  ) : `<div class="card">${emptyState("📐","Aucune exigence associée","Ce document n'est pas encore relié à une exigence normative précise.")}</div>`}`;
+}
+
+function docTabImpact(d, rel){
+  const otherDocs = DB.documents.filter(d2=>d2.id!==d.id && d2.processId===d.processId && d.processId && d2.status!=="obsolete");
+  return `
+  <div class="card mb-4">
+    <h3 class="mb-2">Si ce document est modifié, cela impacte :</h3>
+    <div class="grid grid-4">
+      <div class="kpi"><div class="val">${rel.process?1:0}</div><div class="lbl">Processus</div></div>
+      <div class="kpi"><div class="val">${rel.risks.length}</div><div class="lbl">Risques</div></div>
+      <div class="kpi"><div class="val">${rel.audits.length}</div><div class="lbl">Audits</div></div>
+      <div class="kpi"><div class="val">${rel.actions.filter(a=>a.status!=="termine").length}</div><div class="lbl">Actions ouvertes</div></div>
+      <div class="kpi"><div class="val">${rel.trainings.length}</div><div class="lbl">Formation(s)</div></div>
+      <div class="kpi"><div class="val">${otherDocs.length}</div><div class="lbl">Autres documents</div></div>
+    </div>
+  </div>
+  ${otherDocs.length?`<div class="card"><h3 class="mb-2">Autres documents du même processus</h3>${otherDocs.map(od=>`<div class="rel-link" data-route="documents/${od.type}/${od.id}"><span class="rel-name">${esc(od.title)}</span></div>`).join("")}</div>`:""}
+  `;
+}
+
+function docTabHistorique(d){
+  const history = DB.documentHistory[d.id] || [{version:d.version, date:d.date, note:"Version en vigueur"}];
+  return `<div class="card">${history.map(h=>`<div class="rel-link"><span class="rel-name">Version ${esc(h.version)}</span><span class="text-sm">${fmtDate(h.date)}${h.note?" · "+esc(h.note):""}</span></div>`).join("")}</div>`;
+}
+
+function docTabFormation(d, rel){
+  return `
+  <div class="flex justify-between items-center mb-2"><span></span><button class="btn btn-primary btn-sm" data-open-training-form="${d.id}">+ Lancer une campagne de lecture</button></div>
+  ${rel.trainings.length? rel.trainings.map(t=>{
+    const pct = Math.round(t.completedBy.length/Math.max(t.audience.length,1)*100);
+    return `<div class="card mb-2">
+      <div class="flex justify-between items-center"><h3>${esc(t.title)}</h3><span class="text-sm" style="font-weight:700;">${pct}%</span></div>
+      <div class="progress mt-2"><div style="width:${pct}%"></div></div>
+      <p class="text-xs mt-2">Échéance : ${fmtDate(t.dueDate)}${t.quiz?" · Quiz associé":""}</p>
+      <div class="mt-2">${t.audience.map(name=>`<span class="badge ${t.completedBy.includes(name)?'badge-success':'badge-neutral'}" style="margin-right:6px;margin-top:6px;display:inline-flex;">${t.completedBy.includes(name)?"✓ ":""}${esc(name)}</span>`).join("")}</div>
+      ${t.audience.some(n=>!t.completedBy.includes(n))?`<button class="btn btn-secondary btn-sm mt-4" data-mark-training-read="${t.id}">Marquer une lecture</button>`:""}
+    </div>`;
+  }).join("") : `<div class="card">${emptyState("🎓","Aucune campagne","Aucune prise de connaissance n'a encore été organisée pour ce document.")}</div>`}`;
+}
+
+function docTabSante(d){
+  const issues = documentHealthIssues(d);
+  const status = documentHealthStatus(d);
+  return `
+  <div class="card mb-4"><div class="flex items-center gap-3">${badge(LABELS.docHealth[status])}<span class="text-sm">${issues.length} point(s) détecté(s)</span></div></div>
+  ${issues.length? issues.map(i=>`<div class="card mb-2"><p class="text-sm">${i.level==="danger"?"🔴":"🟠"} ${esc(i.text)}</p></div>`).join("") : `<div class="card">${emptyState("🟢","Aucune anomalie détectée","Ce document est cohérent avec le reste du système documentaire.")}</div>`}`;
 }
 
 /* ============================================================
@@ -2196,49 +2446,7 @@ function openQuickForm(kind, presets, triggerEl){
   }
 
   else if(kind==="document"){
-    openModal({title:"Nouveau document", wide:true,
-      bodyHtml:`
-        <div class="field"><label>Type de document <span class="req">*</span></label>
-          <select id="qf-type">
-            <option value="politique">Politique qualité</option><option value="charte">Charte qualité</option>
-            <option value="manuel">Manuel qualité</option><option value="procedure">Procédure</option>
-            <option value="mode_operatoire">Mode opératoire</option><option value="instruction">Instruction</option>
-            <option value="formulaire">Formulaire</option>
-          </select></div>
-        <div class="field"><label>Titre <span class="req">*</span></label><input type="text" id="qf-title" placeholder="Ex : Gestion des non-conformités"></div>
-        <div class="field-row">
-          <div class="field"><label>Référence</label><input type="text" id="qf-ref" placeholder="Ex : PR-020"></div>
-          <div class="field"><label>Processus</label><select id="qf-process"><option value="">—</option>${processOptions}</select></div>
-        </div>
-        <div id="qf-procedure-template" class="field hidden">
-          <label>Trame proposée pour une procédure</label>
-          <div class="text-sm" style="line-height:1.9;color:var(--text-primary);">
-            1. Objet · 2. Champ d'application · 3. Responsabilités · 4. Définitions · 5. Déroulement<br>
-            6. Documents associés · 7. Enregistrements · 8. Indicateurs · 9. Risques · 10. Références
-          </div>
-        </div>
-        <div class="field"><label>Contenu</label>
-          <div class="editor-toolbar"><button type="button">B</button><button type="button"><i>I</i></button><button type="button">H1</button><button type="button">• Liste</button></div>
-          <div class="editor-area" id="qf-body" contenteditable="true">Rédigez le contenu du document…</div>
-        </div>`,
-      footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">Créer le document</button>`,
-      onMount:(o)=>{
-        const typeSel = o.querySelector("#qf-type");
-        const toggleTpl = ()=> o.querySelector("#qf-procedure-template").classList.toggle("hidden", typeSel.value!=="procedure");
-        typeSel.addEventListener("change", toggleTpl); toggleTpl();
-        o.querySelector("#qf-submit").addEventListener("click", ()=>{
-          const title = o.querySelector("#qf-title").value.trim();
-          if(!title){ toast("Merci de saisir un titre","⚠️"); return; }
-          const type = typeSel.value;
-          const id = nextId("DOC", DB.documents);
-          const ref = o.querySelector("#qf-ref").value.trim() || (type.slice(0,3).toUpperCase()+"-"+String(DB.documents.length+20).padStart(3,"0"));
-          DB.documents.push({ id, ref, title, type, version:"1.0", status:"brouillon",
-            processId:o.querySelector("#qf-process").value||presets.processId||null, author:"Vous", approver:"—",
-            date:new Date().toISOString().slice(0,10), nextReview:"—", body:o.querySelector("#qf-body").innerText.trim() });
-          saveDB(); closeModal(); toast("Document créé avec succès"); navigate(`documents/${type}/${id}`);
-        });
-      }
-    });
+    openDocumentWizard(presets);
   }
 
   else if(kind==="objective"){
@@ -2329,6 +2537,129 @@ function openQuickForm(kind, presets, triggerEl){
       });}
     });
   }
+}
+
+/* ============================================================
+   19bis-doc. ASSISTANT DE CRÉATION DOCUMENTAIRE (formulaire progressif)
+   ============================================================ */
+const DOC_WIZARD_TYPES = [
+  {v:"politique",l:"Politique",icon:"📜"}, {v:"charte",l:"Charte",icon:"📗"}, {v:"manuel",l:"Manuel",icon:"📘"},
+  {v:"processus",l:"Processus",icon:"🧩"}, {v:"procedure",l:"Procédure",icon:"📄"}, {v:"mode_operatoire",l:"Mode opératoire",icon:"🛠️"},
+  {v:"instruction",l:"Instruction",icon:"📋"}, {v:"formulaire",l:"Formulaire",icon:"🧾"}, {v:"enregistrement",l:"Enregistrement",icon:"🗂️"},
+  {v:"modele",l:"Modèle",icon:"📐"}, {v:"guide",l:"Guide",icon:"📖"}, {v:"referentiel_interne",l:"Référentiel interne",icon:"📚"},
+];
+const DOC_WIZARD_REFERENTIELS = ["ISO 9001","ISO 13485","ISO 27001","ISO 14971","RGPD","Référentiel interne"];
+const DOC_STANDARD_SECTIONS = ["Objet","Domaine d'application","Définitions","Responsabilités","Description du processus","Enregistrements associés","Risques associés","Indicateurs associés","Références normatives","Historique des versions"];
+
+function openDocumentWizard(presets){
+  presets = presets || {};
+  const state = { step:1, type:null, processId:presets.processId||"", referentiels:[], templateId:null, title:"" };
+  if(presets.templateId){
+    const tpl = getTemplate(presets.templateId);
+    if(tpl){ state.type = tpl.forType; state.templateId = tpl.id; state.title = tpl.title; state.referentiels = [tpl.referentiel]; state.step = 2; }
+  }
+  const stepTitles = ["Type de document","Processus concerné","Référentiels associés","Structure & récapitulatif"];
+  const processOptions = ()=> DB.processes.map(p=>`<option value="${p.id}" ${state.processId===p.id?"selected":""}>${esc(p.name)}</option>`).join("");
+
+  function stepBody(){
+    const progress = `<div class="stepper-progress">${[1,2,3,4].map(i=>`<div class="${i<=state.step?'done':''}"></div>`).join("")}</div>
+      <div class="step-title">Étape ${state.step}/4 — ${esc(stepTitles[state.step-1])}</div>`;
+    if(state.step===1){
+      return progress + `<div class="grid grid-3">${DOC_WIZARD_TYPES.map(t=>`
+        <div class="card card-hover" style="text-align:center;padding:16px;${state.type===t.v?'border-color:var(--primary);background:var(--primary-soft);':''}" data-wiz-pick-type="${t.v}">
+          <div style="font-size:22px;">${t.icon}</div><div class="text-sm mt-2" style="font-weight:600;">${esc(t.l)}</div>
+        </div>`).join("")}</div>`;
+    }
+    if(state.step===2){
+      return progress + `<div class="field"><label>Processus concerné</label><select id="wiz-process"><option value="">—</option>${processOptions()}</select></div>
+        <p class="text-sm">Qonnect reliera automatiquement ce document aux risques, indicateurs et exigences déjà associés à ce processus.</p>`;
+    }
+    if(state.step===3){
+      return progress + `<div class="field"><label>Référentiels associés (plusieurs choix possibles)</label>
+        ${DOC_WIZARD_REFERENTIELS.map(r=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="wiz-ref-cb" value="${esc(r)}" ${state.referentiels.includes(r)?"checked":""} style="width:auto;"> ${esc(r)}</label>`).join("")}
+      </div>`;
+    }
+    const templates = DB.documentTemplates.filter(t=>t.forType===state.type && (state.referentiels.length===0 || state.referentiels.includes(t.referentiel)));
+    const reqSuggested = state.processId ? DB.requirements.filter(r=>r.processId===state.processId) : [];
+    return progress + `
+      <div class="field"><label>Titre du document <span class="req">*</span></label><input type="text" id="wiz-title" value="${esc(state.title)}" placeholder="Ex : Gestion des non-conformités"></div>
+      ${templates.length?`<div class="field"><label>Modèle de la bibliothèque (optionnel — génère automatiquement la structure)</label>
+        <div class="grid grid-2">${templates.map(t=>`<div class="card card-hover" style="padding:12px;${state.templateId===t.id?'border-color:var(--primary);background:var(--primary-soft);':''}" data-wiz-pick-template="${t.id}">
+          <div class="text-sm" style="font-weight:600;">${esc(t.title)}</div><div class="text-xs mt-2">${esc(t.referentiel)} · ${t.sections.length} sections</div>
+        </div>`).join("")}</div></div>`:`<p class="text-sm">Aucun modèle disponible pour ce type — une structure standard sera générée automatiquement.</p>`}
+      ${reqSuggested.length?`<p class="text-xs mt-2">🔗 ${reqSuggested.length} exigence(s) du processus seront automatiquement associées : ${reqSuggested.map(r=>esc(r.ref)).join(", ")}.</p>`:""}
+    `;
+  }
+  function stepFoot(){
+    return `
+      ${state.step>1?`<button class="btn btn-secondary" id="wiz-prev">← Précédent</button>`:`<button class="btn btn-secondary" data-close-modal>Annuler</button>`}
+      ${state.step<4?`<button class="btn btn-primary" id="wiz-next">Suivant →</button>`:`<button class="btn btn-primary" id="wiz-finish">Créer le document</button>`}
+    `;
+  }
+  function refresh(o){
+    o.querySelector(".modal-body").innerHTML = stepBody();
+    o.querySelector(".modal-foot").innerHTML = stepFoot();
+    mount(o);
+  }
+  function mount(o){
+    if(state.step===1){
+      o.querySelectorAll("[data-wiz-pick-type]").forEach(el=>el.addEventListener("click", ()=>{ state.type = el.getAttribute("data-wiz-pick-type"); refresh(o); }));
+    }
+    if(state.step===4){
+      o.querySelectorAll("[data-wiz-pick-template]").forEach(el=>el.addEventListener("click", ()=>{
+        state.templateId = el.getAttribute("data-wiz-pick-template");
+        const tpl = getTemplate(state.templateId); if(tpl && !state.title) state.title = tpl.title;
+        refresh(o);
+      }));
+      const titleInput = o.querySelector("#wiz-title"); if(titleInput) titleInput.addEventListener("input", e=> state.title = e.target.value);
+    }
+    const prevBtn = o.querySelector("#wiz-prev"); if(prevBtn) prevBtn.addEventListener("click", ()=>{ state.step--; refresh(o); });
+    const nextBtn = o.querySelector("#wiz-next"); if(nextBtn) nextBtn.addEventListener("click", ()=>{
+      if(state.step===1 && !state.type){ toast("Choisissez un type de document","⚠️"); return; }
+      if(state.step===2){ state.processId = o.querySelector("#wiz-process").value; }
+      if(state.step===3){ state.referentiels = [...o.querySelectorAll(".wiz-ref-cb:checked")].map(c=>c.value); }
+      state.step++; refresh(o);
+    });
+    const finishBtn = o.querySelector("#wiz-finish"); if(finishBtn) finishBtn.addEventListener("click", ()=>{
+      const title = (o.querySelector("#wiz-title")?.value || state.title).trim();
+      if(!title){ toast("Merci de saisir un titre","⚠️"); return; }
+      const tpl = state.templateId ? getTemplate(state.templateId) : null;
+      const sections = tpl ? tpl.sections : (["procedure","mode_operatoire","instruction"].includes(state.type) ? DOC_STANDARD_SECTIONS : null);
+      const body = sections ? sections.map(s=>s+"\n—").join("\n\n") : "Rédigez le contenu du document…";
+      const id = nextId("DOC", DB.documents);
+      const ref = (state.type||"doc").slice(0,3).toUpperCase()+"-"+String(DB.documents.length+20).padStart(3,"0");
+      const reqSuggested = state.processId ? DB.requirements.filter(r=>r.processId===state.processId).map(r=>r.id) : [];
+      DB.documents.push({ id, ref, title, type:state.type, version:"1.0", status:"brouillon", processId:state.processId||null,
+        author:"Vous", approver:"—", date:new Date().toISOString().slice(0,10), nextReview:"—", body,
+        requirementIds:reqSuggested, riskIds:[], auditIds:[], indicatorIds:[], actionIds:[], crossDocIds:[], flowSteps:[],
+        referentiels: state.referentiels.length ? state.referentiels : ["ISO 9001"] });
+      saveDB(); closeModal(); toast("Document créé — structure générée automatiquement");
+      navigate(`documents/${state.type}/${id}`);
+    });
+  }
+
+  openModal({title:"Nouveau document", wide:true, bodyHtml:stepBody(), footHtml:stepFoot(), onMount:mount});
+}
+
+function openTrainingForm(documentId){
+  const d = getDocument(documentId);
+  const p = d.processId ? getProcess(d.processId) : null;
+  const suggested = p ? [p.pilot] : [];
+  openModal({title:"Lancer une campagne de lecture",
+    bodyHtml:`
+      <p class="text-sm mb-2">Document : <strong>${esc(d.title)}</strong></p>
+      <div class="field"><label>Personnes concernées (une par ligne)</label><textarea id="qf-audience" placeholder="Nom de chaque personne concernée">${suggested.join("\n")}</textarea></div>
+      <div class="field"><label>Échéance</label><input type="date" id="qf-due"></div>
+      <div class="field"><label><input type="checkbox" id="qf-quiz" style="width:auto;margin-right:6px;">Associer un quiz de validation</label></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">Lancer la campagne</button>`,
+    onMount:(o)=>{ o.querySelector("#qf-submit").addEventListener("click", ()=>{
+      const audience = o.querySelector("#qf-audience").value.split("\n").map(s=>s.trim()).filter(Boolean);
+      if(!audience.length){ toast("Ajoutez au moins une personne concernée","⚠️"); return; }
+      const id = "TRN-"+String(Date.now()).slice(-6);
+      DB.trainings.push({ id, documentId, title:"Prise de connaissance — "+d.title+" v"+d.version, audience, completedBy:[], quiz:o.querySelector("#qf-quiz").checked, dueDate:o.querySelector("#qf-due").value||"—" });
+      saveDB(); closeModal(); toast("Campagne de lecture lancée"); render();
+    });}
+  });
 }
 
 /* ============================================================
@@ -2660,6 +2991,7 @@ function initGlobalEvents(){
         originType: quickEl.getAttribute("data-preset-origin-type")||null,
         originId: quickEl.getAttribute("data-preset-origin-id")||null,
         auditId: quickEl.getAttribute("data-preset-audit")||null,
+        templateId: quickEl.getAttribute("data-preset-template")||null,
       });
       return;
     }
@@ -2764,6 +3096,15 @@ function initGlobalEvents(){
       confirmDialog("Archiver ce document ? Il apparaîtra dans les documents obsolètes.", ()=>{
         const d = getDocument(id); d.status="obsolete"; saveDB(); toast("Document archivé"); navigate("documents/obsolete");
       });
+      return;
+    }
+    const trainFormEl = e.target.closest("[data-open-training-form]");
+    if(trainFormEl){ openTrainingForm(trainFormEl.getAttribute("data-open-training-form")); return; }
+    const markReadEl = e.target.closest("[data-mark-training-read]");
+    if(markReadEl){
+      const t = findBy(DB.trainings, markReadEl.getAttribute("data-mark-training-read"));
+      const remaining = t.audience.filter(n=>!t.completedBy.includes(n));
+      if(remaining.length){ t.completedBy.push(remaining[0]); saveDB(); toast(remaining[0]+" a validé sa lecture"); render(); }
       return;
     }
     if(e.target.closest("[data-print]")){
