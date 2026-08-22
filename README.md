@@ -100,6 +100,7 @@ Le module ne se contente plus d'afficher une checklist statique : il **calcule**
 - **Gestion des versions** avec comparaison automatique (exigences ajoutées/supprimées) entre deux imports.
 - **Assistant IA spécialisé** par référentiel : résumer, lister les non-couvertures, préparer un audit ou une revue de direction — toujours à partir des données réelles, jamais d'invention.
 - Le module **Conformité** du menu affiche désormais directement le référentiel actif via ce même moteur.
+- **Modifier / supprimer** : chaque référentiel (bouton ✏️/🗑 sur sa fiche et sur sa carte du hub) et chaque exigence (bouton ✏️ dans le tableau des exigences, avec re-liaison manuelle aux documents/risques/audits et suppression) peuvent être édités ou retirés à tout moment — y compris les exigences ISO 9001 fournies par défaut.
 
 ## Limites du prototype
 

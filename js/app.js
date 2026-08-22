@@ -2106,11 +2106,22 @@ function pageChangeFiche(id){
 /* ---------- Bundles de preuves & scoring transparent ---------- */
 function legacyRequirementBundle(r){
   const process = getProcess(r.processId);
-  const docs = DB.documents.filter(d=>(d.requirementIds||[]).includes(r.id) && d.status!=="obsolete");
-  const audits = process ? DB.audits.filter(a=>a.processId===process.id) : [];
-  const actionsOpen = process ? DB.actions.filter(a=>a.processId===process.id && a.status!=="termine") : [];
+  const docMap = new Map();
+  DB.documents.forEach(d=>{ if(d.status==="obsolete") return; if((d.requirementIds||[]).includes(r.id) || (r.extraDocIds||[]).includes(d.id)) docMap.set(d.id,d); });
+  const docs = [...docMap.values()];
+  const auditMap = new Map();
+  if(process) DB.audits.filter(a=>a.processId===process.id).forEach(a=>auditMap.set(a.id,a));
+  (r.extraAuditIds||[]).forEach(id=>{ const a=getAudit(id); if(a) auditMap.set(a.id,a); });
+  const audits = [...auditMap.values()];
+  const actionMap = new Map();
+  if(process) DB.actions.filter(a=>a.processId===process.id && a.status!=="termine").forEach(a=>actionMap.set(a.id,a));
+  (r.extraActionIds||[]).forEach(id=>{ const a=getAction(id); if(a && a.status!=="termine") actionMap.set(a.id,a); });
+  const actionsOpen = [...actionMap.values()];
   const actionsLate = actionsOpen.filter(a=>a.status==="retard");
-  const risksOpen = process ? DB.risks.filter(rk=>rk.processId===process.id && rk.type==="risque" && rk.status==="ouvert" && (rk.level==="critique"||rk.level==="eleve")) : [];
+  const riskMap = new Map();
+  if(process) DB.risks.filter(rk=>rk.processId===process.id && rk.type==="risque" && rk.status==="ouvert" && (rk.level==="critique"||rk.level==="eleve")).forEach(rk=>riskMap.set(rk.id,rk));
+  (r.extraRiskIds||[]).forEach(id=>{ const rk=getRisk(id); if(rk && rk.status==="ouvert") riskMap.set(rk.id,rk); });
+  const risksOpen = [...riskMap.values()];
   const indicatorsBad = process ? DB.indicators.filter(i=>i.processId===process.id && i.status!=="vert") : [];
   const auditEcarts = audits.some(a=>a.findings.some(f=>f.type==="ecart") && a.status!=="cloture");
   return {docs, audits, actionsOpen, actionsLate, risksOpen, indicatorsBad, auditEcarts, process, processes:process?[process]:[]};
@@ -2305,6 +2316,101 @@ function openReferentielImportModal(presets){
   openModal({title: presets.newVersion?"Importer une nouvelle version":"Importer un référentiel", wide:true, bodyHtml:step1Html(), footHtml:step1Foot(), onMount:(o)=>mountStep1(o)});
 }
 
+function openReferentielEditForm(refId){
+  const ref = getReferentiel(refId);
+  if(!ref) return;
+  openModal({title:"Modifier le référentiel",
+    bodyHtml:`
+      <div class="field"><label>Nom <span class="req">*</span></label><input type="text" id="ref-name" value="${esc(ref.name)}"></div>
+      <div class="field"><label>Description</label><textarea id="ref-desc">${esc(ref.desc)}</textarea></div>
+      <div class="field-row">
+        <div class="field"><label>Version</label><input type="text" id="ref-version" value="${esc(ref.version||"")}"></div>
+        <div class="field"><label>Origine</label><input type="text" id="ref-origin" value="${esc(ref.origin||"")}"></div>
+      </div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="ref-save">Enregistrer</button>`,
+    onMount:(o)=>{ o.querySelector("#ref-save").addEventListener("click", ()=>{
+      const name = o.querySelector("#ref-name").value.trim();
+      if(!name){ toast("Merci de saisir un nom","⚠️"); return; }
+      ref.name = name; ref.desc = o.querySelector("#ref-desc").value.trim();
+      ref.version = o.querySelector("#ref-version").value.trim()||null;
+      ref.origin = o.querySelector("#ref-origin").value.trim()||null;
+      saveDB(); closeModal(); toast("Référentiel mis à jour"); render();
+    });}
+  });
+}
+
+function deleteReferentiel(refId){
+  const ref = getReferentiel(refId);
+  if(!ref) return;
+  const nbExigences = DB.customExigences.filter(e=>e.referentielId===refId).length + (refId==="ISO9001"?DB.requirements.length:0);
+  confirmDialog(`Supprimer définitivement le référentiel « ${ref.name} » et ${nbExigences} exigence(s) associée(s) ? Cette action est irréversible.`, ()=>{
+    const wasActive = ref.active;
+    DB.referentiels = DB.referentiels.filter(r=>r.id!==refId);
+    DB.customExigences = DB.customExigences.filter(e=>e.referentielId!==refId);
+    if(refId==="ISO9001") DB.requirements = [];
+    if(wasActive && DB.referentiels.length) DB.referentiels[0].active = true;
+    saveDB(); toast("Référentiel supprimé"); navigate("referentiels");
+  });
+}
+
+function openExigenceEditForm(refId, exigenceId){
+  const isLegacy = refId==="ISO9001";
+  const entity = isLegacy ? findBy(DB.requirements, exigenceId) : getCustomExigence(exigenceId);
+  if(!entity) return;
+  const currentProcessId = isLegacy ? (entity.processId||"") : ((entity.processIds&&entity.processIds[0])||"");
+  const currentDocIds = isLegacy ? (entity.extraDocIds||[]) : (entity.docIds||[]);
+  const currentRiskIds = isLegacy ? (entity.extraRiskIds||[]) : (entity.riskIds||[]);
+  const currentAuditIds = isLegacy ? (entity.extraAuditIds||[]) : (entity.auditIds||[]);
+
+  openModal({title:"Modifier l'exigence", wide:true,
+    bodyHtml:`
+      <div class="field-row">
+        <div class="field"><label>Référence</label><input type="text" id="ex-ref" value="${esc(entity.ref)}"></div>
+        <div class="field"><label>Processus principal</label><select id="ex-process"><option value="">—</option>${DB.processes.map(p=>`<option value="${p.id}" ${currentProcessId===p.id?"selected":""}>${esc(p.name)}</option>`).join("")}</select></div>
+      </div>
+      <div class="field"><label>Intitulé <span class="req">*</span></label><input type="text" id="ex-title" value="${esc(isLegacy?entity.label:entity.title)}"></div>
+      ${!isLegacy?`<div class="field"><label>Description</label><textarea id="ex-desc">${esc(entity.description||"")}</textarea></div>`:""}
+      <div class="field"><label>Documents associés (preuves)</label><div style="max-height:130px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
+        ${DB.documents.filter(d=>d.status!=="obsolete").map(d=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="ex-doc-cb" value="${d.id}" ${currentDocIds.includes(d.id)?"checked":""} style="width:auto;"> ${esc(d.title)}</label>`).join("")}
+      </div></div>
+      <div class="field-row">
+        <div class="field"><label>Risques associés</label><div style="max-height:110px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
+          ${DB.risks.map(r=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="ex-risk-cb" value="${r.id}" ${currentRiskIds.includes(r.id)?"checked":""} style="width:auto;"> ${esc(r.name)}</label>`).join("")}
+        </div></div>
+        <div class="field"><label>Audits associés</label><div style="max-height:110px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
+          ${DB.audits.map(a=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="ex-audit-cb" value="${a.id}" ${currentAuditIds.includes(a.id)?"checked":""} style="width:auto;"> ${esc(a.title)}</label>`).join("")}
+        </div></div>
+      </div>`,
+    footHtml:`<button class="btn btn-danger" id="ex-delete" style="margin-right:auto;">Supprimer</button><button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="ex-save">Enregistrer</button>`,
+    onMount:(o)=>{
+      o.querySelector("#ex-save").addEventListener("click", ()=>{
+        const refTxt = o.querySelector("#ex-ref").value.trim() || entity.ref;
+        const title = o.querySelector("#ex-title").value.trim();
+        if(!title){ toast("Merci de saisir un intitulé","⚠️"); return; }
+        const processId = o.querySelector("#ex-process").value || null;
+        const docIds = [...o.querySelectorAll(".ex-doc-cb:checked")].map(c=>c.value);
+        const riskIds = [...o.querySelectorAll(".ex-risk-cb:checked")].map(c=>c.value);
+        const auditIds = [...o.querySelectorAll(".ex-audit-cb:checked")].map(c=>c.value);
+        if(isLegacy){
+          entity.ref = refTxt; entity.label = title; entity.processId = processId;
+          entity.extraDocIds = docIds; entity.extraRiskIds = riskIds; entity.extraAuditIds = auditIds;
+        } else {
+          entity.ref = refTxt; entity.title = title; entity.description = o.querySelector("#ex-desc").value.trim();
+          entity.processIds = processId ? [processId] : []; entity.docIds = docIds; entity.riskIds = riskIds; entity.auditIds = auditIds;
+        }
+        saveDB(); closeModal(); toast("Exigence mise à jour"); navigate(`referentiels/${refId}/exigences`);
+      });
+      o.querySelector("#ex-delete").addEventListener("click", ()=>{
+        confirmDialog("Supprimer définitivement cette exigence ?", ()=>{
+          if(isLegacy) DB.requirements = DB.requirements.filter(r=>r.id!==exigenceId);
+          else DB.customExigences = DB.customExigences.filter(e=>e.id!==exigenceId);
+          saveDB(); closeModal(); toast("Exigence supprimée"); navigate(`referentiels/${refId}/exigences`);
+        });
+      });
+    }
+  });
+}
+
 /* ---------- Assistant IA spécialisé Référentiels ---------- */
 const REF_AI_HISTORY = {};
 function refAIGenerateReply(ref, score, q){
@@ -2345,9 +2451,11 @@ function pageReferentiels(){
         </div>
         <p class="text-sm mt-2">${esc(r.desc)}</p>
         ${score?`<div class="flex items-center gap-2 mt-4"><span class="text-sm" style="font-weight:700;color:var(--primary);">${score.pct}%</span><span class="text-xs">de maîtrise · ${score.total} exigence(s)</span></div>`:`<p class="text-xs mt-4">Aucune exigence importée pour le moment.</p>`}
-        <div class="flex gap-2 mt-4">
+        <div class="flex gap-2 mt-4" style="flex-wrap:wrap;">
           ${views.length?`<a class="btn btn-primary btn-sm" data-route="referentiels/${r.id}">Voir le détail</a>`:""}
           ${r.active?"":`<button class="btn btn-secondary btn-sm" data-select-ref="${r.id}">Sélectionner</button>`}
+          <button class="btn btn-secondary btn-sm" data-edit-ref="${r.id}">✏️ Modifier</button>
+          <button class="btn btn-danger btn-sm" data-delete-ref="${r.id}">🗑 Supprimer</button>
         </div>
       </div>`;
     }).join("")}
@@ -2374,6 +2482,10 @@ function pageReferentielDetail(id, tab, subId){
         <p class="section-sub mt-2">${esc(ref.desc)}${ref.version?" · Version "+esc(ref.version):""}${ref.importDate?" · Importé le "+fmtDate(ref.importDate):""}</p>
       </div>
       ${ref.active?badgeRaw("success","Actif"):`<button class="btn btn-secondary btn-sm" data-select-ref="${ref.id}">Activer</button>`}
+    </div>
+    <div class="flex gap-2 mt-2">
+      <button class="btn btn-secondary btn-sm" data-edit-ref="${ref.id}">✏️ Modifier</button>
+      <button class="btn btn-danger btn-sm" data-delete-ref="${ref.id}">🗑 Supprimer le référentiel</button>
     </div>
     ${score.total?`
     <div class="flex items-center gap-3 mt-4" style="flex-wrap:wrap;">
@@ -2431,7 +2543,8 @@ function refTabExigences(ref, score){
       {label:"Risques", render:v=>v.bundle.risksOpen.length},
       {label:"Actions", render:v=>v.bundle.actionsOpen.length+(v.bundle.actionsLate.length?" ("+v.bundle.actionsLate.length+" en retard)":"")},
       {label:"Responsable", render:v=>v.process?esc(v.process.pilot):"—"},
-      {label:"Dernière MàJ", render:v=>v.updatedAt?fmtDate(v.updatedAt):"—"} ],
+      {label:"Dernière MàJ", render:v=>v.updatedAt?fmtDate(v.updatedAt):"—"},
+      {label:"", render:v=>`<button class="btn btn-secondary btn-sm" data-edit-exigence='${jsonAttr({refId:ref.id, exigenceId:v.id})}'>✏️</button>`} ],
     score.views, {rowRoute:v=>`referentiels/${ref.id}/exigences/${v.id}`}
   );
 }
@@ -3338,6 +3451,13 @@ function generateReviewReport(review){
    ============================================================ */
 function initGlobalEvents(){
   document.addEventListener("click", (e)=>{
+    const editExigenceEl = e.target.closest("[data-edit-exigence]");
+    if(editExigenceEl){
+      e.preventDefault();
+      const payload = JSON.parse(editExigenceEl.getAttribute("data-edit-exigence"));
+      openExigenceEditForm(payload.refId, payload.exigenceId);
+      return;
+    }
     const routeEl = e.target.closest("[data-route]");
     if(routeEl){
       e.preventDefault();
@@ -3484,6 +3604,10 @@ function initGlobalEvents(){
       toast("Export PDF simulé pour cette démonstration", "🖨");
       return;
     }
+    const editRefEl = e.target.closest("[data-edit-ref]");
+    if(editRefEl){ openReferentielEditForm(editRefEl.getAttribute("data-edit-ref")); return; }
+    const deleteRefEl = e.target.closest("[data-delete-ref]");
+    if(deleteRefEl){ deleteReferentiel(deleteRefEl.getAttribute("data-delete-ref")); return; }
     if(e.target.closest("[data-select-ref]")){
       const id = e.target.closest("[data-select-ref]").getAttribute("data-select-ref");
       DB.referentiels.forEach(r=>r.active = (r.id===id));

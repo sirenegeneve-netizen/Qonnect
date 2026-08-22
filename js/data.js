@@ -361,6 +361,12 @@ function normalizeDocuments(){
     if(typeof r.origin === "undefined") r.origin = null;
     if(!r.versions) r.versions = [];
   });
+  (DB.requirements||[]).forEach(r=>{
+    r.extraDocIds = r.extraDocIds || [];
+    r.extraRiskIds = r.extraRiskIds || [];
+    r.extraAuditIds = r.extraAuditIds || [];
+    r.extraActionIds = r.extraActionIds || [];
+  });
 }
 function loadDB(){
   const seedCopy = JSON.parse(JSON.stringify(QONNECT_SEED));
