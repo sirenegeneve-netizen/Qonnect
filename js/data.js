@@ -237,13 +237,21 @@ const QONNECT_SEED = {
   changeSteps: ["Déclaré","Analyse d'impact","Risques","Plan d'action","Mise en œuvre","Vérification","Clôturé"],
 
   referentiels: [
-    { id:"ISO9001", name:"ISO 9001:2026", desc:"Systèmes de management de la qualité — Exigences", active:true },
-    { id:"ISO13485", name:"ISO 13485", desc:"Dispositifs médicaux — Systèmes de management de la qualité", active:false },
-    { id:"ISO14001", name:"ISO 14001", desc:"Systèmes de management environnemental", active:false },
-    { id:"ISO45001", name:"ISO 45001", desc:"Santé et sécurité au travail", active:false },
-    { id:"ISO27001", name:"ISO 27001", desc:"Sécurité de l'information", active:false },
-    { id:"INTERNE",  name:"Référentiel interne", desc:"Exigences propres à l'organisation", active:false },
+    { id:"ISO9001", name:"ISO 9001:2026", desc:"Systèmes de management de la qualité — Exigences", active:true,
+      version:"2026", importDate:"2026-01-05", author:"Claire Dubreuil", origin:"Import initial de la norme", versions:[{version:"2026", date:"2026-01-05", note:"Import initial — exigences simplifiées à des fins de démonstration."}] },
+    { id:"ISO13485", name:"ISO 13485", desc:"Dispositifs médicaux — Systèmes de management de la qualité", active:false,
+      version:null, importDate:null, author:null, origin:null, versions:[] },
+    { id:"ISO14001", name:"ISO 14001", desc:"Systèmes de management environnemental", active:false,
+      version:null, importDate:null, author:null, origin:null, versions:[] },
+    { id:"ISO45001", name:"ISO 45001", desc:"Santé et sécurité au travail", active:false,
+      version:null, importDate:null, author:null, origin:null, versions:[] },
+    { id:"ISO27001", name:"ISO 27001", desc:"Sécurité de l'information", active:false,
+      version:null, importDate:null, author:null, origin:null, versions:[] },
+    { id:"INTERNE",  name:"Référentiel interne", desc:"Exigences propres à l'organisation", active:false,
+      version:null, importDate:null, author:null, origin:null, versions:[] },
   ],
+
+  customExigences: [],
 
   requirements: [
     { id:"REQ-001", ref:"4.1", label:"Compréhension de l'organisation et de son contexte", status:"maitrise", processId:"PROC-001" },
@@ -319,6 +327,8 @@ const LABELS = {
   indStatus:{ vert:{l:"Sur cible",c:"success"}, orange:{l:"À surveiller",c:"warning"}, rouge:{l:"Hors cible",c:"danger"} },
   auditStatus:{ planifie:{l:"Planifié",c:"info"}, realise:{l:"Réalisé",c:"warning"}, cloture:{l:"Clôturé",c:"success"} },
   reqStatus:{ maitrise:{l:"Maîtrisée",c:"success"}, a_renforcer:{l:"À renforcer",c:"warning"}, non_couvert:{l:"Non couverte",c:"danger"} },
+  exigenceCoverage:{ non_couvert:{l:"Non couverte",c:"danger"}, partiellement:{l:"Partiellement couverte",c:"warning"}, a_renforcer:{l:"À renforcer",c:"warning"}, maitrise:{l:"Maîtrisée",c:"success"}, optimise:{l:"Optimisée",c:"success"} },
+  exigenceType:{ exigence:"Exigence", preuve:"Preuve attendue", responsabilite:"Responsabilité" },
   importance:{ haute:{l:"Haute",c:"danger"}, moyenne:{l:"Moyenne",c:"warning"}, basse:{l:"Basse",c:"neutral"} },
   stakeholderCat:{ client:"Client", patient:"Patient", collaborateur:"Collaborateur", fournisseur:"Fournisseur", autorite:"Autorité", certificateur:"Organisme certificateur", actionnaire:"Actionnaire", partenaire:"Partenaire", soustraitant:"Sous-traitant", autre:"Autre" },
   needType:{ besoin:"Besoin", attente:"Attente", exigence:"Exigence" },
@@ -343,6 +353,14 @@ function normalizeDocuments(){
   });
   if(!DB.trainings) DB.trainings = [];
   if(!DB.documentTemplates) DB.documentTemplates = JSON.parse(JSON.stringify(QONNECT_SEED.documentTemplates));
+  if(!DB.customExigences) DB.customExigences = [];
+  (DB.referentiels||[]).forEach(r=>{
+    if(typeof r.version === "undefined") r.version = null;
+    if(typeof r.importDate === "undefined") r.importDate = null;
+    if(typeof r.author === "undefined") r.author = null;
+    if(typeof r.origin === "undefined") r.origin = null;
+    if(!r.versions) r.versions = [];
+  });
 }
 function loadDB(){
   const seedCopy = JSON.parse(JSON.stringify(QONNECT_SEED));
@@ -393,6 +411,8 @@ const getReview = id => findBy(DB.managementReviews,id);
 const getLatestReview = ()=> DB.managementReviews[DB.managementReviews.length-1];
 const getDecision = (review,id)=> review ? findBy(review.decisions,id) : null;
 const getTemplate = id => findBy(DB.documentTemplates,id);
+const getReferentiel = id => findBy(DB.referentiels,id);
+const getCustomExigence = id => findBy(DB.customExigences,id);
 
 function nextId(prefix, arr){
   let max = 0;

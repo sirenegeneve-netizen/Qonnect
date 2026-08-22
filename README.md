@@ -88,6 +88,19 @@ Chaque document n'est plus un fichier isolé : il est relié en direct aux proce
 - **Assistant documentaire** (`#/documents/assistant`) : détecte les processus sans procédure, les exigences non couvertes et les documents qui se recoupent — toujours basé sur les données réelles, jamais inventé.
 - **Formation et prise de connaissance** : lancer une campagne de lecture depuis un document, suivre qui a validé.
 
+### Référentiels — le moteur de conformité
+
+Le module ne se contente plus d'afficher une checklist statique : il **calcule** automatiquement le niveau de maîtrise de chaque exigence à partir des preuves réellement enregistrées ailleurs dans Qonnect — jamais saisi manuellement, jamais déclaré sans preuve.
+
+- **Import d'un référentiel** (`+ Importer un référentiel`) : collez le texte (ou chargez un `.txt`/`.html`) d'une norme, d'une procédure groupe ou d'un cahier des charges client. *Limite honnête de ce prototype sans backend : les PDF/DOCX binaires ne peuvent pas être extraits automatiquement côté client — l'interface le signale et invite à coller le texte.*
+- **Analyse intelligente** : un moteur à base de règles détecte automatiquement les chapitres (`4.1`, `5.2`…) et les phrases porteuses d'obligation (« doit », « doivent », « shall », « est tenu de »…), puis les relie automatiquement aux processus, documents et risques existants par recoupement de mots-clés.
+- **Calcul automatique de la conformité** : chaque exigence obtient un niveau (Non couverte / Partiellement couverte / À renforcer / Maîtrisée / Optimisée) calculé à partir de l'existence de documents, d'audits, d'actions en retard, de risques ouverts et d'indicateurs — avec le détail du « pourquoi » toujours visible sur la fiche de l'exigence.
+- **Vue conformité temps réel** : tableau dynamique exigence → niveau → preuves → risques → actions → responsable → dernière mise à jour.
+- **Cartographie** exigence ↔ SMQ, et une **Vue d'ensemble** par référentiel (score global, exigences critiques, actions prioritaires, dernières modifications).
+- **Gestion des versions** avec comparaison automatique (exigences ajoutées/supprimées) entre deux imports.
+- **Assistant IA spécialisé** par référentiel : résumer, lister les non-couvertures, préparer un audit ou une revue de direction — toujours à partir des données réelles, jamais d'invention.
+- Le module **Conformité** du menu affiche désormais directement le référentiel actif via ce même moteur.
+
 ## Limites du prototype
 
 - Les exigences du référentiel ISO 9001:2026 affichées sont **simplifiées à des fins de démonstration** et ne reproduisent pas le texte officiel de la norme.
