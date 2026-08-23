@@ -205,20 +205,83 @@ const QONNECT_SEED = {
   ],
 
   audits: [
-    { id:"AUD-001", title:"Audit interne Achats", processId:"PROC-007", objective:"Vérifier l'application de la procédure PR-005 et l'évaluation des fournisseurs.", scope:"Processus Achats — sélection et évaluation fournisseurs", auditor:"Marc Lenoir", date:"2026-09-02", status:"planifie",
+    { id:"AUD-001", ref:"AUD-2026-001", title:"Audit interne Achats", type:"interne", referentielIds:["ISO9001"],
+      processId:"PROC-007", processIds:["PROC-007"], date:"2026-09-02", duration:"1 jour", responsable:"Marc Lenoir", auditeurs:["Marc Lenoir"], site:"Siège",
+      objective:"Vérifier l'application de la procédure PR-005 et l'évaluation des fournisseurs.", scope:"Processus Achats — sélection et évaluation fournisseurs",
+      auditor:"Marc Lenoir", status:"planifie",
+      motifs:["programme_annuel","risque_identifie"],
+      perimeter:{ processIds:["PROC-007"], activites:"Sélection et évaluation des fournisseurs", produits:"", periodeDebut:"2026-01-01", periodeFin:"2026-08-31", exclusions:"Achats hors production" },
+      objectifs:["Vérifier l'application de la procédure PR-005", "Évaluer la maîtrise du risque fournisseur unique (RISK-001)"],
+      criteres:{ referentielIds:["ISO9001"], requirementIds:["REQ-011","REQ-018"], documentIds:["DOC-005"] },
+      questions:[
+        { id:"AUD-001-Q1", question:"Comment les fournisseurs sont-ils sélectionnés et qualifiés ?", requirementId:"REQ-011", processId:"PROC-007", critere:"PR-005", preuveAttendue:"Grille de qualification fournisseurs", responsableInterroge:"Sophie Martin", statut:"non_evalue", commentaire:"", preuveIds:[] },
+        { id:"AUD-001-Q2", question:"Comment la dépendance à un fournisseur unique est-elle maîtrisée ?", requirementId:"REQ-018", processId:"PROC-007", critere:"RISK-001", preuveAttendue:"Plan d'action de diversification", responsableInterroge:"Sophie Martin", statut:"non_evalue", commentaire:"", preuveIds:[] },
+      ],
+      parties:[ {name:"Sophie Martin", role:"Audité", questionIds:["AUD-001-Q1","AUD-001-Q2"], echeance:"2026-08-28", status:"en_attente"} ],
       findings:[] },
-    { id:"AUD-002", title:"Audit interne Système documentaire", processId:"PROC-002", objective:"Vérifier la maîtrise documentaire et la mise à jour des procédures.", scope:"Gestion documentaire", auditor:"Claire Dubreuil", date:"2026-06-10", status:"realise",
+    { id:"AUD-002", ref:"AUD-2026-002", title:"Audit interne Système documentaire", type:"interne", referentielIds:["ISO9001"],
+      processId:"PROC-002", processIds:["PROC-002"], date:"2026-06-10", duration:"0,5 jour", responsable:"Claire Dubreuil", auditeurs:["Claire Dubreuil"], site:"Siège",
+      objective:"Vérifier la maîtrise documentaire et la mise à jour des procédures.", scope:"Gestion documentaire",
+      auditor:"Claire Dubreuil", status:"valide",
+      motifs:["programme_annuel"],
+      perimeter:{ processIds:["PROC-002"], activites:"Gestion documentaire", produits:"", periodeDebut:"2025-12-01", periodeFin:"2026-06-01", exclusions:"" },
+      objectifs:["Vérifier la maîtrise documentaire et la mise à jour des procédures"],
+      criteres:{ referentielIds:["ISO9001"], requirementIds:["REQ-009"], documentIds:["DOC-006"] },
+      questions:[
+        { id:"AUD-002-Q1", question:"Les procédures sont-elles révisées dans les délais prévus ?", requirementId:"REQ-009", processId:"PROC-002", critere:"PR-006", preuveAttendue:"Registre de suivi des révisions", responsableInterroge:"Marc Lenoir", statut:"non_conforme", commentaire:"PR-006 est en retard de révision.", preuveIds:["DOC-006"] },
+      ],
+      parties:[ {name:"Marc Lenoir", role:"Audité", questionIds:["AUD-002-Q1"], echeance:"2026-06-08", status:"complete"} ],
       findings:[
-        {id:"C-001", type:"ecart", text:"La procédure PR-006 n'a pas été révisée dans les délais prévus.", actionId:"ACT-007"},
-        {id:"C-002", type:"point_fort", text:"Bonne appropriation des règles de nommage documentaire par les équipes."},
+        {id:"C-001", type:"ecart", text:"La procédure PR-006 n'a pas été révisée dans les délais prévus.", requirementId:"REQ-009", processId:"PROC-002", questionId:"AUD-002-Q1", gravite:"mineure", cause:"", riskId:null, ncEventId:null, actionId:"ACT-007"},
+        {id:"C-002", type:"point_fort", text:"Bonne appropriation des règles de nommage documentaire par les équipes.", requirementId:null, processId:"PROC-002", questionId:null, gravite:null, cause:"", riskId:null, ncEventId:null, actionId:null},
       ] },
-    { id:"AUD-003", title:"Audit interne Production", processId:"PROC-004", objective:"Vérifier la maîtrise des paramètres critiques de production.", scope:"Ligne de production A", auditor:"Marc Lenoir", date:"2026-04-14", status:"realise",
+    { id:"AUD-003", ref:"AUD-2025-014", title:"Audit interne Production", type:"interne", referentielIds:["ISO9001"],
+      processId:"PROC-004", processIds:["PROC-004"], date:"2026-04-14", duration:"1 jour", responsable:"Marc Lenoir", auditeurs:["Marc Lenoir"], site:"Site de production",
+      objective:"Vérifier la maîtrise des paramètres critiques de production.", scope:"Ligne de production A",
+      auditor:"Marc Lenoir", status:"valide",
+      motifs:["programme_annuel","non_conformite"],
+      perimeter:{ processIds:["PROC-004"], activites:"Réglage et suivi de la ligne A", produits:"Ligne A", periodeDebut:"2025-10-01", periodeFin:"2026-04-01", exclusions:"Ligne B" },
+      objectifs:["Vérifier la maîtrise des paramètres critiques de production", "Vérifier l'efficacité de l'action corrective sur l'étalonnage"],
+      criteres:{ referentielIds:["ISO9001"], requirementIds:["REQ-019"], documentIds:["DOC-011"] },
+      questions:[
+        { id:"AUD-003-Q1", question:"La sonde de température est-elle étalonnée et sa traçabilité assurée ?", requirementId:"REQ-019", processId:"PROC-004", critere:"MO-011", preuveAttendue:"Certificat d'étalonnage", responsableInterroge:"Thomas Petit", statut:"non_conforme", commentaire:"Absence de certificat sur une période.", preuveIds:[] },
+      ],
+      parties:[ {name:"Thomas Petit", role:"Audité", questionIds:["AUD-003-Q1"], echeance:"2026-04-12", status:"complete"} ],
       findings:[
-        {id:"C-003", type:"ecart", text:"Absence de traçabilité de l'étalonnage de la sonde de température sur une période.", actionId:"ACT-003"},
+        {id:"C-003", type:"ecart", text:"Absence de traçabilité de l'étalonnage de la sonde de température sur une période.", requirementId:"REQ-019", processId:"PROC-004", questionId:"AUD-003-Q1", gravite:"majeure", cause:"", riskId:"RISK-003", ncEventId:null, actionId:"ACT-003"},
       ] },
-    { id:"AUD-004", title:"Audit interne Informatique / sécurité", processId:"PROC-008", objective:"Évaluer la maîtrise des accès et la sécurité applicative.", scope:"Système d'information", auditor:"Sophie Martin", date:"2025-11-05", status:"cloture",
+    { id:"AUD-004", ref:"AUD-2025-009", title:"Audit interne Informatique / sécurité", type:"interne", referentielIds:["ISO27001"],
+      processId:"PROC-008", processIds:["PROC-008"], date:"2025-11-05", duration:"1 jour", responsable:"Sophie Martin", auditeurs:["Sophie Martin"], site:"Siège",
+      objective:"Évaluer la maîtrise des accès et la sécurité applicative.", scope:"Système d'information",
+      auditor:"Sophie Martin", status:"cloture",
+      motifs:["programme_annuel"],
+      perimeter:{ processIds:["PROC-008"], activites:"Sécurité du système d'information", produits:"", periodeDebut:"2025-06-01", periodeFin:"2025-11-01", exclusions:"" },
+      objectifs:["Évaluer la maîtrise des accès et la sécurité applicative"],
+      criteres:{ referentielIds:["ISO27001"], requirementIds:[], documentIds:[] },
+      questions:[
+        { id:"AUD-004-Q1", question:"La politique de sauvegarde est-elle appliquée et testée ?", requirementId:null, processId:"PROC-008", critere:"Politique de sauvegarde", preuveAttendue:"Rapport de test de restauration", responsableInterroge:"Karim Belkacem", statut:"conforme", commentaire:"Sauvegardes testées trimestriellement.", preuveIds:[] },
+      ],
+      parties:[ {name:"Karim Belkacem", role:"Audité", questionIds:["AUD-004-Q1"], echeance:"2025-11-03", status:"complete"} ],
       findings:[
-        {id:"C-004", type:"point_fort", text:"Politique de sauvegarde conforme et testée régulièrement."},
+        {id:"C-004", type:"point_fort", text:"Politique de sauvegarde conforme et testée régulièrement.", requirementId:null, processId:"PROC-008", questionId:"AUD-004-Q1", gravite:null, cause:"", riskId:null, ncEventId:null, actionId:null},
+      ] },
+    { id:"AUD-005", ref:"AUD-2026-005", title:"Audit interne RH", type:"interne", referentielIds:["ISO9001"],
+      processId:"PROC-006", processIds:["PROC-006"], date:"2026-08-20", duration:"1 jour", responsable:"Marc Lenoir", auditeurs:["Marc Lenoir","Claire Dubreuil"], site:"Siège",
+      objective:"Vérifier la gestion des compétences et l'efficacité du plan de formation.", scope:"Processus RH — gestion des compétences",
+      auditor:"Marc Lenoir", status:"en_cours",
+      motifs:["programme_annuel","risque_identifie"],
+      perimeter:{ processIds:["PROC-006"], activites:"Gestion des compétences et des formations", produits:"", periodeDebut:"2026-01-01", periodeFin:"2026-08-01", exclusions:"Recrutement" },
+      objectifs:["Vérifier l'identification des besoins de compétences", "Vérifier l'efficacité du plan de formation", "Évaluer la maîtrise du risque de perte de compétence clé (RISK-002)"],
+      criteres:{ referentielIds:["ISO9001"], requirementIds:["REQ-008"], documentIds:["DOC-008"] },
+      questions:[
+        { id:"AUD-005-Q1", question:"Comment les besoins de formation sont-ils identifiés ?", requirementId:"REQ-008", processId:"PROC-006", critere:"PR-008", preuveAttendue:"Plan de formation annuel", responsableInterroge:"Paul Rousseau", statut:"conforme", commentaire:"Plan de formation formalisé et suivi.", preuveIds:["DOC-008"] },
+        { id:"AUD-005-Q2", question:"Comment les compétences critiques sont-elles cartographiées ?", requirementId:"REQ-008", processId:"PROC-006", critere:"RISK-002", preuveAttendue:"Cartographie des compétences", responsableInterroge:"Paul Rousseau", statut:"non_conforme", commentaire:"Aucune cartographie formalisée des compétences critiques.", preuveIds:[] },
+        { id:"AUD-005-Q3", question:"Comment l'efficacité des formations est-elle évaluée ?", requirementId:"REQ-008", processId:"PROC-006", critere:"PR-008", preuveAttendue:"Évaluations à chaud/à froid", responsableInterroge:"Paul Rousseau", statut:"a_verifier", commentaire:"", preuveIds:[] },
+        { id:"AUD-005-Q4", question:"Les habilitations sont-elles suivies et à jour ?", requirementId:"REQ-008", processId:"PROC-006", critere:"PR-008", preuveAttendue:"Registre des habilitations", responsableInterroge:"Paul Rousseau", statut:"non_evalue", commentaire:"", preuveIds:[] },
+      ],
+      parties:[ {name:"Paul Rousseau", role:"Audité", questionIds:["AUD-005-Q1","AUD-005-Q2","AUD-005-Q3","AUD-005-Q4"], echeance:"2026-08-18", status:"en_cours"} ],
+      findings:[
+        {id:"C-005", type:"ecart", text:"Aucune cartographie formalisée des compétences critiques n'est disponible.", requirementId:"REQ-008", processId:"PROC-006", questionId:"AUD-005-Q2", gravite:"majeure", cause:"", riskId:"RISK-002", ncEventId:null, actionId:null},
       ] },
   ],
 
@@ -325,7 +388,13 @@ const LABELS = {
   actionOrigin:{ evenement:"Événement", risque:"Risque", audit:"Audit", indicateur:"Indicateur", objectif:"Objectif", changement:"Changement", revue_direction:"Revue de direction" },
   objStatus:{ en_cours:{l:"En cours",c:"warning"}, atteint:{l:"Atteint",c:"success"}, en_retard:{l:"En retard",c:"danger"} },
   indStatus:{ vert:{l:"Sur cible",c:"success"}, orange:{l:"À surveiller",c:"warning"}, rouge:{l:"Hors cible",c:"danger"} },
-  auditStatus:{ planifie:{l:"Planifié",c:"info"}, realise:{l:"Réalisé",c:"warning"}, cloture:{l:"Clôturé",c:"success"} },
+  auditStatus:{ planifie:{l:"Planifié",c:"info"}, preparation:{l:"Préparation",c:"info"}, en_cours:{l:"En cours",c:"warning"}, analyse:{l:"Analyse",c:"warning"}, synthese:{l:"Synthèse",c:"warning"}, a_valider:{l:"À valider",c:"warning"}, valide:{l:"Validé",c:"success"}, cloture:{l:"Clôturé",c:"success"}, realise:{l:"Validé",c:"success"} },
+  auditType:{ interne:"Audit interne", externe:"Audit externe", certification:"Audit de certification", fournisseur:"Audit fournisseur", client:"Audit client", processus:"Audit processus", produit:"Audit produit / service", reglementaire:"Audit réglementaire", conformite:"Audit de conformité", suivi:"Audit de suivi", renouvellement:"Audit de renouvellement", cible:"Audit ciblé", autre:"Autre" },
+  auditMotif:{ programme_annuel:"Programme annuel", exigence_reglementaire:"Exigence réglementaire", certification:"Certification", surveillance:"Surveillance", risque_identifie:"Risque identifié", non_conformite:"Non-conformité", action_corrective:"Action corrective", changement:"Changement important", incident:"Incident", demande_direction:"Demande de la Direction", fournisseur:"Fournisseur", client:"Client", autre:"Autre" },
+  questionStatus:{ conforme:{l:"Conforme",c:"success"}, partiellement_conforme:{l:"Partiellement conforme",c:"warning"}, non_conforme:{l:"Non conforme",c:"danger"}, non_applicable:{l:"Non applicable",c:"neutral"}, a_verifier:{l:"À vérifier",c:"info"}, non_evalue:{l:"Non évalué",c:"neutral"} },
+  constatType:{ point_fort:{l:"Point fort",c:"success",e:"🟢"}, conforme:{l:"Conforme",c:"info",e:"🔵"}, vigilance:{l:"Point de vigilance",c:"warning",e:"🟠"}, opportunite:{l:"Opportunité d'amélioration",c:"warning",e:"🟠"}, ecart:{l:"Écart",c:"danger",e:"🔴"}, nc_majeure:{l:"Non-conformité majeure",c:"danger",e:"🔴"} },
+  constatGravite:{ mineure:"Mineure", majeure:"Majeure", critique:"Critique" },
+  partyStatus:{ en_attente:{l:"En attente",c:"warning"}, en_cours:{l:"En cours",c:"info"}, complete:{l:"Complétée",c:"success"}, indisponible:{l:"Indisponible",c:"neutral"} },
   reqStatus:{ maitrise:{l:"Maîtrisée",c:"success"}, a_renforcer:{l:"À renforcer",c:"warning"}, non_couvert:{l:"Non couverte",c:"danger"} },
   exigenceCoverage:{ non_couvert:{l:"Non couverte",c:"danger"}, partiellement:{l:"Partiellement couverte",c:"warning"}, a_renforcer:{l:"À renforcer",c:"warning"}, maitrise:{l:"Maîtrisée",c:"success"}, optimise:{l:"Optimisée",c:"success"} },
   exigenceType:{ exigence:"Exigence", preuve:"Preuve attendue", responsabilite:"Responsabilité" },
@@ -339,6 +408,9 @@ const LABELS = {
   conclusionRessources:{ suffisantes:"Suffisantes", a_renforcer:"À renforcer", insuffisantes:"Insuffisantes" },
   conclusionAmelioration:{ aucune_action_majeure:"Aucune action majeure", actions_amelioration:"Actions d'amélioration nécessaires", actions_prioritaires:"Actions prioritaires nécessaires" },
 };
+const AUDIT_WORKFLOW_STEPS = ["planifie","preparation","en_cours","analyse","synthese","a_valider","valide","cloture"];
+const AUDIT_WORKFLOW_LABELS = ["Planifié","Préparation","En cours","Analyse","Synthèse","À valider","Validé","Clôturé"];
+function isAuditEcart(f){ return f.type==="ecart" || f.type==="nc_majeure"; }
 
 function normalizeDocuments(){
   DB.documents.forEach(d=>{
@@ -366,6 +438,32 @@ function normalizeDocuments(){
     r.extraRiskIds = r.extraRiskIds || [];
     r.extraAuditIds = r.extraAuditIds || [];
     r.extraActionIds = r.extraActionIds || [];
+  });
+  (DB.audits||[]).forEach(a=>{
+    a.ref = a.ref || ("AUD-"+a.id);
+    a.type = a.type || "interne";
+    a.referentielIds = a.referentielIds || ["ISO9001"];
+    a.processIds = a.processIds || (a.processId ? [a.processId] : []);
+    a.duration = a.duration || "";
+    a.responsable = a.responsable || a.auditor || "";
+    a.auditeurs = a.auditeurs || (a.auditor ? [a.auditor] : []);
+    a.site = a.site || "";
+    a.motifs = a.motifs || [];
+    a.perimeter = a.perimeter || { processIds:a.processIds||[], activites:"", produits:"", periodeDebut:"", periodeFin:"", exclusions:"" };
+    a.objectifs = a.objectifs || (a.objective ? [a.objective] : []);
+    a.criteres = a.criteres || { referentielIds:a.referentielIds||[], requirementIds:[], documentIds:[] };
+    a.questions = a.questions || [];
+    a.parties = a.parties || [];
+    if(a.status==="realise") a.status = "valide";
+    (a.findings||[]).forEach(f=>{
+      if(typeof f.requirementId==="undefined") f.requirementId = null;
+      if(typeof f.processId==="undefined") f.processId = a.processId||null;
+      if(typeof f.questionId==="undefined") f.questionId = null;
+      if(typeof f.gravite==="undefined") f.gravite = null;
+      if(typeof f.cause==="undefined") f.cause = "";
+      if(typeof f.riskId==="undefined") f.riskId = null;
+      if(typeof f.ncEventId==="undefined") f.ncEventId = null;
+    });
   });
 }
 function loadDB(){

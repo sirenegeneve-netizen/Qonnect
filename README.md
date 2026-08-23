@@ -101,6 +101,21 @@ Le module ne se contente plus d'afficher une checklist statique : il **calcule**
 - **Assistant IA spécialisé** par référentiel : résumer, lister les non-couvertures, préparer un audit ou une revue de direction — toujours à partir des données réelles, jamais d'invention.
 - Le module **Conformité** du menu affiche désormais directement le référentiel actif via ce même moteur.
 - **Modifier / supprimer** : chaque référentiel (bouton ✏️/🗑 sur sa fiche et sur sa carte du hub) et chaque exigence (bouton ✏️ dans le tableau des exigences, avec re-liaison manuelle aux documents/risques/audits et suppression) peuvent être édités ou retirés à tout moment — y compris les exigences ISO 9001 fournies par défaut.
+- **Multi-référentiel réel** : l'onglet Exigences d'un document liste désormais toutes les exigences qu'il couvre, groupées par référentiel — une même preuve peut répondre à ISO 9001, un référentiel importé, etc. sans être ressaisie.
+- **Analyse d'impact** sur chaque exigence : si elle évolue, Qonnect affiche immédiatement combien de processus, documents, audits et actions seraient concernés.
+- **Comparaison de versions structurée** : au-delà du résumé, chaque nouvelle version détaille précisément les exigences ajoutées, supprimées et les chapitres modifiés.
+- **Synthèse enrichie** par référentiel (Vue d'ensemble) : documents attendus, indicateurs et audits recommandés, et recommandation d'inscription à la prochaine revue de direction — toujours dérivée des données réelles.
+
+### Audits — un processus complet, pas un formulaire
+
+Le module Audits est devenu un véritable parcours guidé, du "pourquoi audite-t-on ?" jusqu'aux actions correctives, sans jamais dupliquer une donnée qui existe déjà ailleurs.
+
+- **Assistant de création en 6 étapes** (`+ Nouvel audit`) : identification (type, référentiel(s), responsable, auditeurs, processus), contexte (pourquoi cet audit ?), périmètre (activités, période, exclusions), objectifs (suggérés selon le type), critères d'audit (exigences suggérées automatiquement selon le périmètre, via le moteur de conformité), puis génération automatique d'un plan de questions à partir des exigences, des risques du processus et des non-conformités précédentes.
+- **Fiche audit à 9 onglets** : Résumé (taux de conformité, points forts/vigilance), Périmètre & objectifs, **Grille d'audit** (mode conduite question par question avec navigation Précédent/Suivant et barre de progression), Constats (6 types : point fort, conforme, vigilance, opportunité, écart, non-conformité majeure — avec qualification de gravité et cause potentielle), Parties prenantes (contributions et relances simulées), Analyse (comparaison avec les audits précédents du même processus, distinguant toujours *fait constaté* et *analyse proposée*), Traçabilité (question → exigence → preuve → constat → action/NC), Rapport, Validation (workflow en 8 étapes : Planifié → Préparation → En cours → Analyse → Synthèse → À valider → Validé → Clôturé).
+- **Non-duplication stricte** : un constat « écart » peut créer une non-conformité directement dans le module Événements (jamais une base séparée), une action dans le module Actions (origine « Audit »), et se relier à un risque existant du registre.
+- **Tableau de bord Audits** : à venir / en cours / en retard / clôturés, écarts issus des audits, actions en cours, taux de conformité moyen.
+- **Programme d'audit** (`#/audits/programme`) : priorités suggérées par processus selon la criticité du risque, l'historique des écarts et l'ancienneté du dernier audit.
+- Chaque audit alimente automatiquement le **moteur de conformité des Référentiels** et la **Revue de Direction** — aucune ressaisie.
 
 ## Limites du prototype
 

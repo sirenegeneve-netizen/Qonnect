@@ -149,7 +149,10 @@ function render(){
       case "objectifs": html = pageObjectives(); break;
       case "evenements": html = parts[2] ? pageEventFiche(parts[2]) : pageEvents(parts[1]||"all"); break;
       case "actions": html = pageActions(); break;
-      case "audits": html = parts[1] ? pageAuditFiche(parts[1]) : pageAudits(); break;
+      case "audits":
+        if(parts[1]==="programme") html = pageAuditProgramme();
+        else html = parts[1] ? pageAuditFiche(parts[1], parts[2], parts[3]) : pageAudits();
+        break;
       case "changements": html = parts[1] ? pageChangeFiche(parts[1]) : pageChanges(); break;
       case "referentiels": html = parts[1] ? pageReferentielDetail(parts[1], parts[2], parts[3]) : pageReferentiels(); break;
       case "conformite": html = pageConformite(parts[1]); break;
@@ -736,7 +739,7 @@ function reviewAlerts(review){
   Object.entries(ncByProcess).forEach(([pid,count])=>{ if(count>=2){ const p=getProcess(pid); alerts.push({level:"warning", text:`Les non-conformités se répètent sur le processus ${p?p.name:pid} (${count} occurrences).`}); } });
   const indComplaint = getIndicator("IND-002");
   if(indComplaint && indComplaint.trend>0) alerts.push({level:"warning", text:`Les réclamations augmentent (+${indComplaint.trend}).`});
-  const unfavorableAudits = DB.audits.filter(a=>a.findings.some(f=>f.type==="ecart") && a.status!=="cloture");
+  const unfavorableAudits = DB.audits.filter(a=>a.findings.some(f=>isAuditEcart(f)) && a.status!=="cloture");
   if(unfavorableAudits.length) alerts.push({level:"warning", text:`${unfavorableAudits.length} audit(s) présentent des écarts non encore clôturés.`});
   const prevReview = review.previousReviewId ? getReview(review.previousReviewId) : null;
   if(prevReview && prevReview.decisions.length){
@@ -749,7 +752,7 @@ function reviewAlerts(review){
 
 function reviewScoreComponents(){
   const objProgressAvg = Math.round(DB.objectives.reduce((s,o)=>s+o.progress,0)/Math.max(DB.objectives.length,1));
-  const auditsOk = DB.audits.filter(a=>!a.findings.some(f=>f.type==="ecart")).length;
+  const auditsOk = DB.audits.filter(a=>!a.findings.some(f=>isAuditEcart(f))).length;
   const auditsPct = Math.round(auditsOk/Math.max(DB.audits.length,1)*100);
   const ncTotal = DB.events.filter(e=>e.type==="non_conformite").length;
   const ncClosed = DB.events.filter(e=>e.type==="non_conformite" && e.status==="cloture").length;
@@ -804,8 +807,8 @@ function reviewImprovementOpportunities(){
   DB.objectives.filter(o=>o.status==="en_retard" || (o.status==="en_cours" && o.progress<50)).forEach(o=>{
     opps.push({id:"OPP-OBJ-"+o.id, source:"Objectif non atteint : "+o.title, analysis:`Progression actuelle : ${o.progress} %.`, proposal:`Revoir le plan d'action associé à l'objectif « ${o.title} ».`});
   });
-  DB.audits.filter(a=>a.findings.some(f=>f.type==="ecart")).forEach(a=>{
-    opps.push({id:"OPP-AUD-"+a.id, source:"Écart d'audit : "+a.title, analysis:`${a.findings.filter(f=>f.type==="ecart").length} écart(s) relevé(s).`, proposal:`Vérifier l'efficacité des actions correctives associées.`});
+  DB.audits.filter(a=>a.findings.some(f=>isAuditEcart(f))).forEach(a=>{
+    opps.push({id:"OPP-AUD-"+a.id, source:"Écart d'audit : "+a.title, analysis:`${a.findings.filter(f=>isAuditEcart(f)).length} écart(s) relevé(s).`, proposal:`Vérifier l'efficacité des actions correctives associées.`});
   });
   return opps;
 }
@@ -1038,7 +1041,7 @@ function reviewTabNcCapa(review){
 }
 
 function reviewTabAudits(review){
-  const nbEcarts = DB.audits.reduce((s,a)=>s+a.findings.filter(f=>f.type==="ecart").length,0);
+  const nbEcarts = DB.audits.reduce((s,a)=>s+a.findings.filter(f=>isAuditEcart(f)).length,0);
   const actionsFromAudits = DB.actions.filter(a=>a.origin==="audit");
   const cloturees = actionsFromAudits.filter(a=>a.status==="termine").length;
   const tauxCloture = actionsFromAudits.length ? Math.round(cloturees/actionsFromAudits.length*100) : 100;
@@ -1050,7 +1053,7 @@ function reviewTabAudits(review){
   </div>
   ${dataTable(
     [ {label:"Audit", render:a=>`<div class="cell-title">${esc(a.title)}</div>`}, {label:"Date", render:a=>fmtDate(a.date)},
-      {label:"Écarts", render:a=>a.findings.filter(f=>f.type==="ecart").length}, {label:"Statut", render:a=>badge(LABELS.auditStatus[a.status])} ],
+      {label:"Écarts", render:a=>a.findings.filter(f=>isAuditEcart(f)).length}, {label:"Statut", render:a=>badge(LABELS.auditStatus[a.status])} ],
     DB.audits, {rowRoute:a=>`audits/${a.id}`}
   )}`;
 }
@@ -1397,11 +1400,18 @@ function docRelations(doc){
   const indicators = [...new Set([...(doc.indicatorIds||[]), ...(process ? DB.indicators.filter(i=>i.processId===process.id).map(i=>i.id) : [])])].map(getIndicator).filter(Boolean);
   const actions = [...new Set([...(doc.actionIds||[]), ...(process && isWorkDoc ? DB.actions.filter(a=>a.processId===process.id).map(a=>a.id) : [])])].map(getAction).filter(Boolean);
   const requirements = (doc.requirementIds||[]).map(id=>findBy(DB.requirements,id)).filter(Boolean);
+  // Multi-référentiel : une même preuve (ce document) peut répondre à plusieurs référentiels — jamais dupliquée, toujours recensée.
+  const legacyExigences = requirements.map(r=>({ref:r.ref, label:r.label, referentielId:"ISO9001", referentielName:"ISO 9001"}));
+  const customExigences = DB.customExigences.filter(e=>(e.docIds||[]).includes(doc.id)).map(e=>{
+    const rf = getReferentiel(e.referentielId);
+    return {ref:e.ref, label:e.title, referentielId:e.referentielId, referentielName: rf?rf.name:e.referentielId};
+  });
+  const allExigences = [...legacyExigences, ...customExigences];
   const trainings = DB.trainings.filter(t=>t.documentId===doc.id);
   const changes = DB.changes.filter(c=>(c.impacted.documents||[]).includes(doc.id));
   const events = process ? DB.events.filter(e=>e.processId===process.id && (e.type==="non_conformite"||e.type==="reclamation")) : [];
   const crossDocs = (doc.crossDocIds||[]).map(getDocument).filter(Boolean);
-  return {process, risks, audits, indicators, actions, requirements, trainings, changes, events, crossDocs};
+  return {process, risks, audits, indicators, actions, requirements, allExigences, trainings, changes, events, crossDocs};
 }
 
 function documentHealthIssues(doc){
@@ -1614,7 +1624,7 @@ function docTabContenu(d, rel, view){
         <div class="kpi"><div class="val">${rel.risks.length}</div><div class="lbl">Risques</div></div>
         <div class="kpi"><div class="val">${rel.audits.length}</div><div class="lbl">Audits</div></div>
         <div class="kpi"><div class="val">${rel.actions.length}</div><div class="lbl">Actions</div></div>
-        <div class="kpi"><div class="val">${rel.requirements.length}</div><div class="lbl">Exigences</div></div>
+        <div class="kpi"><div class="val">${rel.allExigences.length}</div><div class="lbl">Exigences</div></div>
       </div>
     </div>`;
   } else if(view==="operationnelle"){
@@ -1629,7 +1639,7 @@ function docTabContenu(d, rel, view){
       <h3 class="mb-2">Contenu</h3>
       <p class="text-sm" style="color:var(--text-primary);line-height:1.7;white-space:pre-line;">${esc(d.body)}</p>
       <h3 class="mb-2 mt-4">Exigences couvertes</h3>
-      ${rel.requirements.length?rel.requirements.map(r=>`<div class="rel-link"><span class="rel-name">${esc(r.ref)} — ${esc(r.label)}</span>${badgeRaw("success","Couverte")}</div>`).join(""):`<p class="text-sm">Aucune exigence explicitement associée.</p>`}
+      ${rel.allExigences.length?rel.allExigences.map(e=>`<div class="rel-link"><span class="rel-name">${esc(e.ref)} — ${esc(e.label)}</span>${badgeRaw("success",e.referentielName)}</div>`).join(""):`<p class="text-sm">Aucune exigence explicitement associée.</p>`}
       <h3 class="mb-2 mt-4">Preuves associées</h3>
       ${rel.audits.map(a=>`<div class="rel-link" data-route="audits/${a.id}"><span class="rel-name">🔍 ${esc(a.title)}</span></div>`).join("")}
       ${rel.actions.map(a=>`<div class="rel-link" data-route="actions"><span class="rel-name">✅ ${esc(a.title)}</span></div>`).join("")}
@@ -1662,12 +1672,20 @@ function docTabRelations(d, rel){
 }
 
 function docTabExigences(d, rel){
+  const byRef = {};
+  rel.allExigences.forEach(e=>{ (byRef[e.referentielName]=byRef[e.referentielName]||[]).push(e); });
+  const refNames = Object.keys(byRef);
   return `
-  <div class="card mb-2"><p class="text-sm">Référentiel(s) associé(s) : ${(d.referentiels||[]).map(esc).join(", ")||"—"}</p></div>
-  ${rel.requirements.length? dataTable(
-    [ {label:"Exigence", render:r=>`<strong>${esc(r.ref)}</strong>`}, {label:"Libellé", render:r=>esc(r.label)}, {label:"Couverture", render:()=>badgeRaw("success","Oui")} ],
-    rel.requirements
-  ) : `<div class="card">${emptyState("📐","Aucune exigence associée","Ce document n'est pas encore relié à une exigence normative précise.")}</div>`}`;
+  <div class="card mb-2">
+    <p class="text-sm">Référentiel(s) associé(s) au document : ${(d.referentiels||[]).map(esc).join(", ")||"—"}</p>
+    ${refNames.length>1?`<p class="text-xs mt-2">🔗 Ce document répond à ${refNames.length} référentiels différents — la même preuve est réutilisée, jamais dupliquée.</p>`:""}
+  </div>
+  ${refNames.length? refNames.map(rn=>`
+    <div class="card mb-2">
+      <h3 class="mb-2">${esc(rn)}</h3>
+      ${byRef[rn].map(e=>`<div class="rel-link"><span class="rel-name">${esc(e.ref)} — ${esc(e.label)}</span>${badgeRaw("success","Couverte")}</div>`).join("")}
+    </div>`).join("")
+    : `<div class="card">${emptyState("📐","Aucune exigence associée","Ce document n'est pas encore relié à une exigence normative précise.")}</div>`}`;
 }
 
 function docTabImpact(d, rel){
@@ -1985,58 +2003,403 @@ function applyActionFilters(){
 }
 
 /* ============================================================
-   12. AUDITS
+   12. AUDITS — processus d'audit complet et transversal
    ============================================================ */
+
+/* ---------- Helpers ---------- */
+function resolveExigence(id){
+  if(!id) return null;
+  const legacy = findBy(DB.requirements, id);
+  if(legacy) return {ref:legacy.ref, label:legacy.label, referentielId:"ISO9001"};
+  const custom = getCustomExigence(id);
+  if(custom) return {ref:custom.ref, label:custom.title, referentielId:custom.referentielId};
+  return null;
+}
+function auditConformityRate(a){
+  const evaluated = a.questions.filter(q=>["conforme","partiellement_conforme","non_conforme"].includes(q.statut));
+  if(!evaluated.length) return null;
+  const conformeCount = evaluated.filter(q=>q.statut==="conforme").length;
+  return Math.round(conformeCount/evaluated.length*100);
+}
+function auditProcessHistory(a){
+  return DB.audits.filter(x=>x.processId===a.processId && x.id!==a.id).sort((x,y)=>x.date.localeCompare(y.date));
+}
+function auditRuleBasedAnalysis(a){
+  const history = auditProcessHistory(a);
+  const bullets = [];
+  a.findings.filter(isAuditEcart).forEach(f=>{
+    if(!f.requirementId) return;
+    const recurrence = history.filter(h=>h.findings.some(hf=>isAuditEcart(hf) && hf.requirementId===f.requirementId));
+    if(recurrence.length){
+      const ex = resolveExigence(f.requirementId);
+      bullets.push({fact:`Écart constaté sur ${ex?ex.ref:f.requirementId} — déjà relevé lors de ${recurrence.length} audit(s) précédent(s) de ce processus.`, analysis:"Une analyse de cause systémique est recommandée plutôt qu'une action ponctuelle."});
+    }
+  });
+  if(!bullets.length) bullets.push({fact:"Aucune récurrence détectée entre cet audit et les audits précédents de ce processus.", analysis:"Sur la base des données actuellement disponibles."});
+  return bullets;
+}
+function generateAuditQuestions(processIds, referentielIds){
+  const qs = [];
+  (referentielIds && referentielIds.length ? referentielIds : ["ISO9001"]).forEach(refId=>{
+    const order = {non_couvert:0,partiellement:1,a_renforcer:2,maitrise:3,optimise:4};
+    const views = getReferentielExigenceViews(refId).filter(v=>v.process && processIds.includes(v.process.id)).sort((a,b)=>order[a.level]-order[b.level]);
+    views.slice(0,5).forEach(v=>{
+      qs.push({ id:"Q-"+Math.random().toString(36).slice(2,8), question:`Comment l'exigence ${v.ref} — ${v.title} est-elle mise en œuvre et démontrée ?`,
+        requirementId:v.id, processId:v.process.id, critere:v.ref, preuveAttendue:"Procédure, enregistrement ou indicateur associé", responsableInterroge:v.process.pilot, statut:"non_evalue", commentaire:"", preuveIds:[] });
+    });
+  });
+  processIds.forEach(pid=>{
+    const p = getProcess(pid);
+    const topRisk = DB.risks.filter(r=>r.processId===pid && r.type==="risque" && r.status==="ouvert").sort((a,b)=>(b.probability*b.impact)-(a.probability*a.impact))[0];
+    if(topRisk) qs.push({ id:"Q-"+Math.random().toString(36).slice(2,8), question:`Comment le risque « ${topRisk.name} » est-il maîtrisé ?`, requirementId:null, processId:pid, critere:topRisk.name, preuveAttendue:"Plan de maîtrise du risque", responsableInterroge:p?p.pilot:"", statut:"non_evalue", commentaire:"", preuveIds:[] });
+    const priorNc = DB.events.filter(e=>e.processId===pid && e.type==="non_conformite")[0];
+    if(priorNc) qs.push({ id:"Q-"+Math.random().toString(36).slice(2,8), question:`L'action corrective suite à « ${priorNc.title} » est-elle efficace ?`, requirementId:null, processId:pid, critere:priorNc.ref, preuveAttendue:"Preuve de vérification d'efficacité", responsableInterroge:p?p.pilot:"", statut:"non_evalue", commentaire:"", preuveIds:[] });
+  });
+  return qs.slice(0,10);
+}
+
+/* ---------- Tableau de bord & programme ---------- */
 function pageAudits(){
+  const today = new Date().toISOString().slice(0,10);
+  const aVenir = DB.audits.filter(a=>a.status==="planifie" && a.date>=today);
+  const enRetard = DB.audits.filter(a=>["planifie","preparation"].includes(a.status) && a.date<today);
+  const enCours = DB.audits.filter(a=>["preparation","en_cours","analyse","synthese","a_valider"].includes(a.status));
+  const clotures = DB.audits.filter(a=>["valide","cloture"].includes(a.status));
+  const ncIssues = DB.audits.reduce((s,a)=>s+a.findings.filter(isAuditEcart).length,0);
+  const actionsAudit = DB.actions.filter(a=>a.origin==="audit" && a.status!=="termine");
+  const rates = DB.audits.map(auditConformityRate).filter(r=>r!==null);
+  const tauxGlobal = rates.length? Math.round(rates.reduce((s,r)=>s+r,0)/rates.length) : null;
+
   return `
-  ${pageHeader("Audits","Programme et suivi des audits internes.",
-    `<button class="btn btn-primary" data-open-quick="audit">+ Créer un audit</button>`)}
+  ${pageHeader("Audits","Le pilotage transversal de vos audits — de la préparation à la revue de direction.",
+    `<button class="btn btn-secondary" data-route="audits/programme">📅 Programme d'audit</button><button class="btn btn-primary" data-open-audit-wizard>+ Nouvel audit</button>`)}
+  <div class="grid grid-4 mb-4">
+    <div class="card"><div class="kpi"><div class="val">${aVenir.length}</div><div class="lbl">Audits à venir</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--warning)">${enCours.length}</div><div class="lbl">Audits en cours</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:${enRetard.length?'var(--danger)':'var(--success)'}">${enRetard.length}</div><div class="lbl">Audits en retard</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--success)">${clotures.length}</div><div class="lbl">Audits clôturés</div></div></div>
+  </div>
+  <div class="grid grid-3 mb-4">
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--danger)">${ncIssues}</div><div class="lbl">Écarts / NC issus des audits</div></div></div>
+    <div class="card"><div class="kpi"><div class="val">${actionsAudit.length}</div><div class="lbl">Actions en cours (origine audit)</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--primary)">${tauxGlobal===null?"—":tauxGlobal+" %"}</div><div class="lbl">Taux de conformité moyen</div></div></div>
+  </div>
   ${dataTable(
-    [ {label:"Audit", render:a=>`<div class="cell-title">${esc(a.title)}</div>`},
+    [ {label:"Réf.", render:a=>esc(a.ref||a.id)},
+      {label:"Audit", render:a=>`<div class="cell-title">${esc(a.title)}</div><div class="cell-sub">${esc(LABELS.auditType[a.type]||a.type||"—")}</div>`},
       {label:"Processus", render:a=>{const p=getProcess(a.processId); return p?esc(p.name):"—";}},
-      {label:"Auditeur", render:a=>esc(a.auditor)},
+      {label:"Responsable", render:a=>esc(a.responsable||a.auditor)},
       {label:"Date", render:a=>fmtDate(a.date)},
       {label:"Constats", render:a=>a.findings.length},
       {label:"Statut", render:a=>badge(LABELS.auditStatus[a.status])} ],
     DB.audits, {rowRoute:a=>`audits/${a.id}`, emptyEmoji:"🔍", emptyTitle:"Aucun audit", emptyText:"Aucun audit n'est encore planifié."}
   )}`;
 }
-function pageAuditFiche(id){
+
+function pageAuditProgramme(){
+  const rows = DB.processes.map(p=>{
+    const processAudits = DB.audits.filter(a=>a.processId===p.id).sort((a,b)=>a.date.localeCompare(b.date));
+    const last = processAudits.filter(a=>["valide","cloture"].includes(a.status)).slice(-1)[0];
+    const next = processAudits.find(a=>["planifie","preparation"].includes(a.status));
+    const critRisk = DB.risks.some(r=>r.processId===p.id && r.type==="risque" && r.status==="ouvert" && r.level==="critique");
+    const highRisk = DB.risks.some(r=>r.processId===p.id && r.type==="risque" && r.status==="ouvert" && r.level==="eleve");
+    const ncCount = DB.events.filter(e=>e.processId===p.id && e.type==="non_conformite").length;
+    const monthsSinceLast = last ? Math.round((Date.now()-new Date(last.date+"T00:00:00").getTime())/(1000*3600*24*30)) : 999;
+    let score = 0;
+    if(critRisk) score+=3; else if(highRisk) score+=2;
+    score += Math.min(ncCount,3);
+    if(monthsSinceLast>12) score+=2; else if(monthsSinceLast>6) score+=1;
+    if(!last) score+=3;
+    const priorite = score>=5?"haute":score>=3?"moyenne":"basse";
+    return {process:p, last, next, priorite, critRisk};
+  }).sort((a,b)=>({haute:0,moyenne:1,basse:2}[a.priorite])-({haute:0,moyenne:1,basse:2}[b.priorite]));
+
+  return `
+  ${breadcrumb([{label:"Audits",href:"#/audits"},{label:"Programme d'audit"}])}
+  ${pageHeader("Programme d'audit","Priorités suggérées selon la criticité des processus, les risques, l'historique des écarts et l'ancienneté du dernier audit.")}
+  ${dataTable(
+    [ {label:"Processus", render:r=>esc(r.process.name)},
+      {label:"Risque critique", render:r=>r.critRisk?badgeRaw("danger","Oui"):badgeRaw("neutral","Non")},
+      {label:"Dernier audit", render:r=>r.last?fmtDate(r.last.date):"Jamais audité"},
+      {label:"Prochain audit", render:r=>r.next?fmtDate(r.next.date):"Non planifié"},
+      {label:"Priorité suggérée", render:r=>badge(LABELS.priority[r.priorite])},
+      {label:"", render:r=>`<button class="btn btn-secondary btn-sm" data-open-audit-wizard data-preset-process="${r.process.id}">+ Planifier</button>`} ],
+    rows
+  )}`;
+}
+
+/* ---------- Fiche audit ---------- */
+function auditTabsHtml(a, active){
+  const tabs = [
+    {id:"resume",label:"Résumé"}, {id:"perimetre",label:"Périmètre & objectifs"}, {id:"grille",label:"Grille d'audit"},
+    {id:"constats",label:"Constats ("+a.findings.length+")"}, {id:"parties",label:"Parties prenantes"}, {id:"analyse",label:"Analyse"},
+    {id:"tracabilite",label:"Traçabilité"}, {id:"rapport",label:"Rapport"}, {id:"validation",label:"Validation"},
+  ];
+  return `<div class="tabs">${tabs.map(t=>`<button class="tab ${t.id===active?'active':''}" data-route="audits/${a.id}/${t.id}">${esc(t.label)}</button>`).join("")}</div>`;
+}
+
+function pageAuditFiche(id, tab, qIdx){
   const a = getAudit(id);
   if(!a) return emptyState("🔍","Audit introuvable","Cet audit n'existe pas.");
+  tab = tab || "resume";
   const p = getProcess(a.processId);
-  return `
+  const isLocked = a.status==="cloture";
+  const stepIndex = AUDIT_WORKFLOW_STEPS.indexOf(a.status);
+
+  const header = `
   ${breadcrumb([{label:"Audits",href:"#/audits"},{label:a.title}])}
-  <div class="grid" style="grid-template-columns:2fr 1fr;gap:24px;">
-    <div>
-      <div class="card mb-2">
-        <div class="flex justify-between items-center">${badge(LABELS.auditStatus[a.status])}</div>
+  <div class="card mb-2">
+    <div class="flex justify-between items-center" style="flex-wrap:wrap;gap:10px;">
+      <div>
+        <span class="badge badge-neutral">${esc(a.ref||a.id)}</span> ${badge(LABELS.auditStatus[a.status])}
         <h1 class="mt-2">${esc(a.title)}</h1>
-        <p class="section-sub mt-2">Processus : ${p?esc(p.name):"—"} · Auditeur : ${esc(a.auditor)} · Date : ${fmtDate(a.date)}</p>
-        <div class="grid grid-2 mt-4">
-          <div><div class="text-xs">OBJECTIF</div><p class="text-sm mt-2" style="color:var(--text-primary)">${esc(a.objective)}</p></div>
-          <div><div class="text-xs">PÉRIMÈTRE</div><p class="text-sm mt-2" style="color:var(--text-primary)">${esc(a.scope)}</p></div>
-        </div>
+        <p class="section-sub mt-2">${esc(LABELS.auditType[a.type]||a.type||"—")} · Processus : ${p?esc(p.name):"—"} · Responsable : ${esc(a.responsable||a.auditor)} · Date : ${fmtDate(a.date)}${a.site?" · Site : "+esc(a.site):""}</p>
       </div>
-      <div class="card">
-        <div class="flex justify-between items-center mb-2"><h3>Constats</h3>
-          <button class="btn btn-secondary btn-sm" data-open-quick="finding" data-preset-audit="${a.id}">+ Ajouter un constat</button>
-        </div>
-        ${a.findings.length ? a.findings.map(f=>`
-          <div class="rel-link" style="align-items:flex-start;">
-            <div>
-              ${f.type==="ecart"?badge(LABELS.priority.haute,"Écart"):badgeRaw("info","Point fort")}
-              <p class="text-sm mt-2" style="color:var(--text-primary)">${esc(f.text)}</p>
-            </div>
-            ${f.actionId?`<span class="badge badge-neutral">Action générée</span>`:""}
-          </div>`).join("") : `<p class="text-sm">Aucun constat enregistré pour cet audit.</p>`}
-      </div>
+    </div>
+    <div class="mt-4">${workflowStepper(AUDIT_WORKFLOW_LABELS, stepIndex<0?0:stepIndex)}</div>
+    <div class="flex gap-2 mt-4" style="flex-wrap:wrap;">
+      ${!isLocked && stepIndex<AUDIT_WORKFLOW_STEPS.length-1 ? `<button class="btn btn-primary" data-advance-audit="${a.id}">Passer à l'étape suivante : ${AUDIT_WORKFLOW_LABELS[stepIndex+1]}</button>` : ""}
+      ${isLocked?`<span class="badge badge-neutral"><span class="badge-dot"></span>Audit clôturé — verrouillé</span>`:""}
+    </div>
+  </div>
+  ${auditTabsHtml(a, tab)}`;
+
+  let body = "";
+  if(tab==="resume") body = auditTabResume(a);
+  else if(tab==="perimetre") body = auditTabPerimetre(a, isLocked);
+  else if(tab==="grille") body = auditTabGrille(a, qIdx, isLocked);
+  else if(tab==="constats") body = auditTabConstats(a, isLocked);
+  else if(tab==="parties") body = auditTabParties(a, isLocked);
+  else if(tab==="analyse") body = auditTabAnalyse(a);
+  else if(tab==="tracabilite") body = auditTabTracabilite(a);
+  else if(tab==="rapport") body = auditTabRapport(a);
+  else if(tab==="validation") body = auditTabValidation(a, isLocked);
+  return header + body;
+}
+
+function auditTabResume(a){
+  const rate = auditConformityRate(a);
+  const forces = a.findings.filter(f=>f.type==="point_fort").slice(0,3);
+  const vigilance = a.findings.filter(f=>f.type==="vigilance"||f.type==="opportunite").slice(0,3);
+  const ncCount = a.findings.filter(isAuditEcart).length;
+  const oppCount = a.findings.filter(f=>f.type==="opportunite").length;
+  const actionsCount = a.findings.filter(f=>f.actionId).length;
+  return `
+  <div class="grid grid-2">
+    <div class="card">
+      <h3 class="mb-2">Périmètre</h3>
+      <p class="text-sm">${esc(a.perimeter?.activites||a.scope||"—")}</p>
+      <p class="text-xs mt-2">${a.perimeter?.periodeDebut?"Période : "+fmtDate(a.perimeter.periodeDebut)+" → "+fmtDate(a.perimeter.periodeFin):""}</p>
+      ${a.perimeter?.exclusions?`<p class="text-xs mt-2">Exclusions : ${esc(a.perimeter.exclusions)}</p>`:""}
     </div>
     <div class="card">
-      <h3 class="mb-2">Relations</h3>
-      ${p?`<div class="rel-link" data-route="processus/${p.id}"><span class="rel-name">🧩 ${esc(p.name)}</span><span class="chev">›</span></div>`:""}
-      ${a.findings.filter(f=>f.actionId).map(f=>`<div class="rel-link" data-route="actions"><span class="rel-name">✅ ${esc(getAction(f.actionId)?.title||"Action")}</span><span class="chev">›</span></div>`).join("")}
+      <h3 class="mb-2">Objectifs</h3>
+      ${(a.objectifs&&a.objectifs.length?a.objectifs:[a.objective]).filter(Boolean).map(o=>`<p class="text-sm mt-2">• ${esc(o)}</p>`).join("")}
     </div>
+  </div>
+  <div class="card mt-4">
+    <h3 class="mb-2">Résultat</h3>
+    <div class="flex items-center gap-3">
+      ${rate!==null?ringGauge(rate,"var(--primary)",72):""}
+      <div class="kpi"><div class="val">${rate===null?"—":rate+" %"}</div><div class="lbl">des critères vérifiés sont conformes</div></div>
+    </div>
+    <div class="grid grid-4 mt-4">
+      <div class="kpi"><div class="val" style="color:var(--danger)">${ncCount}</div><div class="lbl">Non-conformités / écarts</div></div>
+      <div class="kpi"><div class="val" style="color:var(--warning)">${oppCount}</div><div class="lbl">Opportunités d'amélioration</div></div>
+      <div class="kpi"><div class="val">${actionsCount}</div><div class="lbl">Actions</div></div>
+      <div class="kpi"><div class="val">${a.questions.length}</div><div class="lbl">Questions</div></div>
+    </div>
+  </div>
+  <div class="grid grid-2 mt-4">
+    <div class="card">
+      <h3 class="mb-2">🟢 Points forts</h3>
+      ${forces.length?forces.map(f=>`<p class="text-sm mt-2">${esc(f.text)}</p>`).join(""):`<p class="text-sm">Aucun point fort enregistré pour le moment.</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">🟠 Points de vigilance</h3>
+      ${vigilance.length?vigilance.map(f=>`<p class="text-sm mt-2">${esc(f.text)}</p>`).join(""):`<p class="text-sm">Aucun point de vigilance enregistré.</p>`}
+    </div>
+  </div>`;
+}
+
+function auditTabPerimetre(a, isLocked){
+  const pr = a.perimeter || {};
+  const processesNames = (a.processIds||[a.processId]).filter(Boolean).map(id=>{const p=getProcess(id); return p?p.name:id;});
+  const docs = (a.criteres?.documentIds||[]).map(getDocument).filter(Boolean);
+  const reqs = (a.criteres?.requirementIds||[]).map(resolveExigence).filter(Boolean);
+  return `
+  <div class="card mb-4">
+    <div class="flex justify-between items-center mb-2"><h3>Périmètre de l'audit</h3>${!isLocked?`<button class="btn btn-secondary btn-sm" data-edit-audit-perimeter="${a.id}">✏️ Modifier</button>`:""}</div>
+    <p class="text-sm">Processus : ${processesNames.map(esc).join(", ")||"—"}</p>
+    <p class="text-sm mt-2">Site : ${esc(a.site||"—")}</p>
+    <p class="text-sm mt-2">Activités : ${esc(pr.activites||"—")}</p>
+    ${pr.produits?`<p class="text-sm mt-2">Produits / services : ${esc(pr.produits)}</p>`:""}
+    <p class="text-sm mt-2">Période auditée : ${pr.periodeDebut?fmtDate(pr.periodeDebut)+" → "+fmtDate(pr.periodeFin):"—"}</p>
+    <p class="text-sm mt-2">Exclusions : ${esc(pr.exclusions||"Aucune")}</p>
+    <p class="text-sm mt-2">Motifs : ${(a.motifs||[]).map(m=>esc(LABELS.auditMotif[m]||m)).join(", ")||"—"}</p>
+  </div>
+  <div class="card mb-4">
+    <h3 class="mb-2">Objectifs</h3>
+    ${(a.objectifs&&a.objectifs.length?a.objectifs:[a.objective]).filter(Boolean).map(o=>`<p class="text-sm mt-2">• ${esc(o)}</p>`).join("")}
+  </div>
+  <div class="card">
+    <h3 class="mb-2">Critères d'audit</h3>
+    <p class="text-xs mb-2">RÉFÉRENTIEL(S)</p>
+    <p class="text-sm">${(a.referentielIds||[]).map(id=>{const r=getReferentiel(id); return r?esc(r.name):esc(id);}).join(", ")||"—"}</p>
+    <p class="text-xs mb-2 mt-4">EXIGENCES</p>
+    ${reqs.length?reqs.map(r=>`<div class="rel-link"><span class="rel-name">${esc(r.ref)} — ${esc(r.label)}</span></div>`).join(""):`<p class="text-sm">Aucune exigence sélectionnée.</p>`}
+    <p class="text-xs mb-2 mt-4">DOCUMENTS APPLICABLES</p>
+    ${docs.length?docs.map(d=>`<div class="rel-link" data-route="documents/${d.type}/${d.id}"><span class="rel-name">📄 ${esc(d.title)}</span></div>`).join(""):`<p class="text-sm">Aucun document applicable sélectionné.</p>`}
+  </div>`;
+}
+
+function auditTabGrille(a, qIdx, isLocked){
+  const total = a.questions.length;
+  if(!total){
+    return `<div class="card">${emptyState("📋","Aucune question","Générez ou ajoutez des questions pour construire la grille d'audit.",
+      `<button class="btn btn-primary" data-generate-questions="${a.id}">🧠 Générer des questions</button>`)}</div>`;
+  }
+  let idx = qIdx!=null ? parseInt(qIdx,10) : 0;
+  if(isNaN(idx) || idx<0) idx = 0;
+  if(idx>=total) idx = total-1;
+  const q = a.questions[idx];
+  const answered = a.questions.filter(x=>x.statut!=="non_evalue").length;
+  const ex = resolveExigence(q.requirementId);
+  const proc = getProcess(q.processId);
+  const availableDocs = DB.documents.filter(d=>d.status!=="obsolete");
+
+  return `
+  <div class="card mb-4">
+    <div class="flex justify-between items-center"><span class="text-sm" style="font-weight:700;">${answered} / ${total} questions évaluées</span>
+      ${!isLocked?`<button class="btn btn-secondary btn-sm" data-generate-questions="${a.id}">🧠 Générer plus</button>`:""}
+    </div>
+    <div class="progress mt-2"><div style="width:${Math.round(answered/total*100)}%"></div></div>
+  </div>
+  <div class="card mb-4">
+    <div class="flex justify-between items-center">${badge(LABELS.questionStatus[q.statut])}${ex?badgeRaw("info",ex.ref):""}</div>
+    <h3 class="mt-2">${esc(q.question)}</h3>
+    <p class="text-xs mt-4">PROCESSUS</p><p class="text-sm">${proc?esc(proc.name):"—"}</p>
+    <p class="text-xs mt-4">CRITÈRE</p><p class="text-sm">${esc(q.critere||"—")}</p>
+    <p class="text-xs mt-4">PREUVE ATTENDUE</p><p class="text-sm">${esc(q.preuveAttendue||"—")}</p>
+    <p class="text-xs mt-4">RESPONSABLE INTERROGÉ</p><p class="text-sm">${esc(q.responsableInterroge||"—")}</p>
+    ${!isLocked?`
+    <div class="field mt-4"><label>Statut</label><select id="q-statut">${Object.entries(LABELS.questionStatus).map(([v,l])=>`<option value="${v}" ${q.statut===v?"selected":""}>${l.l}</option>`).join("")}</select></div>
+    <div class="field"><label>Commentaire / réponse</label><textarea id="q-comment">${esc(q.commentaire)}</textarea></div>
+    <div class="field"><label>Preuve(s) constatée(s) — sélectionner un document déjà présent dans Qonnect</label>
+      <div style="max-height:120px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
+        ${availableDocs.map(d=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="q-preuve-cb" value="${d.id}" ${q.preuveIds.includes(d.id)?"checked":""} style="width:auto;"> ${esc(d.title)}</label>`).join("")}
+      </div>
+    </div>
+    <button class="btn btn-primary" data-save-question='${jsonAttr({auditId:a.id, questionId:q.id, qIdx:idx})}'>Enregistrer la réponse</button>
+    `:`
+    <p class="text-sm mt-4"><strong>Commentaire :</strong> ${esc(q.commentaire||"—")}</p>
+    ${q.preuveIds.length?`<p class="text-xs mt-4">PREUVES</p>${q.preuveIds.map(id=>{const d=getDocument(id); return d?`<div class="rel-link" data-route="documents/${d.type}/${d.id}"><span class="rel-name">📄 ${esc(d.title)}</span></div>`:"";}).join("")}`:""}
+    `}
+    <div class="flex justify-between mt-4">
+      <button class="btn btn-secondary" ${idx<=0?"disabled":""} data-route="audits/${a.id}/grille/${idx-1}">← Précédent</button>
+      <button class="btn btn-secondary" ${idx>=total-1?"disabled":""} data-route="audits/${a.id}/grille/${idx+1}">Suivant →</button>
+    </div>
+  </div>
+  ${!isLocked?`<div class="mb-2"><button class="btn btn-secondary btn-sm" data-add-question="${a.id}">+ Ajouter une question manuelle</button></div>`:""}
+  <div class="card card-flush table-wrap">
+    <table class="dt"><thead><tr><th>#</th><th>Question</th><th>Statut</th></tr></thead><tbody>
+      ${a.questions.map((qq,i)=>`<tr class="clickable" data-route="audits/${a.id}/grille/${i}" style="${i===idx?'background:var(--primary-soft);':''}"><td>${i+1}</td><td>${esc(qq.question)}</td><td>${badge(LABELS.questionStatus[qq.statut])}</td></tr>`).join("")}
+    </tbody></table>
+  </div>`;
+}
+
+function auditTabConstats(a, isLocked){
+  return `
+  ${!isLocked?`<div class="flex justify-between items-center mb-2"><span></span><button class="btn btn-primary btn-sm" data-open-quick="finding" data-preset-audit="${a.id}">+ Ajouter un constat</button></div>`:""}
+  ${a.findings.length? a.findings.map(f=>{
+    const ct = LABELS.constatType[f.type]||{l:f.type,c:"neutral",e:""};
+    const ex = resolveExigence(f.requirementId);
+    return `<div class="card mb-2">
+      <div class="flex justify-between items-center">${badge(ct)}${f.gravite?badgeRaw("neutral",LABELS.constatGravite[f.gravite]):""}</div>
+      <p class="text-sm mt-2" style="color:var(--text-primary)">${esc(f.text)}</p>
+      ${ex?`<p class="text-xs mt-2">Exigence : ${esc(ex.ref)} — ${esc(ex.label)}</p>`:""}
+      ${f.cause?`<p class="text-xs mt-2">Cause potentielle : ${esc(f.cause)}</p>`:""}
+      <div class="flex gap-2 mt-2" style="flex-wrap:wrap;">
+        ${f.ncEventId?`<span class="badge badge-neutral" data-route="evenements/non_conformite/${f.ncEventId}" style="cursor:pointer;">NC créée →</span>`:(isAuditEcart(f)&&!isLocked?`<button class="btn btn-secondary btn-sm" data-create-nc-from-constat='${jsonAttr({auditId:a.id, constatId:f.id})}'>+ Créer une NC</button>`:"")}
+        ${f.actionId?`<span class="badge badge-neutral" data-route="actions" style="cursor:pointer;">Action créée →</span>`:(!isLocked?`<button class="btn btn-secondary btn-sm" data-create-action-from-constat='${jsonAttr({auditId:a.id, constatId:f.id})}'>+ Créer une action</button>`:"")}
+        ${f.riskId?`<span class="badge badge-neutral" data-route="risques/${f.riskId}" style="cursor:pointer;">Risque associé →</span>`:""}
+      </div>
+    </div>`;
+  }).join("") : `<div class="card">${emptyState("📝","Aucun constat","Ajoutez les constats relevés pendant l'audit.")}</div>`}`;
+}
+
+function auditTabParties(a, isLocked){
+  return `
+  ${!isLocked?`<div class="flex justify-between items-center mb-2"><span></span><button class="btn btn-primary btn-sm" data-add-party="${a.id}">+ Ajouter une partie prenante</button></div>`:""}
+  ${a.parties.length? a.parties.map(pt=>{
+    const qs = a.questions.filter(q=>pt.questionIds.includes(q.id));
+    const answered = qs.filter(q=>q.statut!=="non_evalue").length;
+    return `<div class="card mb-2">
+      <div class="flex justify-between items-center"><h3>${esc(pt.name)}</h3>${badge(LABELS.partyStatus[pt.status])}</div>
+      <p class="text-sm mt-2">${esc(pt.role)} · ${qs.length} question(s) à compléter · ${answered}/${qs.length} répondue(s)</p>
+      <p class="text-xs mt-2">Échéance : ${fmtDate(pt.echeance)}</p>
+      ${!isLocked && pt.status!=="complete"?`<button class="btn btn-secondary btn-sm mt-2" data-relaunch-party='${jsonAttr({auditId:a.id, partyName:pt.name})}'>🔔 Relancer</button>`:""}
+    </div>`;
+  }).join("") : `<div class="card">${emptyState("🤝","Aucune partie prenante","Ajoutez les personnes qui doivent contribuer à cet audit.")}</div>`}`;
+}
+
+function auditTabAnalyse(a){
+  const history = auditProcessHistory(a);
+  const analysis = auditRuleBasedAnalysis(a);
+  return `
+  <div class="card mb-4">
+    <h3 class="mb-2">Comparaison avec les audits précédents du même processus</h3>
+    ${history.length? `<div class="table-wrap"><table class="dt"><thead><tr><th>Date</th><th>Écarts</th><th>Points forts</th></tr></thead><tbody>
+      ${[...history, a].sort((x,y)=>x.date.localeCompare(y.date)).map(h=>`<tr ${h.id===a.id?'style="background:var(--primary-soft);"':""}><td>${fmtDate(h.date)}${h.id===a.id?" (cet audit)":""}</td><td>${h.findings.filter(isAuditEcart).length}</td><td>${h.findings.filter(f=>f.type==="point_fort").length}</td></tr>`).join("")}
+    </tbody></table></div>` : `<p class="text-sm">Aucun audit précédent sur ce processus pour établir une comparaison.</p>`}
+  </div>
+  <div class="card">
+    <h3 class="mb-2">🤖 Analyse Qonnect</h3>
+    ${analysis.map(b=>`<div class="mt-2"><p class="text-sm"><strong>Fait constaté :</strong> ${esc(b.fact)}</p><p class="text-sm mt-2" style="color:var(--text-secondary);"><strong>Analyse proposée :</strong> ${esc(b.analysis)}</p></div>`).join("<hr style='border:none;border-top:1px solid var(--border);margin:12px 0;'>")}
+    <p class="text-xs mt-4">Qonnect distingue toujours le fait constaté de l'analyse proposée — aucune preuve ni résultat n'est inventé.</p>
+  </div>`;
+}
+
+function auditTabTracabilite(a){
+  const rows = a.questions.map(q=>{
+    const ex = resolveExigence(q.requirementId);
+    const proc = getProcess(q.processId);
+    const constat = a.findings.find(f=>f.questionId===q.id);
+    return {q, ex, proc, constat};
+  });
+  return dataTable(
+    [ {label:"Question", render:r=>esc(r.q.question.slice(0,50))+(r.q.question.length>50?"…":"")},
+      {label:"Exigence", render:r=>r.ex?esc(r.ex.ref):"—"},
+      {label:"Processus", render:r=>r.proc?esc(r.proc.name):"—"},
+      {label:"Preuve", render:r=>r.q.preuveIds.length+" doc(s)"},
+      {label:"Constat", render:r=>r.constat?badge(LABELS.constatType[r.constat.type]):"—"},
+      {label:"Action / NC", render:r=>r.constat?(r.constat.actionId?"✅ Action":"")+(r.constat.ncEventId?" 🚨 NC":""):"—"} ],
+    rows
+  );
+}
+
+function auditTabRapport(a){
+  return `
+  <div class="card">
+    <h3 class="mb-2">Générer les sorties de l'audit</h3>
+    <p class="text-sm mb-4">Le rapport reprend l'identification, les objectifs, le périmètre, les référentiels, la méthodologie, les questions, les preuves, les constats, la synthèse et la conclusion — sans ressaisie.</p>
+    <div class="quick-actions">
+      <button class="btn btn-primary" data-generate-audit-report="${a.id}">📄 Générer le rapport d'audit</button>
+      <button class="btn btn-secondary" data-route="audits/${a.id}/resume">📊 Résumé exécutif (vue Direction)</button>
+    </div>
+  </div>`;
+}
+
+function auditTabValidation(a, isLocked){
+  const stepIndex = AUDIT_WORKFLOW_STEPS.indexOf(a.status);
+  return `
+  <div class="card">
+    <h3 class="mb-2">Workflow de validation</h3>
+    ${workflowStepper(AUDIT_WORKFLOW_LABELS, stepIndex<0?0:stepIndex)}
+    <div class="flex gap-2 mt-4">
+      ${!isLocked && stepIndex<AUDIT_WORKFLOW_STEPS.length-1 ? `<button class="btn btn-primary" data-advance-audit="${a.id}">Passer à l'étape suivante : ${AUDIT_WORKFLOW_LABELS[stepIndex+1]}</button>` : `<span class="badge badge-success"><span class="badge-dot"></span>Audit clôturé — conservé et tracé</span>`}
+    </div>
+    <p class="text-xs mt-4">Une fois clôturé, l'audit devient non modifiable par défaut ; la traçabilité de chaque étape est conservée.</p>
   </div>`;
 }
 
@@ -2123,7 +2486,7 @@ function legacyRequirementBundle(r){
   (r.extraRiskIds||[]).forEach(id=>{ const rk=getRisk(id); if(rk && rk.status==="ouvert") riskMap.set(rk.id,rk); });
   const risksOpen = [...riskMap.values()];
   const indicatorsBad = process ? DB.indicators.filter(i=>i.processId===process.id && i.status!=="vert") : [];
-  const auditEcarts = audits.some(a=>a.findings.some(f=>f.type==="ecart") && a.status!=="cloture");
+  const auditEcarts = audits.some(a=>a.findings.some(f=>isAuditEcart(f)) && a.status!=="cloture");
   return {docs, audits, actionsOpen, actionsLate, risksOpen, indicatorsBad, auditEcarts, process, processes:process?[process]:[]};
 }
 function customExigenceBundle(e){
@@ -2137,7 +2500,7 @@ function customExigenceBundle(e){
   let risksOpen = (e.riskIds||[]).map(getRisk).filter(Boolean).filter(r=>r.status==="ouvert");
   processes.forEach(p=>{ DB.risks.filter(r=>r.processId===p.id && r.type==="risque" && r.status==="ouvert" && (r.level==="critique"||r.level==="eleve")).forEach(r=>{ if(!risksOpen.find(x=>x.id===r.id)) risksOpen.push(r); }); });
   const indicatorsBad = processes.flatMap(p=> DB.indicators.filter(i=>i.processId===p.id && i.status!=="vert"));
-  const auditEcarts = audits.some(a=>a.findings.some(f=>f.type==="ecart") && a.status!=="cloture");
+  const auditEcarts = audits.some(a=>a.findings.some(f=>isAuditEcart(f)) && a.status!=="cloture");
   return {docs, audits, actionsOpen, actionsLate, risksOpen, indicatorsBad, auditEcarts, process:processes[0]||null, processes};
 }
 function scoreCoverage(bundle){
@@ -2288,12 +2651,26 @@ function openReferentielImportModal(presets){
       }
       const isNewVersion = presets.newVersion && ref.versions.length;
       let diffNote = "Import initial — "+state.parsed.exigences.length+" exigence(s) détectée(s).";
+      let diffDetail = null;
       if(isNewVersion){
-        const oldRefs = new Set(DB.customExigences.filter(e=>e.referentielId===ref.id).map(e=>e.ref));
-        const newRefsSet = new Set(state.parsed.exigences.map(e=>e.ref));
-        const added = [...newRefsSet].filter(x=>!oldRefs.has(x)).length;
-        const removed = [...oldRefs].filter(x=>!newRefsSet.has(x)).length;
-        diffNote = `Nouvelle version — ${added} exigence(s) ajoutée(s), ${removed} supprimée(s).`;
+        const oldExigences = DB.customExigences.filter(e=>e.referentielId===ref.id);
+        const keyOf = e => e.ref + "|" + (e.title||"").toLowerCase().slice(0,40);
+        const oldMap = new Map(oldExigences.map(e=>[keyOf(e), e]));
+        const newMap = new Map(state.parsed.exigences.map(e=>[keyOf(e), e]));
+        const added = [...newMap.keys()].filter(k=>!oldMap.has(k)).map(k=>newMap.get(k));
+        const removed = [...oldMap.keys()].filter(k=>!newMap.has(k)).map(k=>oldMap.get(k));
+        const oldByChapter = {}; oldExigences.forEach(e=>{ (oldByChapter[e.ref]=oldByChapter[e.ref]||[]).push(e); });
+        const newByChapter = {}; state.parsed.exigences.forEach(e=>{ (newByChapter[e.ref]=newByChapter[e.ref]||[]).push(e); });
+        const modified = [];
+        Object.keys(newByChapter).forEach(chRef=>{
+          if(oldByChapter[chRef] && oldByChapter[chRef].length && newByChapter[chRef].length){
+            const oldTexts = oldByChapter[chRef].map(e=>e.description).join(" ");
+            const newTexts = newByChapter[chRef].map(e=>e.description).join(" ");
+            if(oldTexts !== newTexts) modified.push("Chapitre "+chRef);
+          }
+        });
+        diffNote = `Nouvelle version — ${added.length} exigence(s) ajoutée(s), ${removed.length} supprimée(s), ${modified.length} chapitre(s) modifié(s).`;
+        diffDetail = { added: added.map(e=>e.ref+" — "+e.title), removed: removed.map(e=>e.ref+" — "+e.title), modified };
         DB.customExigences = DB.customExigences.filter(e=>e.referentielId!==ref.id);
       }
       state.parsed.exigences.forEach((e,i)=>{
@@ -2302,7 +2679,7 @@ function openReferentielImportModal(presets){
           ref:e.ref, title:e.title, description:e.description, sourceText:e.sourceText, type:e.type, ...links });
       });
       ref.version = state.meta.version; ref.importDate = new Date().toISOString().slice(0,10); ref.origin = state.meta.origin;
-      ref.versions.push({version:state.meta.version, date:new Date().toISOString().slice(0,10), note:diffNote});
+      ref.versions.push({version:state.meta.version, date:new Date().toISOString().slice(0,10), note:diffNote, diff:diffDetail});
       saveDB(); closeModal(); toast("Référentiel analysé et importé — "+state.parsed.exigences.length+" exigence(s)");
       navigate(`referentiels/${ref.id}`);
     });
@@ -2515,6 +2892,31 @@ function pageReferentielDetail(id, tab, subId){
   return header + body;
 }
 
+function versionDiffHtml(v){
+  if(!v.diff) return "";
+  const parts = [];
+  if(v.diff.added.length) parts.push(`<p class="text-xs mt-2">➕ Ajoutées : ${v.diff.added.map(esc).join(", ")}</p>`);
+  if(v.diff.removed.length) parts.push(`<p class="text-xs mt-2">➖ Supprimées : ${v.diff.removed.map(esc).join(", ")}</p>`);
+  if(v.diff.modified.length) parts.push(`<p class="text-xs mt-2">✏️ Modifiées : ${v.diff.modified.map(esc).join(", ")}</p>`);
+  return parts.join("");
+}
+function refSynthesisExtras(ref, score){
+  const nonCouvertes = score.views.filter(v=>v.level==="non_couvert");
+  const competences = [...new Set(nonCouvertes.map(v=>v.process?v.process.name:null).filter(Boolean))];
+  const indicateursRecommandes = [...new Set(nonCouvertes.filter(v=>v.process && !DB.indicators.some(i=>i.processId===v.process.id)).map(v=>v.process.name))];
+  const auditsRecommandes = [...new Set(nonCouvertes.filter(v=>v.process && !DB.audits.some(a=>a.processId===v.process.id)).map(v=>v.process.name))];
+  return `
+  <div class="card mt-4">
+    <h3 class="mb-2">🧠 Synthèse — ce que ce référentiel exige</h3>
+    <p class="text-sm">${score.total} exigence(s) identifiée(s), dont <strong>${nonCouvertes.length}</strong> sans preuve actuellement disponible.</p>
+    ${competences.length?`<p class="text-sm mt-2"><strong>Processus à mobiliser (compétences) :</strong> ${competences.map(esc).join(", ")}.</p>`:""}
+    <p class="text-sm mt-2"><strong>Documents attendus :</strong> ${nonCouvertes.length} document(s) à créer ou renforcer pour couvrir les exigences non couvertes.</p>
+    ${indicateursRecommandes.length?`<p class="text-sm mt-2"><strong>Indicateurs recommandés :</strong> sur ${indicateursRecommandes.map(esc).join(", ")} — aucun indicateur de suivi actuellement.</p>`:""}
+    ${auditsRecommandes.length?`<p class="text-sm mt-2"><strong>Audits recommandés :</strong> sur ${auditsRecommandes.map(esc).join(", ")} — non encore audité(s).</p>`:""}
+    <p class="text-sm mt-2"><strong>Revue de direction :</strong> ${nonCouvertes.length? "à intégrer à la prochaine revue de direction au vu du nombre d'exigences non couvertes." : "aucun point bloquant à remonter à ce stade."}</p>
+    <p class="text-xs mt-4">Synthèse générée à partir des données réelles de Qonnect — jamais inventée.</p>
+  </div>`;
+}
 function refTabVue(ref, score){
   const critiques = score.views.filter(v=>v.level==="non_couvert").slice(0,6);
   const actionsPrioritaires = [...new Map(score.views.flatMap(v=>v.bundle.actionsLate).map(a=>[a.id,a])).values()].slice(0,6);
@@ -2531,8 +2933,9 @@ function refTabVue(ref, score){
   </div>
   <div class="card mt-4">
     <h3 class="mb-2">Dernières modifications</h3>
-    ${ref.versions.length? ref.versions.slice().reverse().map(v=>`<div class="rel-link"><span class="rel-name">Version ${esc(v.version)}</span><span class="text-sm">${fmtDate(v.date)}${v.note?" · "+esc(v.note):""}</span></div>`).join("") : `<p class="text-sm">Aucun historique.</p>`}
-  </div>`;
+    ${ref.versions.length? ref.versions.slice().reverse().map(v=>`<div class="mb-2" style="border-bottom:1px solid var(--border);padding-bottom:8px;"><div class="rel-link" style="border:none;padding-bottom:0;"><span class="rel-name">Version ${esc(v.version)}</span><span class="text-sm">${fmtDate(v.date)}${v.note?" · "+esc(v.note):""}</span></div>${versionDiffHtml(v)}</div>`).join("") : `<p class="text-sm">Aucun historique.</p>`}
+  </div>
+  ${refSynthesisExtras(ref, score)}`;
 }
 
 function refTabExigences(ref, score){
@@ -2560,10 +2963,20 @@ function refExigenceDetail(ref, v){
         <h1 class="mt-2">${esc(v.ref)} — ${esc(v.title)}</h1>
         ${v.sourceText?`<p class="text-sm mt-4" style="color:var(--text-primary);line-height:1.7;">« ${esc(v.sourceText)} »</p>`:""}
       </div>
-      <div class="card">
+      <div class="card mb-2">
         <h3 class="mb-2">Pourquoi ce niveau ?</h3>
         <ul>${reasons.map(r=>`<li class="text-sm mt-2">${esc(r)}</li>`).join("")}</ul>
         <p class="text-xs mt-4">Calcul basé sur les preuves réellement enregistrées dans Qonnect — jamais déclaré sans preuve.</p>
+      </div>
+      <div class="card">
+        <h3 class="mb-2">Analyse d'impact — si cette exigence évolue</h3>
+        <p class="text-xs mb-2">En cas de modification de cette exigence (ou de sa source normative), Qonnect identifie automatiquement ce qui serait à revoir :</p>
+        <div class="grid grid-4">
+          <div class="kpi"><div class="val">${v.bundle.processes.length}</div><div class="lbl">Processus</div></div>
+          <div class="kpi"><div class="val">${v.bundle.docs.length}</div><div class="lbl">Documents</div></div>
+          <div class="kpi"><div class="val">${v.bundle.audits.length}</div><div class="lbl">Audits</div></div>
+          <div class="kpi"><div class="val">${v.bundle.actionsOpen.length}</div><div class="lbl">Actions à ouvrir/suivre</div></div>
+        </div>
       </div>
     </div>
     <div>
@@ -2601,7 +3014,7 @@ function refTabCartographie(ref, score){
 function refTabVersions(ref){
   return `
   <div class="flex justify-between items-center mb-2"><span></span><button class="btn btn-primary btn-sm" data-open-referentiel-import data-preset-ref="${ref.id}" data-preset-newversion="1">+ Nouvelle version</button></div>
-  ${ref.versions.length? ref.versions.slice().reverse().map(v=>`<div class="card mb-2"><div class="flex justify-between items-center"><h3>Version ${esc(v.version)}</h3><span class="text-sm">${fmtDate(v.date)}</span></div>${v.note?`<p class="text-sm mt-2">${esc(v.note)}</p>`:""}</div>`).join("") : `<div class="card">${emptyState("🕒","Aucune version","Aucun historique de version n'est disponible.")}</div>`}`;
+  ${ref.versions.length? ref.versions.slice().reverse().map(v=>`<div class="card mb-2"><div class="flex justify-between items-center"><h3>Version ${esc(v.version)}</h3><span class="text-sm">${fmtDate(v.date)}</span></div>${v.note?`<p class="text-sm mt-2">${esc(v.note)}</p>`:""}${versionDiffHtml(v)}</div>`).join("") : `<div class="card">${emptyState("🕒","Aucune version","Aucun historique de version n'est disponible.")}</div>`}`;
 }
 
 function refTabAssistant(ref, score){
@@ -2956,51 +3369,11 @@ function openQuickForm(kind, presets, triggerEl){
   }
 
   else if(kind==="audit"){
-    openModal({title:"Créer un audit",
-      bodyHtml:`
-        <div class="field"><label>Titre <span class="req">*</span></label><input type="text" id="qf-title" placeholder="Ex : Audit interne Production"></div>
-        <div class="field-row">
-          <div class="field"><label>Processus</label><select id="qf-process"><option value="">—</option>${processOptions}</select></div>
-          <div class="field"><label>Date</label><input type="date" id="qf-date"></div>
-        </div>
-        <div class="field"><label>Auditeur</label><input type="text" id="qf-auditor" placeholder="Nom de l'auditeur"></div>
-        <div class="field"><label>Objectif de l'audit</label><textarea id="qf-obj"></textarea></div>`,
-      footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">Créer l'audit</button>`,
-      onMount:(o)=>{ o.querySelector("#qf-submit").addEventListener("click", ()=>{
-        const title = o.querySelector("#qf-title").value.trim();
-        if(!title){ toast("Merci de saisir un titre","⚠️"); return; }
-        const id = nextId("AUD", DB.audits);
-        DB.audits.push({ id, title, processId:o.querySelector("#qf-process").value||presets.processId||null,
-          objective:o.querySelector("#qf-obj").value.trim()||"—", scope:"—", auditor:o.querySelector("#qf-auditor").value.trim()||"Non assigné",
-          date:o.querySelector("#qf-date").value||new Date().toISOString().slice(0,10), status:"planifie", findings:[] });
-        saveDB(); closeModal(); toast("Audit créé avec succès"); navigate(`audits/${id}`);
-      });}
-    });
+    openAuditWizard(presets);
   }
 
   else if(kind==="finding"){
-    openModal({title:"Ajouter un constat",
-      bodyHtml:`
-        <div class="field"><label>Type</label><select id="qf-type"><option value="ecart">Écart</option><option value="point_fort">Point fort</option></select></div>
-        <div class="field"><label>Constat <span class="req">*</span></label><textarea id="qf-text"></textarea></div>
-        <div class="field"><label><input type="checkbox" id="qf-gen-action" style="width:auto;margin-right:6px;">Générer automatiquement une action corrective</label></div>`,
-      footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">Ajouter</button>`,
-      onMount:(o)=>{ o.querySelector("#qf-submit").addEventListener("click", ()=>{
-        const text = o.querySelector("#qf-text").value.trim();
-        if(!text){ toast("Merci de décrire le constat","⚠️"); return; }
-        const audit = getAudit(presets.auditId);
-        const type = o.querySelector("#qf-type").value;
-        const fid = "C-"+String(Date.now()).slice(-5);
-        let actionId = null;
-        if(o.querySelector("#qf-gen-action").checked && type==="ecart"){
-          actionId = nextId("ACT", DB.actions);
-          DB.actions.push({ id:actionId, title:"Traiter le constat : "+text.slice(0,60), owner:audit.auditor, due:new Date(Date.now()+14*86400000).toISOString().slice(0,10),
-            priority:"moyenne", status:"a_faire", origin:"audit", originId:audit.id, processId:audit.processId });
-        }
-        audit.findings.push({id:fid, type, text, actionId});
-        saveDB(); closeModal(); toast("Constat ajouté"+(actionId?" — action générée":"")); render();
-      });}
-    });
+    openConstatForm(presets.auditId, null);
   }
 
   else if(kind==="change"){
@@ -3146,6 +3519,292 @@ function openTrainingForm(documentId){
       saveDB(); closeModal(); toast("Campagne de lecture lancée"); render();
     });}
   });
+}
+
+/* ============================================================
+   19bis-audit. ASSISTANT DE CRÉATION D'AUDIT & FORMULAIRES
+   ============================================================ */
+const AUDIT_TYPE_OBJECTIVES = {
+  interne: ["Vérifier la conformité au référentiel","Vérifier l'application des procédures"],
+  fournisseur: ["Évaluer la performance du fournisseur","Vérifier la maîtrise des risques fournisseur"],
+  certification: ["Vérifier la conformité en vue de la certification"],
+  suivi: ["Vérifier l'efficacité des actions correctives précédentes"],
+  cible: ["Vérifier la maîtrise d'un risque ou d'un point spécifique"],
+  processus: ["Évaluer l'efficacité du processus"],
+};
+function openAuditWizard(presets){
+  presets = presets || {};
+  const state = {
+    step:1, title:"", type:"interne", referentielIds: DB.referentiels.filter(r=>r.active).map(r=>r.id),
+    date:"", duration:"1 jour", responsable:"", auditeurs:"", site:"",
+    processIds: presets.processId ? [presets.processId] : [],
+    motifs:[], activites:"", produits:"", periodeDebut:"", periodeFin:"", exclusions:"",
+    objectifs:[], requirementIds:[], documentIds:[], questions:[],
+  };
+  const stepper = ()=>`<div class="stepper-progress">${[1,2,3,4,5,6].map(i=>`<div class="${i<=state.step?'done':''}"></div>`).join("")}</div>`;
+  const processCbs = ()=> DB.processes.map(p=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="wiz-process-cb" value="${p.id}" ${state.processIds.includes(p.id)?"checked":""} style="width:auto;"> ${esc(p.name)}</label>`).join("");
+  const refCbs = ()=> DB.referentiels.map(r=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="wiz-ref-cb" value="${r.id}" ${state.referentielIds.includes(r.id)?"checked":""} style="width:auto;"> ${esc(r.name)}</label>`).join("");
+
+  function step1Html(){ return stepper()+`
+    <div class="step-title">Étape 1/6 — Identification</div>
+    <div class="field"><label>Nom de l'audit <span class="req">*</span></label><input type="text" id="wiz-title" value="${esc(state.title)}" placeholder="Ex : Audit interne Production"></div>
+    <div class="field-row">
+      <div class="field"><label>Type d'audit</label><select id="wiz-type">${Object.entries(LABELS.auditType).map(([v,l])=>`<option value="${v}" ${state.type===v?"selected":""}>${esc(l)}</option>`).join("")}</select></div>
+      <div class="field"><label>Site / établissement</label><input type="text" id="wiz-site" value="${esc(state.site)}" placeholder="Ex : Siège"></div>
+    </div>
+    <div class="field"><label>Référentiel(s)</label>${refCbs()}</div>
+    <div class="field-row">
+      <div class="field"><label>Date prévue</label><input type="date" id="wiz-date" value="${state.date}"></div>
+      <div class="field"><label>Durée</label><input type="text" id="wiz-duration" value="${esc(state.duration)}" placeholder="Ex : 1 jour"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Responsable d'audit</label><input type="text" id="wiz-responsable" value="${esc(state.responsable)}"></div>
+      <div class="field"><label>Auditeur(s) (séparés par une virgule)</label><input type="text" id="wiz-auditeurs" value="${esc(state.auditeurs)}"></div>
+    </div>
+    <div class="field"><label>Processus concerné(s)</label>${processCbs()}</div>`;
+  }
+  function step2Html(){ return stepper()+`
+    <div class="step-title">Étape 2/6 — Pourquoi cet audit est-il réalisé ?</div>
+    <div class="field">${Object.entries(LABELS.auditMotif).map(([v,l])=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="wiz-motif-cb" value="${v}" ${state.motifs.includes(v)?"checked":""} style="width:auto;"> ${esc(l)}</label>`).join("")}</div>`;
+  }
+  function step3Html(){ return stepper()+`
+    <div class="step-title">Étape 3/6 — Périmètre</div>
+    <div class="field"><label>Processus (confirmés)</label>${processCbs()}</div>
+    <div class="field"><label>Activités</label><input type="text" id="wiz-activites" value="${esc(state.activites)}" placeholder="Ex : Sélection et évaluation des fournisseurs"></div>
+    <div class="field"><label>Produits / services (optionnel)</label><input type="text" id="wiz-produits" value="${esc(state.produits)}"></div>
+    <div class="field-row">
+      <div class="field"><label>Période auditée — début</label><input type="date" id="wiz-periode-debut" value="${state.periodeDebut}"></div>
+      <div class="field"><label>Période auditée — fin</label><input type="date" id="wiz-periode-fin" value="${state.periodeFin}"></div>
+    </div>
+    <div class="field"><label>Exclusions</label><textarea id="wiz-exclusions" placeholder="Ce qui est explicitement hors périmètre">${esc(state.exclusions)}</textarea></div>
+    <div class="card" style="background:var(--background);">
+      <p class="text-xs" style="font-weight:700;">PÉRIMÈTRE DE L'AUDIT</p>
+      <p class="text-sm mt-2">Processus : ${state.processIds.map(id=>{const p=getProcess(id);return p?p.name:id;}).join(", ")||"—"}</p>
+      <p class="text-sm mt-2">Site : ${esc(state.site)||"—"}</p>
+    </div>`;
+  }
+  function step4Html(){
+    const suggestions = AUDIT_TYPE_OBJECTIVES[state.type] || ["Vérifier la conformité au référentiel","Évaluer l'efficacité du processus","Identifier des opportunités d'amélioration"];
+    return stepper()+`
+    <div class="step-title">Étape 4/6 — Objectifs</div>
+    <div class="quick-actions mb-2">${suggestions.map(s=>`<button class="chip" data-wiz-add-objectif="${esc(s)}">+ ${esc(s)}</button>`).join("")}</div>
+    <div id="wiz-objectifs-list">${state.objectifs.map((o,i)=>`<div class="rel-link"><span class="rel-name">${esc(o)}</span><button class="btn btn-ghost btn-sm" data-wiz-remove-objectif="${i}">✕</button></div>`).join("")}</div>
+    <div class="field-row mt-2">
+      <div class="field" style="flex:1;"><input type="text" id="wiz-objectif-input" placeholder="Ajouter un objectif personnalisé"></div>
+      <button class="btn btn-secondary" id="wiz-add-custom-objectif" style="height:40px;">+ Ajouter</button>
+    </div>`;
+  }
+  function step5Html(){
+    const relevantViews = state.processIds.length ? (state.referentielIds.length?state.referentielIds:["ISO9001"]).flatMap(refId=>getReferentielExigenceViews(refId).filter(v=>v.process && state.processIds.includes(v.process.id))) : [];
+    const relevantDocs = state.processIds.length ? DB.documents.filter(d=>d.status!=="obsolete" && state.processIds.includes(d.processId)) : [];
+    return stepper()+`
+    <div class="step-title">Étape 5/6 — Critères d'audit</div>
+    <p class="text-sm mb-2">Qonnect propose les exigences pertinentes selon le périmètre sélectionné.</p>
+    <div class="field" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
+      ${relevantViews.length?relevantViews.map(v=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="wiz-req-cb" value="${v.id}" ${state.requirementIds.includes(v.id)?"checked":""} style="width:auto;"> ${esc(v.ref)} — ${esc(v.title)} ${badge(LABELS.exigenceCoverage[v.level])}</label>`).join(""):`<p class="text-sm">Sélectionnez un processus et un référentiel pour voir les exigences suggérées.</p>`}
+    </div>
+    <div class="field mt-4"><label>Documents applicables</label>
+      <div style="max-height:150px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
+        ${relevantDocs.length?relevantDocs.map(d=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="wiz-doc-cb" value="${d.id}" ${state.documentIds.includes(d.id)?"checked":""} style="width:auto;"> ${esc(d.title)}</label>`).join(""):`<p class="text-sm">Aucun document disponible pour ce périmètre.</p>`}
+      </div>
+    </div>`;
+  }
+  function step6Html(){
+    const questionsList = state.questions.length ? `<p class="text-sm mb-2">${state.questions.length} question(s) proposée(s) — modifiables après création de l'audit.</p>`+state.questions.map(q=>`<div class="rel-link"><span class="rel-name">${esc(q.question)}</span></div>`).join("") : "";
+    return stepper()+`
+    <div class="step-title">Étape 6/6 — Plan d'audit & récapitulatif</div>
+    <div class="card" style="background:var(--background);margin-bottom:16px;">
+      <p class="text-sm"><strong>${esc(state.title||"(sans titre)")}</strong> — ${esc(LABELS.auditType[state.type])}</p>
+      <p class="text-xs mt-2">Processus : ${state.processIds.map(id=>{const p=getProcess(id);return p?p.name:id;}).join(", ")||"—"} · Date : ${state.date?fmtDate(state.date):"—"}</p>
+      <p class="text-xs mt-2">${state.requirementIds.length} exigence(s) retenue(s) comme critères d'audit</p>
+    </div>
+    ${state.questions.length?"":`<button class="btn btn-primary" id="wiz-generate-plan">🧠 Générer le plan d'audit</button>`}
+    <div id="wiz-questions-preview">${questionsList}</div>`;
+  }
+  function bodyForStep(){ return state.step===1?step1Html():state.step===2?step2Html():state.step===3?step3Html():state.step===4?step4Html():state.step===5?step5Html():step6Html(); }
+  function stepFoot(){ return `
+    ${state.step>1?`<button class="btn btn-secondary" id="wiz-prev">← Précédent</button>`:`<button class="btn btn-secondary" data-close-modal>Annuler</button>`}
+    ${state.step<6?`<button class="btn btn-primary" id="wiz-next">Suivant →</button>`:`<button class="btn btn-primary" id="wiz-finish">Créer l'audit</button>`}
+  `; }
+  function captureStepValues(o){
+    if(state.step===1){
+      state.title = o.querySelector("#wiz-title").value.trim(); state.type = o.querySelector("#wiz-type").value;
+      state.site = o.querySelector("#wiz-site").value.trim(); state.date = o.querySelector("#wiz-date").value;
+      state.duration = o.querySelector("#wiz-duration").value.trim(); state.responsable = o.querySelector("#wiz-responsable").value.trim();
+      state.auditeurs = o.querySelector("#wiz-auditeurs").value.trim();
+    }
+    if(state.step===3){
+      state.activites = o.querySelector("#wiz-activites").value.trim(); state.produits = o.querySelector("#wiz-produits").value.trim();
+      state.periodeDebut = o.querySelector("#wiz-periode-debut").value; state.periodeFin = o.querySelector("#wiz-periode-fin").value;
+      state.exclusions = o.querySelector("#wiz-exclusions").value.trim();
+    }
+  }
+  function mount(o){
+    if(state.step===1||state.step===3) o.querySelectorAll(".wiz-process-cb").forEach(cb=>cb.addEventListener("change", ()=>{ state.processIds = [...o.querySelectorAll(".wiz-process-cb:checked")].map(c=>c.value); }));
+    if(state.step===1) o.querySelectorAll(".wiz-ref-cb").forEach(cb=>cb.addEventListener("change", ()=>{ state.referentielIds = [...o.querySelectorAll(".wiz-ref-cb:checked")].map(c=>c.value); }));
+    if(state.step===2) o.querySelectorAll(".wiz-motif-cb").forEach(cb=>cb.addEventListener("change", ()=>{ state.motifs = [...o.querySelectorAll(".wiz-motif-cb:checked")].map(c=>c.value); }));
+    if(state.step===4){
+      o.querySelectorAll("[data-wiz-add-objectif]").forEach(btn=>btn.addEventListener("click", ()=>{ state.objectifs.push(btn.getAttribute("data-wiz-add-objectif")); refresh(o); }));
+      o.querySelectorAll("[data-wiz-remove-objectif]").forEach(btn=>btn.addEventListener("click", ()=>{ state.objectifs.splice(parseInt(btn.getAttribute("data-wiz-remove-objectif"),10),1); refresh(o); }));
+      o.querySelector("#wiz-add-custom-objectif").addEventListener("click", ()=>{ const val=o.querySelector("#wiz-objectif-input").value.trim(); if(val){ state.objectifs.push(val); refresh(o); } });
+    }
+    if(state.step===5){
+      o.querySelectorAll(".wiz-req-cb").forEach(cb=>cb.addEventListener("change", ()=>{ state.requirementIds = [...o.querySelectorAll(".wiz-req-cb:checked")].map(c=>c.value); }));
+      o.querySelectorAll(".wiz-doc-cb").forEach(cb=>cb.addEventListener("change", ()=>{ state.documentIds = [...o.querySelectorAll(".wiz-doc-cb:checked")].map(c=>c.value); }));
+    }
+    if(state.step===6){
+      const genBtn = o.querySelector("#wiz-generate-plan");
+      if(genBtn) genBtn.addEventListener("click", ()=>{ state.questions = generateAuditQuestions(state.processIds, state.referentielIds); refresh(o); });
+    }
+    const prevBtn = o.querySelector("#wiz-prev"); if(prevBtn) prevBtn.addEventListener("click", ()=>{ captureStepValues(o); state.step--; refresh(o); });
+    const nextBtn = o.querySelector("#wiz-next"); if(nextBtn) nextBtn.addEventListener("click", ()=>{
+      captureStepValues(o);
+      if(state.step===1 && !state.title){ toast("Merci de saisir un nom d'audit","⚠️"); return; }
+      if(state.step===1 && !state.processIds.length){ toast("Sélectionnez au moins un processus","⚠️"); return; }
+      state.step++; refresh(o);
+    });
+    const finishBtn = o.querySelector("#wiz-finish"); if(finishBtn) finishBtn.addEventListener("click", ()=>{ captureStepValues(o); finishWizard(); });
+  }
+  function refresh(o){ o.querySelector(".modal-body").innerHTML = bodyForStep(); o.querySelector(".modal-foot").innerHTML = stepFoot(); mount(o); }
+  function finishWizard(){
+    const id = nextId("AUD", DB.audits);
+    const ref = "AUD-"+new Date().getFullYear()+"-"+String(DB.audits.length+1).padStart(3,"0");
+    const auditeursArr = state.auditeurs ? state.auditeurs.split(",").map(s=>s.trim()).filter(Boolean) : [];
+    DB.audits.push({
+      id, ref, title:state.title, type:state.type, referentielIds:state.referentielIds.length?state.referentielIds:["ISO9001"],
+      processId: state.processIds[0]||null, processIds: state.processIds, date: state.date||new Date().toISOString().slice(0,10), duration: state.duration,
+      responsable: state.responsable||"Non assigné", auditeurs: auditeursArr.length?auditeursArr:[state.responsable||"Non assigné"], site: state.site,
+      objective: state.objectifs.join(" "), scope: state.activites, auditor: state.responsable||"Non assigné", status:"planifie",
+      motifs: state.motifs, perimeter:{ processIds: state.processIds, activites: state.activites, produits: state.produits, periodeDebut: state.periodeDebut, periodeFin: state.periodeFin, exclusions: state.exclusions },
+      objectifs: state.objectifs, criteres:{ referentielIds: state.referentielIds, requirementIds: state.requirementIds, documentIds: state.documentIds },
+      questions: state.questions, parties: [], findings: [],
+    });
+    saveDB(); closeModal(); toast("Audit créé avec succès — "+state.questions.length+" question(s) préparée(s)");
+    navigate(`audits/${id}`);
+  }
+  openModal({title:"Nouvel audit", wide:true, bodyHtml:bodyForStep(), footHtml:stepFoot(), onMount:(o)=>mount(o)});
+}
+
+function openConstatForm(auditId, existing){
+  const audit = getAudit(auditId);
+  openModal({title: existing?"Modifier le constat":"Ajouter un constat", wide:true,
+    bodyHtml:`
+      <div class="field"><label>Type de constat</label><select id="qf-type">${Object.entries(LABELS.constatType).map(([v,l])=>`<option value="${v}" ${existing&&existing.type===v?"selected":""}>${l.e} ${l.l}</option>`).join("")}</select></div>
+      <div class="field"><label>Fait constaté <span class="req">*</span></label><textarea id="qf-text">${esc(existing?existing.text:"")}</textarea></div>
+      <div class="field-row">
+        <div class="field"><label>Exigence concernée</label><select id="qf-req"><option value="">—</option>${(audit.criteres&&audit.criteres.requirementIds||[]).map(rid=>{const ex=resolveExigence(rid); return ex?`<option value="${rid}" ${existing&&existing.requirementId===rid?"selected":""}>${esc(ex.ref)} — ${esc(ex.label)}</option>`:"";}).join("")}</select></div>
+        <div class="field" id="qf-gravite-wrap"><label>Niveau de gravité</label><select id="qf-gravite"><option value="mineure">Mineure</option><option value="majeure">Majeure</option><option value="critique">Critique</option></select></div>
+      </div>
+      <div class="field"><label>Cause potentielle (si déjà identifiée)</label><textarea id="qf-cause" placeholder="L'analyse de cause approfondie se fait dans le module NC/CAPA">${esc(existing?existing.cause:"")}</textarea></div>
+      <div class="field"><label>Risque associé</label><select id="qf-risk"><option value="">—</option>${DB.risks.map(r=>`<option value="${r.id}" ${existing&&existing.riskId===r.id?"selected":""}>${esc(r.name)}</option>`).join("")}</select></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">${existing?"Enregistrer":"Ajouter"}</button>`,
+    onMount:(o)=>{
+      const typeSel = o.querySelector("#qf-type");
+      const toggleGravite = ()=> o.querySelector("#qf-gravite-wrap").style.display = (typeSel.value==="ecart"||typeSel.value==="nc_majeure")?"block":"none";
+      typeSel.addEventListener("change", toggleGravite); toggleGravite();
+      o.querySelector("#qf-submit").addEventListener("click", ()=>{
+        const text = o.querySelector("#qf-text").value.trim();
+        if(!text){ toast("Merci de décrire le constat","⚠️"); return; }
+        const payload = { type:typeSel.value, text, requirementId:o.querySelector("#qf-req").value||null, cause:o.querySelector("#qf-cause").value.trim(), riskId:o.querySelector("#qf-risk").value||null, gravite:(typeSel.value==="ecart"||typeSel.value==="nc_majeure")?o.querySelector("#qf-gravite").value:null };
+        if(existing){ Object.assign(existing, payload); }
+        else{ audit.findings.push({ id:"C-"+String(Date.now()).slice(-6), ...payload, processId:audit.processId, questionId:null, ncEventId:null, actionId:null }); }
+        saveDB(); closeModal(); toast(existing?"Constat mis à jour":"Constat ajouté"); render();
+      });
+    }
+  });
+}
+
+function openQuestionAddForm(auditId){
+  const audit = getAudit(auditId);
+  openModal({title:"Ajouter une question", wide:true,
+    bodyHtml:`
+      <div class="field"><label>Question <span class="req">*</span></label><textarea id="qf-question" placeholder="Ex : Comment la traçabilité est-elle assurée ?"></textarea></div>
+      <div class="field-row">
+        <div class="field"><label>Processus</label><select id="qf-process">${(audit.processIds&&audit.processIds.length?audit.processIds:[audit.processId]).map(id=>{const p=getProcess(id); return p?`<option value="${id}">${esc(p.name)}</option>`:"";}).join("")}</select></div>
+        <div class="field"><label>Responsable interrogé</label><input type="text" id="qf-resp"></div>
+      </div>
+      <div class="field"><label>Critère / référence</label><input type="text" id="qf-critere" placeholder="Ex : PR-005"></div>
+      <div class="field"><label>Preuve attendue</label><input type="text" id="qf-preuve-attendue"></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">Ajouter</button>`,
+    onMount:(o)=>{ o.querySelector("#qf-submit").addEventListener("click", ()=>{
+      const question = o.querySelector("#qf-question").value.trim();
+      if(!question){ toast("Merci de saisir la question","⚠️"); return; }
+      audit.questions.push({ id:"Q-"+Math.random().toString(36).slice(2,8), question, requirementId:null, processId:o.querySelector("#qf-process").value||audit.processId,
+        critere:o.querySelector("#qf-critere").value.trim(), preuveAttendue:o.querySelector("#qf-preuve-attendue").value.trim(), responsableInterroge:o.querySelector("#qf-resp").value.trim(),
+        statut:"non_evalue", commentaire:"", preuveIds:[] });
+      saveDB(); closeModal(); toast("Question ajoutée"); navigate(`audits/${auditId}/grille/${audit.questions.length-1}`);
+    });}
+  });
+}
+
+function openPartyAddForm(auditId){
+  const audit = getAudit(auditId);
+  openModal({title:"Ajouter une partie prenante",
+    bodyHtml:`
+      <div class="field"><label>Nom <span class="req">*</span></label><input type="text" id="qf-name"></div>
+      <div class="field"><label>Rôle</label><input type="text" id="qf-role" value="Audité"></div>
+      <div class="field"><label>Questions à compléter</label>
+        <div style="max-height:150px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
+          ${audit.questions.length?audit.questions.map(q=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="qf-q-cb" value="${q.id}" style="width:auto;"> ${esc(q.question.slice(0,60))}</label>`).join(""):"<p class='text-sm'>Aucune question disponible.</p>"}
+        </div>
+      </div>
+      <div class="field"><label>Échéance</label><input type="date" id="qf-echeance"></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">Ajouter</button>`,
+    onMount:(o)=>{ o.querySelector("#qf-submit").addEventListener("click", ()=>{
+      const name = o.querySelector("#qf-name").value.trim();
+      if(!name){ toast("Merci de saisir un nom","⚠️"); return; }
+      const questionIds = [...o.querySelectorAll(".qf-q-cb:checked")].map(c=>c.value);
+      audit.parties.push({ name, role:o.querySelector("#qf-role").value.trim()||"Audité", questionIds, echeance:o.querySelector("#qf-echeance").value||"—", status:"en_attente" });
+      saveDB(); closeModal(); toast("Partie prenante ajoutée — "+questionIds.length+" question(s) assignée(s)"); render();
+    });}
+  });
+}
+
+function openPerimeterEditForm(auditId){
+  const audit = getAudit(auditId);
+  const pr = audit.perimeter||{};
+  openModal({title:"Modifier le périmètre", wide:true,
+    bodyHtml:`
+      <div class="field"><label>Activités</label><input type="text" id="qf-activites" value="${esc(pr.activites||"")}"></div>
+      <div class="field"><label>Produits / services</label><input type="text" id="qf-produits" value="${esc(pr.produits||"")}"></div>
+      <div class="field-row">
+        <div class="field"><label>Période — début</label><input type="date" id="qf-debut" value="${pr.periodeDebut||""}"></div>
+        <div class="field"><label>Période — fin</label><input type="date" id="qf-fin" value="${pr.periodeFin||""}"></div>
+      </div>
+      <div class="field"><label>Exclusions</label><textarea id="qf-exclusions">${esc(pr.exclusions||"")}</textarea></div>
+      <div class="field"><label>Site</label><input type="text" id="qf-site" value="${esc(audit.site||"")}"></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">Enregistrer</button>`,
+    onMount:(o)=>{ o.querySelector("#qf-submit").addEventListener("click", ()=>{
+      audit.perimeter = { processIds:audit.processIds, activites:o.querySelector("#qf-activites").value.trim(), produits:o.querySelector("#qf-produits").value.trim(),
+        periodeDebut:o.querySelector("#qf-debut").value, periodeFin:o.querySelector("#qf-fin").value, exclusions:o.querySelector("#qf-exclusions").value.trim() };
+      audit.site = o.querySelector("#qf-site").value.trim();
+      audit.scope = audit.perimeter.activites;
+      saveDB(); closeModal(); toast("Périmètre mis à jour"); render();
+    });}
+  });
+}
+
+function generateAuditReportText(a){
+  const p = getProcess(a.processId);
+  const lines = [];
+  lines.push("Rapport d'audit — "+a.title);
+  lines.push("Référence : "+(a.ref||a.id)+" · Type : "+(LABELS.auditType[a.type]||a.type));
+  lines.push("Processus : "+(p?p.name:"—")+" · Date : "+fmtDate(a.date)+" · Responsable : "+(a.responsable||a.auditor));
+  lines.push("");
+  lines.push("Objectifs :");
+  (a.objectifs&&a.objectifs.length?a.objectifs:[a.objective]).filter(Boolean).forEach(o=>lines.push("- "+o));
+  lines.push("");
+  lines.push("Périmètre : "+((a.perimeter&&a.perimeter.activites)||a.scope||"—"));
+  lines.push("Référentiel(s) : "+(a.referentielIds||[]).map(id=>{const r=getReferentiel(id);return r?r.name:id;}).join(", "));
+  lines.push("");
+  const rate = auditConformityRate(a);
+  lines.push("Résultat : "+(rate!==null?rate+"% des critères vérifiés sont conformes.":"Résultat non encore calculable."));
+  lines.push("");
+  lines.push("Constats :");
+  a.findings.forEach(f=> lines.push("- ["+(LABELS.constatType[f.type]?LABELS.constatType[f.type].l:f.type)+"] "+f.text));
+  lines.push("");
+  lines.push("Conclusion : audit "+((LABELS.auditStatus[a.status]?LABELS.auditStatus[a.status].l:a.status)).toLowerCase()+".");
+  return lines.join("\n");
 }
 
 /* ============================================================
@@ -3598,6 +4257,93 @@ function initGlobalEvents(){
       const t = findBy(DB.trainings, markReadEl.getAttribute("data-mark-training-read"));
       const remaining = t.audience.filter(n=>!t.completedBy.includes(n));
       if(remaining.length){ t.completedBy.push(remaining[0]); saveDB(); toast(remaining[0]+" a validé sa lecture"); render(); }
+      return;
+    }
+
+    /* ---- Audits ---- */
+    const auditWizEl = e.target.closest("[data-open-audit-wizard]");
+    if(auditWizEl){ openAuditWizard({ processId: auditWizEl.getAttribute("data-preset-process")||null }); return; }
+    const advAuditEl = e.target.closest("[data-advance-audit]");
+    if(advAuditEl){
+      const a = getAudit(advAuditEl.getAttribute("data-advance-audit"));
+      const idx = AUDIT_WORKFLOW_STEPS.indexOf(a.status);
+      if(idx < AUDIT_WORKFLOW_STEPS.length-1){
+        a.status = AUDIT_WORKFLOW_STEPS[idx+1];
+        saveDB(); toast("Audit passé à l'étape : "+AUDIT_WORKFLOW_LABELS[idx+1]); render();
+      }
+      return;
+    }
+    const saveQEl = e.target.closest("[data-save-question]");
+    if(saveQEl){
+      const payload = JSON.parse(saveQEl.getAttribute("data-save-question"));
+      const a = getAudit(payload.auditId);
+      const q = findBy(a.questions, payload.questionId);
+      q.statut = document.getElementById("q-statut").value;
+      q.commentaire = document.getElementById("q-comment").value.trim();
+      q.preuveIds = [...document.querySelectorAll(".q-preuve-cb:checked")].map(c=>c.value);
+      saveDB(); toast("Réponse enregistrée"); navigate(`audits/${payload.auditId}/grille/${payload.qIdx}`);
+      return;
+    }
+    const genQEl = e.target.closest("[data-generate-questions]");
+    if(genQEl){
+      const a = getAudit(genQEl.getAttribute("data-generate-questions"));
+      const existingTexts = new Set(a.questions.map(q=>q.question));
+      const fresh = generateAuditQuestions(a.processIds&&a.processIds.length?a.processIds:[a.processId], a.referentielIds).filter(q=>!existingTexts.has(q.question));
+      a.questions.push(...fresh);
+      saveDB(); toast(fresh.length+" question(s) générée(s)"); render();
+      return;
+    }
+    const addQEl = e.target.closest("[data-add-question]");
+    if(addQEl){ openQuestionAddForm(addQEl.getAttribute("data-add-question")); return; }
+    const addPartyEl = e.target.closest("[data-add-party]");
+    if(addPartyEl){ openPartyAddForm(addPartyEl.getAttribute("data-add-party")); return; }
+    const relaunchEl = e.target.closest("[data-relaunch-party]");
+    if(relaunchEl){
+      const payload = JSON.parse(relaunchEl.getAttribute("data-relaunch-party"));
+      const a = getAudit(payload.auditId);
+      const pt = a.parties.find(p=>p.name===payload.partyName);
+      if(pt && pt.status==="en_attente") pt.status = "en_cours";
+      saveDB(); toast("Relance envoyée à "+payload.partyName+" (simulée)"); render();
+      return;
+    }
+    const editPerimEl = e.target.closest("[data-edit-audit-perimeter]");
+    if(editPerimEl){ openPerimeterEditForm(editPerimEl.getAttribute("data-edit-audit-perimeter")); return; }
+    const createNcEl = e.target.closest("[data-create-nc-from-constat]");
+    if(createNcEl){
+      const payload = JSON.parse(createNcEl.getAttribute("data-create-nc-from-constat"));
+      const a = getAudit(payload.auditId);
+      const f = findBy(a.findings, payload.constatId);
+      const id = nextId("EVT", DB.events);
+      const graviteToPriority = {critique:"critique", majeure:"haute", mineure:"moyenne"};
+      DB.events.push({ id, ref:"NC-"+new Date().getFullYear()+"-"+String(DB.events.length+20).padStart(3,"0"), type:"non_conformite",
+        title: f.text.slice(0,80), processId: f.processId||a.processId, priority: graviteToPriority[f.gravite]||"moyenne", status:"ouvert",
+        declaredBy: a.responsable||a.auditor||"Audit", date: new Date().toISOString().slice(0,10), step:0, description: f.text, relatedRiskId: f.riskId||null });
+      f.ncEventId = id;
+      saveDB(); toast("Non-conformité créée dans le module Événements"); render();
+      return;
+    }
+    const createAuditActEl = e.target.closest("[data-create-action-from-constat]");
+    if(createAuditActEl){
+      const payload = JSON.parse(createAuditActEl.getAttribute("data-create-action-from-constat"));
+      const a = getAudit(payload.auditId);
+      const f = findBy(a.findings, payload.constatId);
+      const id = nextId("ACT", DB.actions);
+      DB.actions.push({ id, title:"Traiter le constat : "+f.text.slice(0,60), owner:a.responsable||a.auditor||"Non assigné",
+        due:new Date(Date.now()+14*86400000).toISOString().slice(0,10), priority: f.gravite==="critique"?"critique":f.gravite==="majeure"?"haute":"moyenne",
+        status:"a_faire", origin:"audit", originId:a.id, processId:f.processId||a.processId });
+      f.actionId = id;
+      saveDB(); toast("Action créée dans le module Actions"); render();
+      return;
+    }
+    const genAuditReportEl = e.target.closest("[data-generate-audit-report]");
+    if(genAuditReportEl){
+      const a = getAudit(genAuditReportEl.getAttribute("data-generate-audit-report"));
+      const id = nextId("DOC", DB.documents);
+      DB.documents.push({ id, ref:"RAP-"+(a.ref||a.id), title:"Rapport d'audit — "+a.title, type:"enregistrement", version:"1.0",
+        status:"en_vigueur", processId:a.processId, author:a.responsable||a.auditor||"Audit", approver:a.responsable||"—",
+        date:new Date().toISOString().slice(0,10), nextReview:"—", body:generateAuditReportText(a),
+        requirementIds:[], riskIds:[], auditIds:[a.id], indicatorIds:[], actionIds:[], crossDocIds:[], flowSteps:[], referentiels:(a.referentielIds||[]).map(rid=>{const r=getReferentiel(rid);return r?r.name:rid;}) });
+      saveDB(); toast("Rapport d'audit généré"); navigate(`documents/enregistrement/${id}`);
       return;
     }
     if(e.target.closest("[data-print]")){
