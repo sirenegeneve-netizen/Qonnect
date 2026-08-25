@@ -117,6 +117,20 @@ Le module Audits est devenu un véritable parcours guidé, du "pourquoi audite-t
 - **Programme d'audit** (`#/audits/programme`) : priorités suggérées par processus selon la criticité du risque, l'historique des écarts et l'ancienneté du dernier audit.
 - Chaque audit alimente automatiquement le **moteur de conformité des Référentiels** et la **Revue de Direction** — aucune ressaisie.
 
+### Compétences & Habilitations
+
+Formalise ce qui existait jusque-là de façon dispersée (pilotes de processus, formations liées aux documents) en un véritable module RH connecté au reste du SMQ.
+
+- **4 référentiels** : compétences (23 démo, niveaux 0 « Non acquis » à 4 « Référent / Expert »), postes/fonctions (avec compétences requises et niveau minimum), habilitations (durée de validité, autorité, prérequis), collaborateurs (11 démo, réutilisant les pilotes de processus déjà présents dans Qonnect).
+- **Matrice individuelle par collaborateur** avec **calcul automatique de l'écart** (niveau requis vs dernier niveau évalué) — jamais saisi manuellement.
+- **Historique d'évaluations append-only** : chaque évaluation s'ajoute à l'historique, rien n'est jamais écrasé.
+- **Preuves de compétence** (certificat, attestation, entretien, observation, test…) pouvant pointer vers un document Qonnect déjà existant plutôt que d'en recréer un.
+- **Écart → action de développement** créée directement dans le module Actions (origine « Compétence »), pas de seconde base.
+- **Référentiel des habilitations séparé**, avec attribution, renouvellement et **statuts calculés automatiquement** (🟢 Valide / 🟠 Expire bientôt / 🔴 Expirée / ⏸ Suspendue) et historique de traçabilité complet (attribution, suspension, renouvellement).
+- **Revues de compétences périodiques** conservées avec historique.
+- **Matrice globale** personnes × compétences avec filtres (service, poste, compétence).
+- **Dashboard dédié** (effectif, % conformes, écarts, formations à réaliser, habilitations actives/expirant/expirées, revues à réaliser) et une **Vue Auditeur** répondant directement aux 9 questions type d'un audit RH — la donnée de démonstration est volontairement câblée sur l'audit RH déjà présent (AUD-005) pour que le lien soit immédiatement visible.
+
 ## Limites du prototype
 
 - Les exigences du référentiel ISO 9001:2026 affichées sont **simplifiées à des fins de démonstration** et ne reproduisent pas le texte officiel de la norme.

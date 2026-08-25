@@ -36,6 +36,9 @@ const NAV = [
       {route:"evenements/reclamation", icon:"📮", label:"Réclamations"},
       {route:"actions", icon:"✅", label:"Actions"},
   ]},
+  { title:"Ressources humaines", items:[
+      {route:"competences", icon:"🎓", label:"Compétences & Habilitations"},
+  ]},
   { title:"Évaluation", items:[
       {route:"audits", icon:"🔍", label:"Audits"},
       {route:"referentiels", icon:"📐", label:"Référentiels"},
@@ -50,7 +53,7 @@ const NAV = [
 const PAGE_TITLES = {
   dashboard:"Vue d'ensemble", contexte:"Contexte & Stratégie", "revue-direction":"Revue de Direction", processus:"Processus", risques:"Risques & opportunités",
   objectifs:"Objectifs & indicateurs", changements:"Changements", documents:"Documentation du SMQ",
-  evenements:"Événements & non-conformités", actions:"Actions", audits:"Audits",
+  evenements:"Événements & non-conformités", actions:"Actions", audits:"Audits", competences:"Compétences & Habilitations",
   referentiels:"Référentiels", conformite:"Conformité", connexions:"Connexions du système",
   ai:"Qonnect AI", admin:"Administration",
 };
@@ -154,6 +157,16 @@ function render(){
         else html = parts[1] ? pageAuditFiche(parts[1], parts[2], parts[3]) : pageAudits();
         break;
       case "changements": html = parts[1] ? pageChangeFiche(parts[1]) : pageChanges(); break;
+      case "competences":
+        if(!parts[1]) html = pageCompetences();
+        else if(parts[1]==="referentiel") html = parts[2] ? pageCompetenceFiche(parts[2]) : pageCompetenceReferentiel();
+        else if(parts[1]==="postes") html = parts[2] ? pagePosteFiche(parts[2]) : pagePostes();
+        else if(parts[1]==="matrice") html = pageCompetenceMatrice();
+        else if(parts[1]==="habilitations") html = parts[2] ? pageHabilitationFiche(parts[2]) : pageHabilitations();
+        else if(parts[1]==="personnes") html = parts[2] ? pagePersonneFiche(parts[2], parts[3]) : pagePersonnes();
+        else if(parts[1]==="auditeur") html = pageCompetenceAuditeur();
+        else html = pageCompetences();
+        break;
       case "referentiels": html = parts[1] ? pageReferentielDetail(parts[1], parts[2], parts[3]) : pageReferentiels(); break;
       case "conformite": html = pageConformite(parts[1]); break;
       case "connexions": html = pageConnexions(parts[1], parts[2]); break;
@@ -2463,6 +2476,494 @@ function pageChangeFiche(id){
 }
 
 /* ============================================================
+   13bis. COMPÉTENCES & HABILITATIONS
+   ============================================================ */
+
+/* ---------- Logique métier ---------- */
+function personRequiredCompetences(personId){
+  const p = getPerson(personId);
+  const poste = p ? getPoste(p.posteId) : null;
+  return poste ? poste.competencesRequises : [];
+}
+function personLatestEvaluation(personId, competenceId){
+  const evals = DB.competenceEvaluations.filter(e=>e.personId===personId && e.competenceId===competenceId).sort((a,b)=>a.date.localeCompare(b.date));
+  return evals.length ? evals[evals.length-1] : null;
+}
+function personCompetenceRow(personId, req){
+  const evalLatest = personLatestEvaluation(personId, req.competenceId);
+  const niveauActuel = evalLatest ? evalLatest.niveauEvalue : null;
+  let statut;
+  if(niveauActuel===null) statut = "non_evalue";
+  else if(niveauActuel >= req.niveauRequis) statut = "conforme";
+  else statut = "a_renforcer";
+  return { competence:getCompetence(req.competenceId), niveauRequis:req.niveauRequis, obligatoire:req.obligatoire, niveauActuel, ecart: niveauActuel===null?null:(niveauActuel-req.niveauRequis), statut, evaluation:evalLatest };
+}
+function personMatrix(personId){ return personRequiredCompetences(personId).map(req=>personCompetenceRow(personId, req)); }
+function personConformityRate(personId){
+  const rows = personMatrix(personId);
+  if(!rows.length) return null;
+  return Math.round(rows.filter(r=>r.statut==="conforme").length/rows.length*100);
+}
+function habilitationStatusCompute(ph){
+  if(ph.statut==="suspendue") return "suspendue";
+  const diffDays = Math.round((new Date(ph.dateExpiration+"T00:00:00")-new Date())/(1000*3600*24));
+  if(diffDays<0) return "expiree";
+  if(diffDays<=60) return "expire_bientot";
+  return "active";
+}
+function personHabilitationsList(personId){
+  return DB.personHabilitations.filter(ph=>ph.personId===personId).map(ph=>({...ph, statutCalcule:habilitationStatusCompute(ph), habilitation:getHabilitation(ph.habilitationId)}));
+}
+function competenceDashboardStats(){
+  const today = new Date().toISOString().slice(0,10);
+  const effectif = DB.people.length;
+  const fullyConform = DB.people.filter(p=>{ const m=personMatrix(p.id); return m.length && m.every(r=>r.statut==="conforme"); }).length;
+  const pctConformes = effectif? Math.round(fullyConform/effectif*100) : 0;
+  let ecarts = 0;
+  DB.people.forEach(p=> ecarts += personMatrix(p.id).filter(r=>r.statut==="a_renforcer").length);
+  const formationsAFaire = DB.actions.filter(a=>a.origin==="competence" && a.status!=="termine").length;
+  const allPH = DB.personHabilitations.map(ph=>({...ph, statutCalcule:habilitationStatusCompute(ph)}));
+  const habActives = allPH.filter(ph=>ph.statutCalcule==="active").length;
+  const habExpirantBientot = allPH.filter(ph=>ph.statutCalcule==="expire_bientot").length;
+  const habExpirees = allPH.filter(ph=>ph.statutCalcule==="expiree").length;
+  const revuesARealiser = DB.people.filter(p=>p.prochaineRevue && p.prochaineRevue<=today).length;
+  return {effectif, pctConformes, ecarts, formationsAFaire, habActives, habExpirantBientot, habExpirees, revuesARealiser};
+}
+function competenceAlerts(){
+  const alerts = [];
+  DB.personHabilitations.forEach(ph=>{
+    const st = habilitationStatusCompute(ph);
+    const person = getPerson(ph.personId), hab = getHabilitation(ph.habilitationId);
+    if(!person||!hab) return;
+    if(st==="expire_bientot"){ const days = Math.round((new Date(ph.dateExpiration+"T00:00:00")-new Date())/(1000*3600*24)); alerts.push({level:"warning", text:`L'habilitation ${hab.nom} de ${person.name} expire dans ${days} jour(s).`}); }
+    if(st==="expiree") alerts.push({level:"danger", text:`${person.name} possède une habilitation expirée : ${hab.nom}. Une action est requise.`});
+  });
+  DB.people.forEach(p=>{
+    personMatrix(p.id).forEach(row=>{
+      if(row.statut==="a_renforcer") alerts.push({level:"warning", text:`Le niveau de compétence de ${p.name} en ${row.competence.nom} est inférieur au niveau requis pour son poste.`});
+      if(row.statut==="non_evalue" && row.obligatoire) alerts.push({level:"info", text:`La compétence ${row.competence.nom} requise pour le poste de ${p.name} n'a pas encore été évaluée.`});
+    });
+  });
+  const today = new Date().toISOString().slice(0,10);
+  DB.people.filter(p=>p.prochaineRevue && p.prochaineRevue<today).forEach(p=> alerts.push({level:"warning", text:`La revue de compétences de ${p.name} est en retard (prévue le ${fmtDate(p.prochaineRevue)}).`}));
+  return alerts;
+}
+
+/* ---------- Dashboard ---------- */
+function pageCompetences(){
+  const s = competenceDashboardStats();
+  const kpi = (route, val, label, color)=>`<div class="card card-hover" data-route="${route}"><div class="kpi"><div class="val" style="color:${color||'var(--text-primary)'}">${val}</div><div class="lbl">${esc(label)}</div></div></div>`;
+  return `
+  ${pageHeader("Compétences & Habilitations","Pour chaque poste, les compétences requises. Pour chaque personne, ce qu'elle maîtrise, comment c'est prouvé, et ce qu'elle est habilitée à faire.",
+    `<button class="btn btn-secondary" data-route="competences/auditeur">🔍 Vue Auditeur</button><button class="btn btn-primary" data-open-person-form>+ Collaborateur</button>`)}
+  <div class="quick-actions mb-4">
+    <button class="qa-btn" data-route="competences/referentiel">📘 Référentiel des compétences</button>
+    <button class="qa-btn" data-route="competences/postes">🧭 Postes / fonctions</button>
+    <button class="qa-btn" data-route="competences/matrice">🗂️ Matrice globale</button>
+    <button class="qa-btn" data-route="competences/habilitations">🪪 Habilitations</button>
+    <button class="qa-btn" data-route="competences/personnes">👥 Collaborateurs</button>
+  </div>
+  <div class="grid grid-4 mb-4">
+    ${kpi("competences/personnes", s.effectif, "Effectif suivi")}
+    ${kpi("competences/matrice", s.pctConformes+" %", "Compétences conformes", s.pctConformes>=80?"var(--success)":"var(--warning)")}
+    ${kpi("competences/matrice", s.ecarts, "Écarts de compétences", s.ecarts?"var(--danger)":"var(--success)")}
+    ${kpi("actions", s.formationsAFaire, "Formations / actions à réaliser", s.formationsAFaire?"var(--warning)":"var(--success)")}
+  </div>
+  <div class="grid grid-4 mb-4">
+    ${kpi("competences/habilitations", s.habActives, "Habilitations actives", "var(--success)")}
+    ${kpi("competences/habilitations", s.habExpirantBientot, "Expirant bientôt", s.habExpirantBientot?"var(--warning)":"var(--success)")}
+    ${kpi("competences/habilitations", s.habExpirees, "Habilitations expirées", s.habExpirees?"var(--danger)":"var(--success)")}
+    ${kpi("competences/personnes", s.revuesARealiser, "Revues à réaliser", s.revuesARealiser?"var(--warning)":"var(--success)")}
+  </div>
+  <div class="card">
+    <h3 class="mb-2">🔔 Alertes</h3>
+    ${(()=>{ const al=competenceAlerts(); return al.length ? al.slice(0,8).map(a=>`<div class="rel-link"><span class="rel-name">${a.level==="danger"?"🔴":a.level==="warning"?"🟠":"🔵"} ${esc(a.text)}</span></div>`).join("") : `<p class="text-sm">Aucune alerte active.</p>`; })()}
+  </div>`;
+}
+
+/* ---------- Référentiel des compétences ---------- */
+function pageCompetenceReferentiel(){
+  return `
+  ${breadcrumb([{label:"Compétences & Habilitations",href:"#/competences"},{label:"Référentiel des compétences"}])}
+  ${pageHeader("Référentiel des compétences","", `<button class="btn btn-primary" data-open-competence-form>+ Nouvelle compétence</button>`)}
+  <div class="grid grid-3">
+    ${DB.competences.map(c=>`
+      <div class="card card-hover" data-route="competences/referentiel/${c.id}">
+        <div class="flex justify-between items-center"><span class="badge badge-neutral">${esc(c.code)}</span>${badge(LABELS.competenceCriticite[c.criticite])}</div>
+        <h3 class="mt-2">${esc(c.nom)}</h3>
+        <p class="text-sm mt-2">${esc(c.domaine)} ${c.reglementaire?"· 🛡️ Réglementaire":""}</p>
+        ${!c.actif?badgeRaw("neutral","Inactive"):""}
+      </div>`).join("")}
+  </div>`;
+}
+function pageCompetenceFiche(id){
+  const c = getCompetence(id);
+  if(!c) return emptyState("📘","Compétence introuvable","Cette compétence n'existe pas.");
+  const postesReq = DB.postes.filter(p=>p.competencesRequises.some(r=>r.competenceId===id));
+  const personnesEvaluees = DB.people.filter(p=>DB.competenceEvaluations.some(e=>e.personId===p.id && e.competenceId===id));
+  const docs = (c.documentIds||[]).map(getDocument).filter(Boolean);
+  const habs = (c.habilitationIds||[]).map(getHabilitation).filter(Boolean);
+  return `
+  ${breadcrumb([{label:"Compétences & Habilitations",href:"#/competences"},{label:"Référentiel",href:"#/competences/referentiel"},{label:c.nom}])}
+  <div class="card mb-2">
+    <div class="flex justify-between items-center">
+      <div><span class="badge badge-neutral">${esc(c.code)}</span> ${badge(LABELS.competenceCriticite[c.criticite])} ${c.reglementaire?badgeRaw("danger","Réglementaire"):""}</div>
+      <button class="btn btn-secondary btn-sm" data-open-competence-form="${c.id}">✏️ Modifier</button>
+    </div>
+    <h1 class="mt-2">${esc(c.nom)}</h1>
+    <p class="section-sub mt-2">${esc(c.domaine)} · ${esc(c.type)}</p>
+    <p class="text-sm mt-4" style="color:var(--text-primary);">${esc(c.description)}</p>
+  </div>
+  <div class="grid grid-2">
+    <div class="card">
+      <h3 class="mb-2">Postes concernés</h3>
+      ${postesReq.length?postesReq.map(p=>{const req=p.competencesRequises.find(r=>r.competenceId===id);return `<div class="rel-link" data-route="competences/postes/${p.id}"><span class="rel-name">${esc(p.intitule)}</span><span class="text-xs">Niveau requis : ${req.niveauRequis} ${req.obligatoire?"(obligatoire)":""}</span></div>`;}).join(""):`<p class="text-sm">Aucun poste ne requiert cette compétence.</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Personnes évaluées</h3>
+      ${personnesEvaluees.length?personnesEvaluees.map(p=>{const ev=personLatestEvaluation(p.id,id); return `<div class="rel-link" data-route="competences/personnes/${p.id}"><span class="rel-name">${esc(p.name)}</span><span class="text-xs">Niveau ${ev.niveauEvalue} — ${esc(LABELS.niveauCompetence[ev.niveauEvalue])}</span></div>`;}).join(""):`<p class="text-sm">Aucune évaluation enregistrée.</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Documents associés</h3>
+      ${docs.length?docs.map(d=>`<div class="rel-link" data-route="documents/${d.type}/${d.id}"><span class="rel-name">📄 ${esc(d.title)}</span></div>`).join(""):`<p class="text-sm">Aucun document associé.</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Habilitations liées</h3>
+      ${habs.length?habs.map(h=>`<div class="rel-link" data-route="competences/habilitations/${h.id}"><span class="rel-name">🪪 ${esc(h.nom)}</span></div>`).join(""):`<p class="text-sm">Aucune habilitation liée.</p>`}
+    </div>
+  </div>`;
+}
+
+/* ---------- Référentiel des postes ---------- */
+function pagePostes(){
+  return `
+  ${breadcrumb([{label:"Compétences & Habilitations",href:"#/competences"},{label:"Postes / fonctions"}])}
+  ${pageHeader("Postes / fonctions","", `<button class="btn btn-primary" data-open-poste-form>+ Nouveau poste</button>`)}
+  ${dataTable(
+    [ {label:"Poste", render:p=>`<div class="cell-title">${esc(p.intitule)}</div><div class="cell-sub">${esc(p.code)}</div>`},
+      {label:"Département", render:p=>esc(p.departement)},
+      {label:"Responsable", render:p=>esc(p.responsable)},
+      {label:"Compétences requises", render:p=>p.competencesRequises.length},
+      {label:"Criticité", render:p=>badge(LABELS.competenceCriticite[p.criticite])},
+      {label:"Effectif", render:p=>DB.people.filter(x=>x.posteId===p.id).length} ],
+    DB.postes, {rowRoute:p=>`competences/postes/${p.id}`}
+  )}`;
+}
+function pagePosteFiche(id){
+  const p = getPoste(id);
+  if(!p) return emptyState("🧭","Poste introuvable","Ce poste n'existe pas.");
+  const titulaires = DB.people.filter(x=>x.posteId===id);
+  const habs = (p.habilitationsObligatoires||[]).map(getHabilitation).filter(Boolean);
+  return `
+  ${breadcrumb([{label:"Compétences & Habilitations",href:"#/competences"},{label:"Postes",href:"#/competences/postes"},{label:p.intitule}])}
+  <div class="card mb-2">
+    <div class="flex justify-between items-center">
+      <div><span class="badge badge-neutral">${esc(p.code)}</span> ${badge(LABELS.competenceCriticite[p.criticite])} ${!p.actif?badgeRaw("neutral","Inactif"):""}</div>
+      <button class="btn btn-secondary btn-sm" data-open-poste-form="${p.id}">✏️ Modifier</button>
+    </div>
+    <h1 class="mt-2">${esc(p.intitule)}</h1>
+    <p class="section-sub mt-2">${esc(p.departement)} · Responsable : ${esc(p.responsable)}</p>
+    <p class="text-sm mt-4" style="color:var(--text-primary);">${esc(p.description)}</p>
+  </div>
+  <div class="card mb-2">
+    <div class="flex justify-between items-center mb-2"><h3>Compétences requises</h3><button class="btn btn-secondary btn-sm" data-add-poste-competence="${p.id}">+ Ajouter</button></div>
+    ${dataTable(
+      [ {label:"Compétence", render:r=>{const c=getCompetence(r.competenceId); return c?esc(c.nom):r.competenceId;}},
+        {label:"Niveau requis", render:r=>esc(LABELS.niveauCompetence[r.niveauRequis])},
+        {label:"Obligatoire", render:r=>r.obligatoire?badgeRaw("danger","Oui"):badgeRaw("neutral","Non")},
+        {label:"", render:r=>`<button class="btn btn-ghost btn-sm" data-remove-poste-competence='${jsonAttr({posteId:p.id, competenceId:r.competenceId})}'>✕</button>`} ],
+      p.competencesRequises
+    )}
+  </div>
+  <div class="grid grid-2">
+    <div class="card">
+      <h3 class="mb-2">Habilitations obligatoires</h3>
+      ${habs.length?habs.map(h=>`<div class="rel-link" data-route="competences/habilitations/${h.id}"><span class="rel-name">🪪 ${esc(h.nom)}</span></div>`).join(""):`<p class="text-sm">Aucune.</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Titulaires du poste</h3>
+      ${titulaires.length?titulaires.map(t=>`<div class="rel-link" data-route="competences/personnes/${t.id}"><span class="rel-name">${esc(t.name)}</span><span class="chev">›</span></div>`).join(""):`<p class="text-sm">Aucun titulaire actuellement.</p>`}
+    </div>
+  </div>`;
+}
+
+/* ---------- Matrice globale ---------- */
+function pageCompetenceMatrice(){
+  const allComps = DB.competences.filter(c=>c.actif);
+  return `
+  ${breadcrumb([{label:"Compétences & Habilitations",href:"#/competences"},{label:"Matrice globale"}])}
+  ${pageHeader("Matrice des compétences","Personnes × compétences — conformité calculée automatiquement.")}
+  <div class="filters-bar">
+    ${filterSelect("f-comp-service","Service", [...new Set(DB.people.map(p=>p.service))].map(s=>({v:s,l:s})))}
+    ${filterSelect("f-comp-poste","Poste", DB.postes.map(p=>({v:p.id,l:p.intitule})))}
+    ${filterSelect("f-comp-competence","Compétence", allComps.map(c=>({v:c.id,l:c.nom})))}
+  </div>
+  <div id="comp-matrix-zone">${competenceMatrixTable(DB.people, allComps)}</div>`;
+}
+function competenceMatrixTable(people, comps){
+  return `<div class="card card-flush table-wrap"><table class="dt">
+    <thead><tr><th>Collaborateur</th>${comps.map(c=>`<th>${esc(c.nom)}</th>`).join("")}</tr></thead>
+    <tbody>${people.map(p=>{
+      const poste = getPoste(p.posteId);
+      return `<tr class="clickable" data-route="competences/personnes/${p.id}"><td data-label="Collaborateur"><div class="cell-title">${esc(p.name)}</div><div class="cell-sub">${poste?esc(poste.intitule):"—"}</div></td>
+      ${comps.map(c=>{
+        const req = poste ? poste.competencesRequises.find(r=>r.competenceId===c.id) : null;
+        if(!req) return `<td data-label="${esc(c.nom)}" style="text-align:center;color:var(--text-secondary);">—</td>`;
+        const row = personCompetenceRow(p.id, req);
+        const color = row.statut==="conforme"?"var(--success)":row.statut==="a_renforcer"?"var(--danger)":"var(--text-secondary)";
+        const val = row.niveauActuel===null?"?":row.niveauActuel;
+        return `<td data-label="${esc(c.nom)}" style="text-align:center;font-weight:700;color:${color};">${val}</td>`;
+      }).join("")}</tr>`;
+    }).join("")}</tbody>
+  </table></div>
+  <p class="text-xs mt-2">🟢 Conforme · 🔴 À renforcer · « ? » Non évalué · « — » Compétence non requise pour le poste.</p>`;
+}
+function applyCompetenceMatrixFilters(){
+  const service = document.getElementById("f-comp-service")?.value;
+  const posteId = document.getElementById("f-comp-poste")?.value;
+  const compId = document.getElementById("f-comp-competence")?.value;
+  let people = DB.people;
+  if(service) people = people.filter(p=>p.service===service);
+  if(posteId) people = people.filter(p=>p.posteId===posteId);
+  let comps = DB.competences.filter(c=>c.actif);
+  if(compId) comps = comps.filter(c=>c.id===compId);
+  document.getElementById("comp-matrix-zone").innerHTML = competenceMatrixTable(people, comps);
+}
+
+/* ---------- Référentiel des habilitations ---------- */
+function pageHabilitations(){
+  return `
+  ${breadcrumb([{label:"Compétences & Habilitations",href:"#/competences"},{label:"Habilitations"}])}
+  ${pageHeader("Référentiel des habilitations","", `<button class="btn btn-primary" data-open-habilitation-form>+ Nouvelle habilitation</button>`)}
+  <div class="grid grid-3">
+    ${DB.habilitations.map(h=>{
+      const nb = DB.personHabilitations.filter(ph=>ph.habilitationId===h.id).length;
+      return `<div class="card card-hover" data-route="competences/habilitations/${h.id}">
+        <div class="flex justify-between items-center"><span class="badge badge-neutral">${esc(h.code)}</span>${!h.actif?badgeRaw("neutral","Inactive"):""}</div>
+        <h3 class="mt-2">${esc(h.nom)}</h3>
+        <p class="text-sm mt-2">${esc(h.activite)}</p>
+        <p class="text-xs mt-2">${nb} attribution(s) · Validité ${h.dureeValiditeMois} mois</p>
+      </div>`;
+    }).join("")}
+  </div>`;
+}
+function pageHabilitationFiche(id){
+  const h = getHabilitation(id);
+  if(!h) return emptyState("🪪","Habilitation introuvable","Cette habilitation n'existe pas.");
+  const attributions = DB.personHabilitations.filter(ph=>ph.habilitationId===id).map(ph=>({...ph, statutCalcule:habilitationStatusCompute(ph), person:getPerson(ph.personId)}));
+  const comps = (h.competencesNecessaires||[]).map(getCompetence).filter(Boolean);
+  return `
+  ${breadcrumb([{label:"Compétences & Habilitations",href:"#/competences"},{label:"Habilitations",href:"#/competences/habilitations"},{label:h.nom}])}
+  <div class="card mb-2">
+    <div class="flex justify-between items-center">
+      <span class="badge badge-neutral">${esc(h.code)}</span>
+      <button class="btn btn-secondary btn-sm" data-open-habilitation-form="${h.id}">✏️ Modifier</button>
+    </div>
+    <h1 class="mt-2">${esc(h.nom)}</h1>
+    <p class="section-sub mt-2">${esc(h.activite)} · Niveau ${esc(h.niveau)} · Validité ${h.dureeValiditeMois} mois</p>
+    <p class="text-sm mt-4" style="color:var(--text-primary);">${esc(h.description)}</p>
+    <div class="grid grid-2 mt-4">
+      <div><div class="text-xs">AUTORITÉ POUVANT ATTRIBUER</div><div class="text-sm" style="color:var(--text-primary)">${esc(h.autorite)}</div></div>
+      <div><div class="text-xs">PRÉREQUIS</div><div class="text-sm" style="color:var(--text-primary)">${esc(h.prerequis||"—")}</div></div>
+    </div>
+    <p class="text-xs mt-4">Compétences nécessaires : ${comps.map(c=>esc(c.nom)).join(", ")||"—"}</p>
+    <p class="text-xs mt-2">${h.formationObligatoire?"✓ Formation obligatoire":""} ${h.evaluationObligatoire?"· ✓ Évaluation obligatoire":""}</p>
+  </div>
+  <div class="card">
+    <div class="flex justify-between items-center mb-2"><h3>Attributions</h3><button class="btn btn-secondary btn-sm" data-attribute-habilitation="${h.id}">+ Attribuer</button></div>
+    ${dataTable(
+      [ {label:"Collaborateur", render:a=>a.person?esc(a.person.name):"—"},
+        {label:"Date d'attribution", render:a=>fmtDate(a.dateAttribution)},
+        {label:"Expiration", render:a=>fmtDate(a.dateExpiration)},
+        {label:"Statut", render:a=>badge(LABELS.habilitationStatut[a.statutCalcule])},
+        {label:"", render:a=>`<button class="btn btn-secondary btn-sm" data-renew-habilitation="${a.id}">Renouveler</button> <button class="btn btn-ghost btn-sm" data-suspend-habilitation="${a.id}">${a.statut==='suspendue'?'Réactiver':'Suspendre'}</button>`} ],
+      attributions
+    )}
+  </div>`;
+}
+
+/* ---------- Fiche collaborateur ---------- */
+function pagePersonnes(){
+  return `
+  ${breadcrumb([{label:"Compétences & Habilitations",href:"#/competences"},{label:"Collaborateurs"}])}
+  ${pageHeader("Collaborateurs","", `<button class="btn btn-primary" data-open-person-form>+ Nouveau collaborateur</button>`)}
+  <div class="grid grid-3">
+    ${DB.people.map(p=>{
+      const poste = getPoste(p.posteId);
+      const rate = personConformityRate(p.id);
+      const today = new Date().toISOString().slice(0,10);
+      const revueEnRetard = p.prochaineRevue && p.prochaineRevue<today;
+      return `<div class="card card-hover" data-route="competences/personnes/${p.id}">
+        <div class="flex justify-between items-center"><h3>${esc(p.name)}</h3>${rate!==null?badgeRaw(rate>=80?"success":"warning",rate+"%"):badgeRaw("neutral","Non évalué")}</div>
+        <p class="text-sm mt-2">${poste?esc(poste.intitule):"—"} · ${esc(p.service)}</p>
+        ${revueEnRetard?`<p class="text-xs mt-2" style="color:var(--danger);">🔴 Revue de compétences en retard</p>`:""}
+      </div>`;
+    }).join("")}
+  </div>`;
+}
+function personTabsHtml(p, active){
+  const tabs = [{id:"infos",label:"Informations"},{id:"matrice",label:"Matrice individuelle"},{id:"evaluations",label:"Évaluations"},{id:"preuves",label:"Preuves"},{id:"habilitations",label:"Habilitations"},{id:"revues",label:"Revues"}];
+  return `<div class="tabs">${tabs.map(t=>`<button class="tab ${t.id===active?'active':''}" data-route="competences/personnes/${p.id}/${t.id}">${esc(t.label)}</button>`).join("")}</div>`;
+}
+function pagePersonneFiche(id, tab){
+  const p = getPerson(id);
+  if(!p) return emptyState("👤","Collaborateur introuvable","Ce collaborateur n'existe pas.");
+  tab = tab || "infos";
+  const poste = getPoste(p.posteId);
+  const rate = personConformityRate(p.id);
+  const header = `
+  ${breadcrumb([{label:"Compétences & Habilitations",href:"#/competences"},{label:"Collaborateurs",href:"#/competences/personnes"},{label:p.name}])}
+  <div class="card mb-2">
+    <div class="flex justify-between items-center">
+      <div><h1>${esc(p.name)}</h1><p class="section-sub mt-2">${poste?esc(poste.intitule):"—"} · ${esc(p.service)}${p.manager?" · Manager : "+esc(p.manager):""}</p></div>
+      <div class="flex gap-2 items-center">
+        ${rate!==null?badgeRaw(rate>=80?"success":"warning","Conformité : "+rate+"%"):badgeRaw("neutral","Non évalué")}
+        <button class="btn btn-secondary btn-sm" data-open-person-form="${p.id}">✏️</button>
+      </div>
+    </div>
+  </div>
+  ${personTabsHtml(p, tab)}`;
+  let body = "";
+  if(tab==="infos") body = personTabInfos(p, poste);
+  else if(tab==="matrice") body = personTabMatrice(p);
+  else if(tab==="evaluations") body = personTabEvaluations(p);
+  else if(tab==="preuves") body = personTabPreuves(p);
+  else if(tab==="habilitations") body = personTabHabilitations(p);
+  else if(tab==="revues") body = personTabRevues(p);
+  return header + body;
+}
+function personTabInfos(p, poste){
+  return `
+  <div class="grid grid-2">
+    <div class="card">
+      <h3 class="mb-2">Informations</h3>
+      <p class="text-sm">Fonction : ${poste?esc(poste.intitule):"—"}</p>
+      <p class="text-sm mt-2">Service : ${esc(p.service)}</p>
+      <p class="text-sm mt-2">Manager : ${esc(p.manager||"—")}</p>
+      <p class="text-sm mt-2">Date d'entrée : ${fmtDate(p.dateEntree)}</p>
+      <p class="text-sm mt-2">Dernière revue : ${p.derniereRevue?fmtDate(p.derniereRevue):"Jamais réalisée"}</p>
+      <p class="text-sm mt-2">Prochaine revue : ${fmtDate(p.prochaineRevue)}</p>
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Processus rattaché</h3>
+      ${p.processId?(()=>{const pr=getProcess(p.processId); return pr?`<div class="rel-link" data-route="processus/${pr.id}"><span class="rel-name">🧩 ${esc(pr.name)}</span><span class="chev">›</span></div>`:"";})():`<p class="text-sm">—</p>`}
+    </div>
+  </div>`;
+}
+function personTabMatrice(p){
+  const rows = personMatrix(p.id);
+  return `
+  ${!rows.length?`<div class="card">${emptyState("🗂️","Aucune compétence requise","Ce collaborateur n'est rattaché à aucun poste avec compétences définies.")}</div>`:dataTable(
+    [ {label:"Compétence", render:r=>esc(r.competence.nom)},
+      {label:"Niveau requis", render:r=>r.niveauRequis+" — "+esc(LABELS.niveauCompetence[r.niveauRequis])},
+      {label:"Niveau actuel", render:r=>r.niveauActuel===null?"—":r.niveauActuel+" — "+esc(LABELS.niveauCompetence[r.niveauActuel])},
+      {label:"Écart", render:r=>r.ecart===null?"—":(r.ecart>=0?"+":"")+r.ecart},
+      {label:"Statut", render:r=>badge(LABELS.ecartStatut[r.statut])},
+      {label:"", render:r=>`
+        <button class="btn btn-secondary btn-sm" data-open-evaluation-form='${jsonAttr({personId:p.id, competenceId:r.competence.id})}'>Évaluer</button>
+        ${r.statut==="a_renforcer"?`<button class="btn btn-secondary btn-sm" data-create-dev-action='${jsonAttr({personId:p.id, competenceId:r.competence.id})}'>+ Action</button>`:""}
+      `} ],
+    rows
+  )}`;
+}
+function personTabEvaluations(p){
+  const evals = DB.competenceEvaluations.filter(e=>e.personId===p.id).sort((a,b)=>b.date.localeCompare(a.date));
+  return dataTable(
+    [ {label:"Compétence", render:e=>{const c=getCompetence(e.competenceId); return c?esc(c.nom):"—";}},
+      {label:"Niveau évalué", render:e=>e.niveauEvalue},
+      {label:"Date", render:e=>fmtDate(e.date)},
+      {label:"Évaluateur", render:e=>esc(e.evaluateur)},
+      {label:"Méthode", render:e=>esc(e.methode)},
+      {label:"Résultat", render:e=>esc(e.resultat)} ],
+    evals, {emptyEmoji:"📋", emptyTitle:"Aucune évaluation", emptyText:"Aucune évaluation n'a encore été enregistrée."}
+  );
+}
+function personTabPreuves(p){
+  const preuves = DB.competencePreuves.filter(pr=>pr.personId===p.id);
+  return `
+  <div class="flex justify-between items-center mb-2"><span></span><button class="btn btn-primary btn-sm" data-open-preuve-form="${p.id}">+ Ajouter une preuve</button></div>
+  ${preuves.length? preuves.map(pr=>{
+    const c = getCompetence(pr.competenceId);
+    const doc = pr.documentId ? getDocument(pr.documentId) : null;
+    return `<div class="card mb-2">
+      <div class="flex justify-between items-center"><h3 style="font-size:14.5px;">${esc(pr.label)}</h3>${badgeRaw("info",LABELS.preuveCompetenceType[pr.type]||pr.type)}</div>
+      <p class="text-sm mt-2">Compétence : ${c?esc(c.nom):"—"} · ${fmtDate(pr.date)} · Évaluateur : ${esc(pr.evaluateur)}</p>
+      <p class="text-xs mt-2">Résultat : ${esc(pr.resultat)}</p>
+      ${doc?`<div class="rel-link" data-route="documents/${doc.type}/${doc.id}"><span class="rel-name">📄 ${esc(doc.title)}</span></div>`:""}
+    </div>`;
+  }).join("") : `<div class="card">${emptyState("📎","Aucune preuve","Aucune preuve de compétence n'a encore été associée.")}</div>`}`;
+}
+function personTabHabilitations(p){
+  const list = personHabilitationsList(p.id);
+  return `
+  <div class="flex justify-between items-center mb-2"><span></span><button class="btn btn-primary btn-sm" data-attribute-habilitation-for="${p.id}">+ Attribuer une habilitation</button></div>
+  ${list.length? dataTable(
+    [ {label:"Habilitation", render:ph=>ph.habilitation?esc(ph.habilitation.nom):"—"},
+      {label:"Attribution", render:ph=>fmtDate(ph.dateAttribution)},
+      {label:"Expiration", render:ph=>fmtDate(ph.dateExpiration)},
+      {label:"Statut", render:ph=>badge(LABELS.habilitationStatut[ph.statutCalcule])},
+      {label:"", render:ph=>`<button class="btn btn-secondary btn-sm" data-renew-habilitation="${ph.id}">Renouveler</button>`} ],
+    list
+  ) : `<div class="card">${emptyState("🪪","Aucune habilitation","Aucune habilitation n'est attribuée à ce collaborateur.")}</div>`}`;
+}
+function personTabRevues(p){
+  const reviews = DB.competenceReviews.filter(r=>r.personId===p.id).sort((a,b)=>b.date.localeCompare(a.date));
+  return `
+  <div class="flex justify-between items-center mb-2"><span></span><button class="btn btn-primary btn-sm" data-open-review-form="${p.id}">+ Nouvelle revue</button></div>
+  ${reviews.length? reviews.map(r=>`
+    <div class="card mb-2">
+      <div class="flex justify-between items-center"><h3 style="font-size:14.5px;">Revue du ${fmtDate(r.date)}</h3><span class="text-xs">Évaluateur : ${esc(r.evaluateur)}</span></div>
+      <p class="text-sm mt-2"><strong>Compétences maîtrisées :</strong> ${r.competencesMaitrisees.join(", ")||"—"}</p>
+      <p class="text-sm mt-2"><strong>À renforcer :</strong> ${r.competencesARenforcer.join(", ")||"—"}</p>
+      <p class="text-sm mt-2"><strong>Conclusion :</strong> ${esc(r.conclusion)}</p>
+      <p class="text-xs mt-2">Prochaine revue : ${fmtDate(r.prochaineDateRevue)}</p>
+    </div>`).join("") : `<div class="card">${emptyState("📝","Aucune revue","Aucune revue de compétences n'a encore été réalisée pour ce collaborateur.")}</div>`}`;
+}
+
+/* ---------- Vue Auditeur ---------- */
+function pageCompetenceAuditeur(){
+  const s = competenceDashboardStats();
+  const nonEvaluees = [];
+  DB.people.forEach(p=> personMatrix(p.id).filter(r=>r.statut==="non_evalue" && r.obligatoire).forEach(r=> nonEvaluees.push({person:p, row:r})));
+  const habExpirees = DB.personHabilitations.map(ph=>({...ph, statutCalcule:habilitationStatusCompute(ph)})).filter(ph=>ph.statutCalcule==="expiree");
+  const today = new Date().toISOString().slice(0,10);
+  const revuesRetard = DB.people.filter(p=>p.prochaineRevue && p.prochaineRevue<today);
+  return `
+  ${breadcrumb([{label:"Compétences & Habilitations",href:"#/competences"},{label:"Vue Auditeur"}])}
+  ${pageHeader("État des compétences et habilitations","Vue synthétique conçue pour répondre rapidement aux questions d'un audit RH.")}
+  <div class="grid grid-4 mb-4">
+    <div class="card"><div class="kpi"><div class="val">${DB.people.length}</div><div class="lbl">Collaborateurs</div></div></div>
+    <div class="card"><div class="kpi"><div class="val">${DB.postes.length}</div><div class="lbl">Postes</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--primary)">${s.pctConformes} %</div><div class="lbl">Taux de conformité</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:${s.ecarts?'var(--danger)':'var(--success)'}">${s.ecarts}</div><div class="lbl">Écarts</div></div></div>
+  </div>
+  <div class="grid grid-2">
+    <div class="card">
+      <h3 class="mb-2">Formations obligatoires non réalisées / compétences non évaluées</h3>
+      ${nonEvaluees.length?nonEvaluees.slice(0,8).map(x=>`<div class="rel-link" data-route="competences/personnes/${x.person.id}"><span class="rel-name">${esc(x.person.name)} — ${esc(x.row.competence.nom)}</span></div>`).join(""):`<p class="text-sm">Toutes les compétences obligatoires sont évaluées.</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Habilitations expirées</h3>
+      ${habExpirees.length?habExpirees.map(ph=>{const person=getPerson(ph.personId); return `<div class="rel-link" data-route="competences/personnes/${ph.personId}"><span class="rel-name">${person?esc(person.name):"—"} — ${esc(ph.habilitation?ph.habilitation.nom:getHabilitation(ph.habilitationId).nom)}</span></div>`;}).join(""):`<p class="text-sm">Aucune habilitation expirée.</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Revues de compétences en retard</h3>
+      ${revuesRetard.length?revuesRetard.map(p=>`<div class="rel-link" data-route="competences/personnes/${p.id}"><span class="rel-name">${esc(p.name)}</span></div>`).join(""):`<p class="text-sm">Aucune revue en retard.</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Réponses aux questions d'audit RH</h3>
+      <p class="text-xs">1. Compétences définies par fonction ? <strong>Oui</strong> — ${DB.postes.length} postes avec exigences formalisées.</p>
+      <p class="text-xs mt-2">2-3. Compétences détenues et évaluées ? ${DB.competenceEvaluations.length} évaluation(s) enregistrée(s).</p>
+      <p class="text-xs mt-2">4. Écarts identifiés ? ${s.ecarts} écart(s) détecté(s) automatiquement.</p>
+      <p class="text-xs mt-2">5. Actions suivies ? ${DB.actions.filter(a=>a.origin==="competence").length} action(s), dont ${s.formationsAFaire} en cours.</p>
+      <p class="text-xs mt-2">7. Habilitations suivies ? ${s.habActives} active(s), ${s.habExpirees} expirée(s).</p>
+      <p class="text-xs mt-2">8. Preuves disponibles ? ${DB.competencePreuves.length} preuve(s) enregistrée(s), consultables depuis chaque évaluation.</p>
+      <p class="text-xs mt-2">9. Revues réalisées ? ${DB.competenceReviews.length} revue(s) enregistrée(s) ; ${revuesRetard.length} en retard.</p>
+    </div>
+  </div>`;
+}
+
+/* ============================================================
    14. RÉFÉRENTIELS — moteur de conformité
    ============================================================ */
 
@@ -3808,6 +4309,323 @@ function generateAuditReportText(a){
 }
 
 /* ============================================================
+   19bis-comp. FORMULAIRES — COMPÉTENCES & HABILITATIONS
+   ============================================================ */
+function openCompetenceForm(id){
+  const existing = id ? getCompetence(id) : null;
+  openModal({title: existing?"Modifier la compétence":"Nouvelle compétence", wide:true,
+    bodyHtml:`
+      <div class="field-row">
+        <div class="field"><label>Nom <span class="req">*</span></label><input type="text" id="cf-nom" value="${esc(existing?existing.nom:"")}"></div>
+        <div class="field"><label>Code</label><input type="text" id="cf-code" value="${esc(existing?existing.code:"")}"></div>
+      </div>
+      <div class="field"><label>Description</label><textarea id="cf-desc">${esc(existing?existing.description:"")}</textarea></div>
+      <div class="field-row">
+        <div class="field"><label>Domaine</label><input type="text" id="cf-domaine" value="${esc(existing?existing.domaine:"")}"></div>
+        <div class="field"><label>Type</label><select id="cf-type"><option value="métier" ${existing&&existing.type==="métier"?"selected":""}>Métier</option><option value="transversale" ${existing&&existing.type==="transversale"?"selected":""}>Transversale</option><option value="réglementaire" ${existing&&existing.type==="réglementaire"?"selected":""}>Réglementaire</option></select></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Criticité</label><select id="cf-crit">${Object.entries(LABELS.competenceCriticite).map(([v,l])=>`<option value="${v}" ${existing&&existing.criticite===v?"selected":""}>${l.l}</option>`).join("")}</select></div>
+        <div class="field"><label><input type="checkbox" id="cf-reglem" style="width:auto;margin-right:6px;" ${existing&&existing.reglementaire?"checked":""}> Compétence réglementaire / obligatoire</label></div>
+      </div>
+      ${existing?`<div class="field"><label><input type="checkbox" id="cf-actif" style="width:auto;margin-right:6px;" ${existing.actif?"checked":""}> Active</label></div>`:""}`,
+    footHtml:`${existing?`<button class="btn btn-danger" id="cf-delete" style="margin-right:auto;">Supprimer</button>`:""}<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="cf-submit">${existing?"Enregistrer":"Créer"}</button>`,
+    onMount:(o)=>{
+      o.querySelector("#cf-submit").addEventListener("click", ()=>{
+        const nom = o.querySelector("#cf-nom").value.trim();
+        if(!nom){ toast("Merci de saisir un nom","⚠️"); return; }
+        const payload = { nom, code:o.querySelector("#cf-code").value.trim()||("C-"+Date.now().toString().slice(-5)), description:o.querySelector("#cf-desc").value.trim(),
+          domaine:o.querySelector("#cf-domaine").value.trim(), type:o.querySelector("#cf-type").value, criticite:o.querySelector("#cf-crit").value, reglementaire:o.querySelector("#cf-reglem").checked };
+        if(existing){ Object.assign(existing, payload); existing.actif = o.querySelector("#cf-actif").checked; }
+        else{ DB.competences.push({ id:nextId("COMP", DB.competences), ...payload, actif:true, niveauRequisPossible:4, documentIds:[], habilitationIds:[] }); }
+        saveDB(); closeModal(); toast(existing?"Compétence mise à jour":"Compétence créée"); navigate("competences/referentiel");
+      });
+      const delBtn = o.querySelector("#cf-delete");
+      if(delBtn) delBtn.addEventListener("click", ()=>{
+        confirmDialog("Supprimer définitivement cette compétence ?", ()=>{
+          DB.competences = DB.competences.filter(c=>c.id!==existing.id);
+          saveDB(); closeModal(); toast("Compétence supprimée"); navigate("competences/referentiel");
+        });
+      });
+    }
+  });
+}
+
+function openPosteForm(id){
+  const existing = id ? getPoste(id) : null;
+  openModal({title: existing?"Modifier le poste":"Nouveau poste", wide:true,
+    bodyHtml:`
+      <div class="field-row">
+        <div class="field"><label>Intitulé <span class="req">*</span></label><input type="text" id="pf-intitule" value="${esc(existing?existing.intitule:"")}"></div>
+        <div class="field"><label>Code</label><input type="text" id="pf-code" value="${esc(existing?existing.code:"")}"></div>
+      </div>
+      <div class="field"><label>Description</label><textarea id="pf-desc">${esc(existing?existing.description:"")}</textarea></div>
+      <div class="field-row">
+        <div class="field"><label>Département / service</label><input type="text" id="pf-dept" value="${esc(existing?existing.departement:"")}"></div>
+        <div class="field"><label>Responsable / manager</label><input type="text" id="pf-resp" value="${esc(existing?existing.responsable:"")}"></div>
+      </div>
+      <div class="field"><label>Criticité du poste</label><select id="pf-crit">${Object.entries(LABELS.competenceCriticite).map(([v,l])=>`<option value="${v}" ${existing&&existing.criticite===v?"selected":""}>${l.l}</option>`).join("")}</select></div>
+      <div class="field"><label>Habilitations obligatoires</label>
+        <div style="max-height:120px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
+          ${DB.habilitations.map(h=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="pf-hab-cb" value="${h.id}" ${existing&&(existing.habilitationsObligatoires||[]).includes(h.id)?"checked":""} style="width:auto;"> ${esc(h.nom)}</label>`).join("")}
+        </div>
+      </div>`,
+    footHtml:`${existing?`<button class="btn btn-danger" id="pf-delete" style="margin-right:auto;">Supprimer</button>`:""}<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="pf-submit">${existing?"Enregistrer":"Créer"}</button>`,
+    onMount:(o)=>{
+      o.querySelector("#pf-submit").addEventListener("click", ()=>{
+        const intitule = o.querySelector("#pf-intitule").value.trim();
+        if(!intitule){ toast("Merci de saisir un intitulé","⚠️"); return; }
+        const habilitationsObligatoires = [...o.querySelectorAll(".pf-hab-cb:checked")].map(c=>c.value);
+        const payload = { intitule, code:o.querySelector("#pf-code").value.trim()||("P-"+Date.now().toString().slice(-5)), description:o.querySelector("#pf-desc").value.trim(),
+          departement:o.querySelector("#pf-dept").value.trim(), responsable:o.querySelector("#pf-resp").value.trim(), criticite:o.querySelector("#pf-crit").value, habilitationsObligatoires };
+        if(existing){ Object.assign(existing, payload); }
+        else{ DB.postes.push({ id:nextId("POSTE", DB.postes), ...payload, actif:true, competencesRequises:[] }); }
+        saveDB(); closeModal(); toast(existing?"Poste mis à jour":"Poste créé"); navigate("competences/postes");
+      });
+      const delBtn = o.querySelector("#pf-delete");
+      if(delBtn) delBtn.addEventListener("click", ()=>{
+        confirmDialog("Supprimer définitivement ce poste ?", ()=>{
+          DB.postes = DB.postes.filter(p=>p.id!==existing.id);
+          saveDB(); closeModal(); toast("Poste supprimé"); navigate("competences/postes");
+        });
+      });
+    }
+  });
+}
+
+function openAddPosteCompetenceForm(posteId){
+  const poste = getPoste(posteId);
+  openModal({title:"Ajouter une compétence requise",
+    bodyHtml:`
+      <div class="field"><label>Compétence</label><select id="apf-comp">${DB.competences.filter(c=>c.actif && !poste.competencesRequises.some(r=>r.competenceId===c.id)).map(c=>`<option value="${c.id}">${esc(c.nom)}</option>`).join("")}</select></div>
+      <div class="field"><label>Niveau requis</label><select id="apf-niveau">${Object.entries(LABELS.niveauCompetence).map(([v,l])=>`<option value="${v}" ${v==="2"?"selected":""}>${v} — ${l}</option>`).join("")}</select></div>
+      <div class="field"><label><input type="checkbox" id="apf-obligatoire" style="width:auto;margin-right:6px;" checked> Obligatoire</label></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="apf-submit">Ajouter</button>`,
+    onMount:(o)=>{ o.querySelector("#apf-submit").addEventListener("click", ()=>{
+      const compId = o.querySelector("#apf-comp").value;
+      if(!compId){ toast("Aucune compétence disponible à ajouter","⚠️"); return; }
+      poste.competencesRequises.push({ competenceId:compId, niveauRequis:parseInt(o.querySelector("#apf-niveau").value,10), obligatoire:o.querySelector("#apf-obligatoire").checked });
+      saveDB(); closeModal(); toast("Compétence ajoutée au poste"); render();
+    });}
+  });
+}
+
+function openHabilitationForm(id){
+  const existing = id ? getHabilitation(id) : null;
+  openModal({title: existing?"Modifier l'habilitation":"Nouvelle habilitation", wide:true,
+    bodyHtml:`
+      <div class="field-row">
+        <div class="field"><label>Nom <span class="req">*</span></label><input type="text" id="hf-nom" value="${esc(existing?existing.nom:"")}"></div>
+        <div class="field"><label>Code</label><input type="text" id="hf-code" value="${esc(existing?existing.code:"")}"></div>
+      </div>
+      <div class="field"><label>Description</label><textarea id="hf-desc">${esc(existing?existing.description:"")}</textarea></div>
+      <div class="field"><label>Activité concernée</label><input type="text" id="hf-activite" value="${esc(existing?existing.activite:"")}"></div>
+      <div class="field-row">
+        <div class="field"><label>Autorité pouvant attribuer</label><input type="text" id="hf-autorite" value="${esc(existing?existing.autorite:"")}"></div>
+        <div class="field"><label>Durée de validité (mois)</label><input type="number" id="hf-duree" value="${existing?existing.dureeValiditeMois:12}"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label><input type="checkbox" id="hf-formation" style="width:auto;margin-right:6px;" ${existing&&existing.formationObligatoire?"checked":""}> Formation obligatoire</label></div>
+        <div class="field"><label><input type="checkbox" id="hf-evaluation" style="width:auto;margin-right:6px;" ${existing&&existing.evaluationObligatoire?"checked":""}> Évaluation obligatoire</label></div>
+      </div>`,
+    footHtml:`${existing?`<button class="btn btn-danger" id="hf-delete" style="margin-right:auto;">Supprimer</button>`:""}<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="hf-submit">${existing?"Enregistrer":"Créer"}</button>`,
+    onMount:(o)=>{
+      o.querySelector("#hf-submit").addEventListener("click", ()=>{
+        const nom = o.querySelector("#hf-nom").value.trim();
+        if(!nom){ toast("Merci de saisir un nom","⚠️"); return; }
+        const payload = { nom, code:o.querySelector("#hf-code").value.trim()||("H-"+Date.now().toString().slice(-5)), description:o.querySelector("#hf-desc").value.trim(),
+          activite:o.querySelector("#hf-activite").value.trim(), autorite:o.querySelector("#hf-autorite").value.trim(), dureeValiditeMois:parseInt(o.querySelector("#hf-duree").value,10)||12,
+          formationObligatoire:o.querySelector("#hf-formation").checked, evaluationObligatoire:o.querySelector("#hf-evaluation").checked };
+        if(existing){ Object.assign(existing, payload); }
+        else{ DB.habilitations.push({ id:nextId("HAB", DB.habilitations), ...payload, niveau:"Standard", prerequis:"", competencesNecessaires:[], renouvellement:true, documentsNecessaires:[], actif:true }); }
+        saveDB(); closeModal(); toast(existing?"Habilitation mise à jour":"Habilitation créée"); navigate("competences/habilitations");
+      });
+      const delBtn = o.querySelector("#hf-delete");
+      if(delBtn) delBtn.addEventListener("click", ()=>{
+        confirmDialog("Supprimer définitivement cette habilitation ?", ()=>{
+          DB.habilitations = DB.habilitations.filter(h=>h.id!==existing.id);
+          DB.personHabilitations = DB.personHabilitations.filter(ph=>ph.habilitationId!==existing.id);
+          saveDB(); closeModal(); toast("Habilitation supprimée"); navigate("competences/habilitations");
+        });
+      });
+    }
+  });
+}
+
+function openPersonForm(id){
+  const existing = id ? getPerson(id) : null;
+  openModal({title: existing?"Modifier le collaborateur":"Nouveau collaborateur", wide:true,
+    bodyHtml:`
+      <div class="field-row">
+        <div class="field"><label>Nom <span class="req">*</span></label><input type="text" id="prf-nom" value="${esc(existing?existing.name:"")}"></div>
+        <div class="field"><label>Poste</label><select id="prf-poste"><option value="">—</option>${DB.postes.map(p=>`<option value="${p.id}" ${existing&&existing.posteId===p.id?"selected":""}>${esc(p.intitule)}</option>`).join("")}</select></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Service</label><input type="text" id="prf-service" value="${esc(existing?existing.service:"")}"></div>
+        <div class="field"><label>Manager</label><input type="text" id="prf-manager" value="${esc(existing?existing.manager||"":"")}"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Date d'entrée</label><input type="date" id="prf-entree" value="${existing?existing.dateEntree:""}"></div>
+        <div class="field"><label>Prochaine revue de compétences</label><input type="date" id="prf-prochaine" value="${existing?existing.prochaineRevue:""}"></div>
+      </div>`,
+    footHtml:`${existing?`<button class="btn btn-danger" id="prf-delete" style="margin-right:auto;">Supprimer</button>`:""}<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="prf-submit">${existing?"Enregistrer":"Créer"}</button>`,
+    onMount:(o)=>{
+      o.querySelector("#prf-submit").addEventListener("click", ()=>{
+        const name = o.querySelector("#prf-nom").value.trim();
+        if(!name){ toast("Merci de saisir un nom","⚠️"); return; }
+        const posteId = o.querySelector("#prf-poste").value||null;
+        const poste = posteId ? getPoste(posteId) : null;
+        const payload = { name, posteId, service:o.querySelector("#prf-service").value.trim(), manager:o.querySelector("#prf-manager").value.trim()||null,
+          processId: existing?existing.processId:null, dateEntree:o.querySelector("#prf-entree").value||new Date().toISOString().slice(0,10), prochaineRevue:o.querySelector("#prf-prochaine").value||"—" };
+        if(existing){ Object.assign(existing, payload); }
+        else{ DB.people.push({ id:nextId("P", DB.people), ...payload, derniereRevue:null }); }
+        saveDB(); closeModal(); toast(existing?"Collaborateur mis à jour":"Collaborateur créé"); navigate("competences/personnes");
+      });
+      const delBtn = o.querySelector("#prf-delete");
+      if(delBtn) delBtn.addEventListener("click", ()=>{
+        confirmDialog("Supprimer définitivement ce collaborateur ?", ()=>{
+          DB.people = DB.people.filter(p=>p.id!==existing.id);
+          saveDB(); closeModal(); toast("Collaborateur supprimé"); navigate("competences/personnes");
+        });
+      });
+    }
+  });
+}
+
+function openEvaluationForm(personId, competenceId){
+  const person = getPerson(personId), comp = getCompetence(competenceId);
+  const poste = person ? getPoste(person.posteId) : null;
+  const req = poste ? poste.competencesRequises.find(r=>r.competenceId===competenceId) : null;
+  openModal({title:"Évaluer une compétence", wide:true,
+    bodyHtml:`
+      <p class="text-sm mb-2"><strong>${esc(person.name)}</strong> — ${esc(comp.nom)} ${req?`(niveau requis : ${req.niveauRequis})`:""}</p>
+      <div class="field-row">
+        <div class="field"><label>Niveau évalué <span class="req">*</span></label><select id="evf-niveau">${Object.entries(LABELS.niveauCompetence).map(([v,l])=>`<option value="${v}">${v} — ${l}</option>`).join("")}</select></div>
+        <div class="field"><label>Date</label><input type="date" id="evf-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Évaluateur</label><input type="text" id="evf-evaluateur" value="${esc(person.manager||"")}"></div>
+        <div class="field"><label>Méthode</label><select id="evf-methode"><option>Entretien</option><option>Entretien annuel</option><option>Observation</option><option>Test</option><option>Mise en situation</option><option>Évaluation interne</option></select></div>
+      </div>
+      <div class="field"><label>Commentaire</label><textarea id="evf-comment"></textarea></div>
+      <div class="field"><label>Résultat</label><select id="evf-resultat"><option value="Conforme">Conforme</option><option value="À renforcer">À renforcer</option></select></div>
+      <div class="field"><label>Date de prochaine évaluation</label><input type="date" id="evf-prochaine"></div>
+      <p class="text-xs">L'historique des évaluations précédentes n'est jamais écrasé — chaque évaluation s'ajoute à l'historique.</p>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="evf-submit">Enregistrer l'évaluation</button>`,
+    onMount:(o)=>{ o.querySelector("#evf-submit").addEventListener("click", ()=>{
+      DB.competenceEvaluations.push({ id:"EVAL-"+String(Date.now()).slice(-6), personId, competenceId, niveauEvalue:parseInt(o.querySelector("#evf-niveau").value,10),
+        date:o.querySelector("#evf-date").value||new Date().toISOString().slice(0,10), evaluateur:o.querySelector("#evf-evaluateur").value.trim()||"Non renseigné",
+        methode:o.querySelector("#evf-methode").value, commentaire:o.querySelector("#evf-comment").value.trim(), preuveIds:[],
+        resultat:o.querySelector("#evf-resultat").value, prochaineEvaluation:o.querySelector("#evf-prochaine").value||"—" });
+      saveDB(); closeModal(); toast("Évaluation enregistrée"); render();
+    });}
+  });
+}
+
+function openPreuveForm(personId, competenceId){
+  const person = getPerson(personId);
+  openModal({title:"Ajouter une preuve de compétence", wide:true,
+    bodyHtml:`
+      <div class="field-row">
+        <div class="field"><label>Compétence</label><select id="prv-comp">${DB.competences.filter(c=>c.actif).map(c=>`<option value="${c.id}" ${competenceId===c.id?"selected":""}>${esc(c.nom)}</option>`).join("")}</select></div>
+        <div class="field"><label>Type de preuve</label><select id="prv-type">${Object.entries(LABELS.preuveCompetenceType).map(([v,l])=>`<option value="${v}">${esc(l)}</option>`).join("")}</select></div>
+      </div>
+      <div class="field"><label>Libellé <span class="req">*</span></label><input type="text" id="prv-label" placeholder="Ex : Certificat ISO 9001"></div>
+      <div class="field-row">
+        <div class="field"><label>Date</label><input type="date" id="prv-date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field"><label>Évaluateur</label><input type="text" id="prv-eval" value="${esc(person.manager||"")}"></div>
+      </div>
+      <div class="field"><label>Document Qonnect existant (optionnel — ne pas reverser un document déjà présent)</label>
+        <select id="prv-doc"><option value="">—</option>${DB.documents.filter(d=>d.status!=="obsolete").map(d=>`<option value="${d.id}">${esc(d.title)}</option>`).join("")}</select></div>
+      <div class="field"><label>Résultat</label><input type="text" id="prv-resultat" value="Validé"></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="prv-submit">Ajouter la preuve</button>`,
+    onMount:(o)=>{ o.querySelector("#prv-submit").addEventListener("click", ()=>{
+      const label = o.querySelector("#prv-label").value.trim();
+      if(!label){ toast("Merci de saisir un libellé","⚠️"); return; }
+      DB.competencePreuves.push({ id:"PRV-"+String(Date.now()).slice(-6), personId, competenceId:o.querySelector("#prv-comp").value, type:o.querySelector("#prv-type").value,
+        label, date:o.querySelector("#prv-date").value, evaluateur:o.querySelector("#prv-eval").value.trim()||"Non renseigné", resultat:o.querySelector("#prv-resultat").value.trim(),
+        documentId:o.querySelector("#prv-doc").value||null });
+      saveDB(); closeModal(); toast("Preuve ajoutée"); render();
+    });}
+  });
+}
+
+function openAttributeHabilitationForm(habilitationId, personId){
+  const hab = habilitationId ? getHabilitation(habilitationId) : null;
+  openModal({title:"Attribuer une habilitation", wide:true,
+    bodyHtml:`
+      <div class="field-row">
+        <div class="field"><label>Collaborateur</label><select id="ahf-person" ${personId?"disabled":""}>${DB.people.map(p=>`<option value="${p.id}" ${personId===p.id?"selected":""}>${esc(p.name)}</option>`).join("")}</select></div>
+        <div class="field"><label>Habilitation</label><select id="ahf-hab" ${habilitationId?"disabled":""}>${DB.habilitations.filter(h=>h.actif).map(h=>`<option value="${h.id}" ${habilitationId===h.id?"selected":""}>${esc(h.nom)}</option>`).join("")}</select></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Date d'attribution</label><input type="date" id="ahf-date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field"><label>Durée de validité (mois)</label><input type="number" id="ahf-duree" value="${hab?hab.dureeValiditeMois:12}"></div>
+      </div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="ahf-submit">Attribuer</button>`,
+    onMount:(o)=>{ o.querySelector("#ahf-submit").addEventListener("click", ()=>{
+      const pid = personId || o.querySelector("#ahf-person").value;
+      const hid = habilitationId || o.querySelector("#ahf-hab").value;
+      const dateAttribution = o.querySelector("#ahf-date").value || new Date().toISOString().slice(0,10);
+      const dureeMois = parseInt(o.querySelector("#ahf-duree").value,10) || 12;
+      const dExp = new Date(dateAttribution+"T00:00:00"); dExp.setMonth(dExp.getMonth()+dureeMois);
+      DB.personHabilitations.push({ id:"PH-"+String(Date.now()).slice(-6), personId:pid, habilitationId:hid, dateAttribution, dateExpiration:dExp.toISOString().slice(0,10), statut:"active",
+        historique:[{date:dateAttribution, action:"Attribution", ancienneValeur:null, nouvelleValeur:"active", commentaire:""}] });
+      saveDB(); closeModal(); toast("Habilitation attribuée"); render();
+    });}
+  });
+}
+
+function renewHabilitation(phId){
+  const ph = findBy(DB.personHabilitations, phId);
+  if(!ph) return;
+  const hab = getHabilitation(ph.habilitationId);
+  const today = new Date().toISOString().slice(0,10);
+  const dExp = new Date(); dExp.setMonth(dExp.getMonth()+(hab?hab.dureeValiditeMois:12));
+  const ancienneExp = ph.dateExpiration;
+  ph.dateAttribution = today; ph.dateExpiration = dExp.toISOString().slice(0,10); ph.statut = "active";
+  ph.historique.push({date:today, action:"Renouvellement", ancienneValeur:ancienneExp, nouvelleValeur:ph.dateExpiration, commentaire:""});
+  saveDB(); toast("Habilitation renouvelée jusqu'au "+fmtDate(ph.dateExpiration)); render();
+}
+
+function openCompetenceReviewForm(personId){
+  const person = getPerson(personId);
+  const rows = personMatrix(personId);
+  openModal({title:"Nouvelle revue de compétences", wide:true,
+    bodyHtml:`
+      <p class="text-sm mb-2"><strong>${esc(person.name)}</strong></p>
+      <div class="field-row">
+        <div class="field"><label>Date</label><input type="date" id="rvf-date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field"><label>Évaluateur</label><input type="text" id="rvf-evaluateur" value="${esc(person.manager||"")}"></div>
+      </div>
+      <div class="field"><label>Compétences maîtrisées</label><textarea id="rvf-maitrisees" placeholder="Une par ligne">${rows.filter(r=>r.statut==="conforme").map(r=>r.competence.nom).join("\n")}</textarea></div>
+      <div class="field"><label>Compétences à renforcer</label><textarea id="rvf-renforcer" placeholder="Une par ligne">${rows.filter(r=>r.statut==="a_renforcer").map(r=>r.competence.nom).join("\n")}</textarea></div>
+      <div class="field"><label>Nouvelles compétences nécessaires</label><textarea id="rvf-nouvelles"></textarea></div>
+      <div class="field-row">
+        <div class="field"><label>Formations réalisées</label><input type="text" id="rvf-formations-real"></div>
+        <div class="field"><label>Formations à prévoir</label><input type="text" id="rvf-formations-prevoir"></div>
+      </div>
+      <div class="field"><label>Habilitations à renouveler</label><input type="text" id="rvf-hab-renouveler"></div>
+      <div class="field"><label>Évolution du poste envisagée</label><input type="text" id="rvf-evolution"></div>
+      <div class="field"><label>Conclusion du manager</label><textarea id="rvf-conclusion"></textarea></div>
+      <div class="field"><label>Prochaine date de revue</label><input type="date" id="rvf-prochaine"></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="rvf-submit">Enregistrer la revue</button>`,
+    onMount:(o)=>{ o.querySelector("#rvf-submit").addEventListener("click", ()=>{
+      const date = o.querySelector("#rvf-date").value || new Date().toISOString().slice(0,10);
+      DB.competenceReviews.push({ id:"CREV-"+String(Date.now()).slice(-6), personId, date, evaluateur:o.querySelector("#rvf-evaluateur").value.trim()||"Non renseigné",
+        competencesMaitrisees:o.querySelector("#rvf-maitrisees").value.split("\n").map(s=>s.trim()).filter(Boolean),
+        competencesARenforcer:o.querySelector("#rvf-renforcer").value.split("\n").map(s=>s.trim()).filter(Boolean),
+        nouvellesCompetencesNecessaires:o.querySelector("#rvf-nouvelles").value.trim(), formationsRealisees:o.querySelector("#rvf-formations-real").value.trim(),
+        formationsAPrevoir:o.querySelector("#rvf-formations-prevoir").value.trim(), habilitationsARenouveler:o.querySelector("#rvf-hab-renouveler").value.trim(),
+        evolutionPoste:o.querySelector("#rvf-evolution").value.trim(), conclusion:o.querySelector("#rvf-conclusion").value.trim(), prochaineDateRevue:o.querySelector("#rvf-prochaine").value||"—" });
+      person.derniereRevue = date;
+      if(o.querySelector("#rvf-prochaine").value) person.prochaineRevue = o.querySelector("#rvf-prochaine").value;
+      saveDB(); closeModal(); toast("Revue de compétences enregistrée"); render();
+    });}
+  });
+}
+
+/* ============================================================
    19bis. FORMULAIRES — CONTEXTE & STRATÉGIE
    ============================================================ */
 function openIssueForm(kind){
@@ -4346,6 +5164,59 @@ function initGlobalEvents(){
       saveDB(); toast("Rapport d'audit généré"); navigate(`documents/enregistrement/${id}`);
       return;
     }
+
+    /* ---- Compétences & Habilitations ---- */
+    const compFormEl = e.target.closest("[data-open-competence-form]");
+    if(compFormEl){ openCompetenceForm(compFormEl.getAttribute("data-open-competence-form")||null); return; }
+    const posteFormEl = e.target.closest("[data-open-poste-form]");
+    if(posteFormEl){ openPosteForm(posteFormEl.getAttribute("data-open-poste-form")||null); return; }
+    const addPosteCompEl = e.target.closest("[data-add-poste-competence]");
+    if(addPosteCompEl){ openAddPosteCompetenceForm(addPosteCompEl.getAttribute("data-add-poste-competence")); return; }
+    const removePosteCompEl = e.target.closest("[data-remove-poste-competence]");
+    if(removePosteCompEl){
+      const payload = JSON.parse(removePosteCompEl.getAttribute("data-remove-poste-competence"));
+      const poste = getPoste(payload.posteId);
+      poste.competencesRequises = poste.competencesRequises.filter(r=>r.competenceId!==payload.competenceId);
+      saveDB(); toast("Compétence retirée du poste"); render();
+      return;
+    }
+    const habFormEl = e.target.closest("[data-open-habilitation-form]");
+    if(habFormEl){ openHabilitationForm(habFormEl.getAttribute("data-open-habilitation-form")||null); return; }
+    const personFormEl = e.target.closest("[data-open-person-form]");
+    if(personFormEl){ openPersonForm(personFormEl.getAttribute("data-open-person-form")||null); return; }
+    const evalFormEl = e.target.closest("[data-open-evaluation-form]");
+    if(evalFormEl){ const payload = JSON.parse(evalFormEl.getAttribute("data-open-evaluation-form")); openEvaluationForm(payload.personId, payload.competenceId); return; }
+    const preuveFormEl = e.target.closest("[data-open-preuve-form]");
+    if(preuveFormEl){ openPreuveForm(preuveFormEl.getAttribute("data-open-preuve-form"), null); return; }
+    const attribHabEl = e.target.closest("[data-attribute-habilitation]");
+    if(attribHabEl){ openAttributeHabilitationForm(attribHabEl.getAttribute("data-attribute-habilitation"), null); return; }
+    const attribHabForEl = e.target.closest("[data-attribute-habilitation-for]");
+    if(attribHabForEl){ openAttributeHabilitationForm(null, attribHabForEl.getAttribute("data-attribute-habilitation-for")); return; }
+    const renewHabEl = e.target.closest("[data-renew-habilitation]");
+    if(renewHabEl){ renewHabilitation(renewHabEl.getAttribute("data-renew-habilitation")); return; }
+    const suspendHabEl = e.target.closest("[data-suspend-habilitation]");
+    if(suspendHabEl){
+      const ph = findBy(DB.personHabilitations, suspendHabEl.getAttribute("data-suspend-habilitation"));
+      const wasActive = ph.statut !== "suspendue";
+      const today = new Date().toISOString().slice(0,10);
+      ph.historique.push({date:today, action: wasActive?"Suspension":"Réactivation", ancienneValeur:ph.statut, nouvelleValeur: wasActive?"suspendue":"active", commentaire:""});
+      ph.statut = wasActive ? "suspendue" : "active";
+      saveDB(); toast(wasActive?"Habilitation suspendue":"Habilitation réactivée"); render();
+      return;
+    }
+    const reviewFormEl = e.target.closest("[data-open-review-form]");
+    if(reviewFormEl){ openCompetenceReviewForm(reviewFormEl.getAttribute("data-open-review-form")); return; }
+    const devActionEl = e.target.closest("[data-create-dev-action]");
+    if(devActionEl){
+      const payload = JSON.parse(devActionEl.getAttribute("data-create-dev-action"));
+      const person = getPerson(payload.personId), comp = getCompetence(payload.competenceId);
+      const id = nextId("ACT", DB.actions);
+      DB.actions.push({ id, title:"Développer la compétence "+comp.nom+" — "+person.name, owner:person.manager||person.name, due:new Date(Date.now()+30*86400000).toISOString().slice(0,10),
+        priority: comp.criticite==="haute"?"haute":"moyenne", status:"a_faire", origin:"competence", originId:null, processId:person.processId,
+        personId:person.id, competenceId:comp.id });
+      saveDB(); toast("Action de développement créée"); render();
+      return;
+    }
     if(e.target.closest("[data-print]")){
       toast("Export PDF simulé pour cette démonstration", "🖨");
       return;
@@ -4507,18 +5378,20 @@ function initGlobalEvents(){
   document.addEventListener("input", (e)=>{
     if(e.target.id==="global-search"){ renderSearchResults(e.target.value); }
     if(e.target.matches("[data-filter]")){
-      const zone = e.target.id.startsWith("f-risk") ? "risk" : e.target.id.startsWith("f-evt") ? "evt" : e.target.id.startsWith("f-act") ? "act" : null;
+      const zone = e.target.id.startsWith("f-risk") ? "risk" : e.target.id.startsWith("f-evt") ? "evt" : e.target.id.startsWith("f-act") ? "act" : e.target.id.startsWith("f-comp") ? "comp" : null;
       if(zone==="risk") applyRiskFilters();
       if(zone==="evt") applyEventFilters();
       if(zone==="act") applyActionFilters();
+      if(zone==="comp") applyCompetenceMatrixFilters();
     }
   });
   document.addEventListener("change", (e)=>{
     if(e.target.matches("[data-filter]")){
-      const zone = e.target.id.startsWith("f-risk") ? "risk" : e.target.id.startsWith("f-evt") ? "evt" : e.target.id.startsWith("f-act") ? "act" : null;
+      const zone = e.target.id.startsWith("f-risk") ? "risk" : e.target.id.startsWith("f-evt") ? "evt" : e.target.id.startsWith("f-act") ? "act" : e.target.id.startsWith("f-comp") ? "comp" : null;
       if(zone==="risk") applyRiskFilters();
       if(zone==="evt") applyEventFilters();
       if(zone==="act") applyActionFilters();
+      if(zone==="comp") applyCompetenceMatrixFilters();
     }
     if(e.target.id==="review-picker"){ navigate("revue-direction/"+e.target.value); }
   });
