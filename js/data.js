@@ -121,7 +121,7 @@ const QONNECT_SEED = {
   risks: [
     { id:"RISK-001", name:"Dépendance à un fournisseur unique", level:"critique", processId:"PROC-007", owner:"Sophie Martin", status:"ouvert", type:"risque",
       description:"Un composant stratégique n'est disponible que chez un seul fournisseur, exposant l'organisation à une rupture d'approvisionnement.",
-      probability:4, impact:5 },
+      probability:4, impact:5, fournisseurId:"FRN-008" },
     { id:"RISK-002", name:"Perte de compétence clé", level:"eleve", processId:"PROC-006", owner:"Paul Rousseau", status:"ouvert", type:"risque",
       description:"Le départ d'un expert technique pourrait fragiliser la continuité d'activité sur un procédé critique.",
       probability:3, impact:4 },
@@ -137,6 +137,9 @@ const QONNECT_SEED = {
     { id:"RISK-006", name:"Erreur de saisie comptable", level:"faible", processId:"PROC-009", owner:"Elise Vasseur", status:"maitrise", type:"risque",
       description:"Risque d'erreur lors de la saisie manuelle des écritures comptables.",
       probability:2, impact:2 },
+    { id:"RISK-007", name:"Défaillance récurrente du transporteur", level:"eleve", processId:"PROC-004", owner:"Thomas Petit", status:"ouvert", type:"risque",
+      description:"Le transporteur Transport Express connaît des retards répétés pouvant affecter la satisfaction client.",
+      probability:4, impact:3, fournisseurId:"FRN-006" },
     { id:"OPP-001", name:"Digitalisation du contrôle qualité", level:"opportunite", processId:"PROC-004", owner:"Thomas Petit", status:"ouvert", type:"opportunite",
       description:"L'automatisation des contrôles pourrait réduire les non-conformités et le temps de traitement.",
       probability:3, impact:3 },
@@ -189,6 +192,8 @@ const QONNECT_SEED = {
     { id:"ACT-015", title:"Formaliser la cartographie des compétences critiques RH", owner:"Paul Rousseau", due:"2026-09-30", priority:"haute", status:"a_faire", origin:"competence", originId:"EVAL-006", processId:"PROC-006", personId:"P-006", competenceId:"COMP-010" },
     { id:"ACT-016", title:"Réaliser un renforcement cybersécurité pour Karim Belkacem", owner:"Karim Belkacem", due:"2026-10-15", priority:"critique", status:"a_faire", origin:"competence", originId:"EVAL-010", processId:"PROC-008", personId:"P-008", competenceId:"COMP-012" },
     { id:"ACT-017", title:"Rappel des consignes de sécurité au poste — Amina Cherif", owner:"Thomas Petit", due:"2026-06-15", priority:"haute", status:"termine", origin:"competence", originId:"EVAL-018", processId:"PROC-004", personId:"P-011", competenceId:"COMP-019", efficaciteVerifiee:true },
+    { id:"ACT-018", title:"Exiger un plan de continuité formalisé de Composants Précis SARL", owner:"Sophie Martin", due:"2026-11-30", priority:"haute", status:"a_faire", origin:"fournisseur", originId:"AUD-006", processId:"PROC-007", fournisseurId:"FRN-008" },
+    { id:"ACT-019", title:"Notifier Transport Express des pénalités de retard et exiger un plan d'action", owner:"Thomas Petit", due:"2026-09-30", priority:"haute", status:"en_cours", origin:"fournisseur", originId:"AUD-007", processId:"PROC-004", fournisseurId:"FRN-006" },
   ],
 
   objectives: [
@@ -286,6 +291,36 @@ const QONNECT_SEED = {
       parties:[ {name:"Paul Rousseau", role:"Audité", questionIds:["AUD-005-Q1","AUD-005-Q2","AUD-005-Q3","AUD-005-Q4"], echeance:"2026-08-18", status:"en_cours"} ],
       findings:[
         {id:"C-005", type:"ecart", text:"Aucune cartographie formalisée des compétences critiques n'est disponible.", requirementId:"REQ-008", processId:"PROC-006", questionId:"AUD-005-Q2", gravite:"majeure", cause:"", riskId:"RISK-002", ncEventId:null, actionId:null},
+      ] },
+    { id:"AUD-006", ref:"AUD-2026-006", title:"Audit fournisseur — Composants Précis SARL", type:"fournisseur", referentielIds:["ISO9001"], fournisseurId:"FRN-008",
+      processId:"PROC-007", processIds:["PROC-007"], date:"2026-05-15", duration:"1 jour", responsable:"Sophie Martin", auditeurs:["Sophie Martin"], site:"Site fournisseur — Saint-Étienne",
+      objective:"Évaluer la maîtrise qualité du fournisseur unique de composants critiques.", scope:"Processus de fabrication et contrôle qualité du fournisseur.",
+      auditor:"Sophie Martin", status:"valide",
+      motifs:["risque_identifie","programme_annuel"],
+      perimeter:{ processIds:["PROC-007"], activites:"Fabrication et contrôle du composant stratégique X", produits:"Composant stratégique X", periodeDebut:"2025-06-01", periodeFin:"2026-05-01", exclusions:"" },
+      objectifs:["Vérifier la maîtrise des processus de fabrication", "Évaluer le plan de continuité en cas de rupture"],
+      criteres:{ referentielIds:["ISO9001"], requirementIds:["REQ-011"], documentIds:["DOC-005"] },
+      questions:[
+        { id:"AUD-006-Q1", question:"Le fournisseur dispose-t-il d'un plan de continuité en cas de rupture de production ?", requirementId:"REQ-011", processId:"PROC-007", critere:"RISK-001", preuveAttendue:"Plan de continuité formalisé", responsableInterroge:"Responsable qualité fournisseur", statut:"non_conforme", commentaire:"Aucun plan de continuité formalisé n'a été présenté.", preuveIds:[] },
+      ],
+      parties:[ {name:"Sophie Martin", role:"Auditeur", questionIds:["AUD-006-Q1"], echeance:"2026-05-15", status:"complete"} ],
+      findings:[
+        {id:"C-006", type:"vigilance", text:"Absence de plan de continuité formalisé chez le fournisseur en cas de rupture de production.", requirementId:"REQ-011", processId:"PROC-007", questionId:"AUD-006-Q1", gravite:"majeure", cause:"", riskId:"RISK-001", ncEventId:null, actionId:"ACT-018"},
+      ] },
+    { id:"AUD-007", ref:"AUD-2026-007", title:"Audit fournisseur — Transport Express", type:"fournisseur", referentielIds:["ISO9001"], fournisseurId:"FRN-006",
+      processId:"PROC-004", processIds:["PROC-004"], date:"2026-08-01", duration:"0,5 jour", responsable:"Thomas Petit", auditeurs:["Thomas Petit"], site:"Site fournisseur — Lyon",
+      objective:"Évaluer les causes des retards de livraison récurrents.", scope:"Processus de livraison et gestion des délais.",
+      auditor:"Thomas Petit", status:"en_cours",
+      motifs:["non_conformite","incident"],
+      perimeter:{ processIds:["PROC-004"], activites:"Livraison des produits finis", produits:"", periodeDebut:"2026-01-01", periodeFin:"2026-08-01", exclusions:"" },
+      objectifs:["Identifier les causes des retards répétés", "Vérifier les mesures correctives engagées"],
+      criteres:{ referentielIds:["ISO9001"], requirementIds:[], documentIds:[] },
+      questions:[
+        { id:"AUD-007-Q1", question:"Quelles mesures ont été mises en place pour respecter les délais contractuels ?", requirementId:null, processId:"PROC-004", critere:"RISK-007", preuveAttendue:"Plan d'action correctif", responsableInterroge:"Responsable exploitation", statut:"non_conforme", commentaire:"Aucune mesure corrective formalisée à ce stade.", preuveIds:[] },
+      ],
+      parties:[ {name:"Thomas Petit", role:"Auditeur", questionIds:["AUD-007-Q1"], echeance:"2026-08-01", status:"en_cours"} ],
+      findings:[
+        {id:"C-007", type:"ecart", text:"Non-respect récurrent des délais de livraison contractuels.", requirementId:null, processId:"PROC-004", questionId:"AUD-007-Q1", gravite:"majeure", cause:"", riskId:"RISK-007", ncEventId:null, actionId:"ACT-019"},
       ] },
   ],
 
@@ -459,6 +494,90 @@ const QONNECT_SEED = {
       conclusion:"Compétences globalement maîtrisées ; renforcement nécessaire sur l'audit interne.", prochaineDateRevue:"2026-12-01" },
   ],
 
+  /* ---------- Fournisseurs ---------- */
+  fournisseurs: [
+    { id:"FRN-001", raisonSociale:"Microsoft Corporation", nomCommercial:"Microsoft", siret:"—", tva:"IE9825613N", pays:"Irlande", siteWeb:"https://microsoft.com",
+      adresse:"One Microsoft Place, Dublin", contacts:[{nom:"Support Entreprise", role:"Support technique", email:"support@microsoft.com", tel:"—"}],
+      referentInterne:"Karim Belkacem", dateEntree:"2019-01-01", statut:"actif", categories:["Prestataire informatique","Hébergeur"],
+      criticite:"critique", criticiteJustification:"Dépendance forte à la suite Microsoft 365 et à l'infrastructure Azure pour l'ensemble de l'organisation.",
+      processIds:["PROC-008"], produitsServices:[{nom:"Microsoft 365", description:"Suite bureautique et messagerie."},{nom:"Azure", description:"Hébergement cloud des applications internes."}] },
+    { id:"FRN-002", raisonSociale:"OVH SAS", nomCommercial:"OVHcloud", siret:"424761419", tva:"FR22424761419", pays:"France", siteWeb:"https://ovhcloud.com",
+      adresse:"2 rue Kellermann, Roubaix", contacts:[{nom:"Support technique", role:"Support", email:"support@ovhcloud.com", tel:"—"}],
+      referentInterne:"Karim Belkacem", dateEntree:"2020-03-01", statut:"actif", categories:["Hébergeur"],
+      criticite:"elevee", criticiteJustification:"Hébergement des serveurs internes critiques.",
+      processIds:["PROC-008"], produitsServices:[{nom:"Serveurs dédiés", description:"Infrastructure serveur interne."}] },
+    { id:"FRN-003", raisonSociale:"Orange Business Services", nomCommercial:"Orange Business", siret:"—", tva:"—", pays:"France", siteWeb:"https://orange-business.com",
+      adresse:"Paris, France", contacts:[{nom:"Compte entreprise", role:"Commercial", email:"—", tel:"—"}],
+      referentInterne:"Karim Belkacem", dateEntree:"2018-06-01", statut:"actif", categories:["Prestataire informatique"],
+      criticite:"moderee", criticiteJustification:"", processIds:["PROC-008"], produitsServices:[{nom:"Connectivité réseau", description:"Liaisons internet et téléphonie d'entreprise."}] },
+    { id:"FRN-004", raisonSociale:"Bureau Veritas Certification", nomCommercial:"Bureau Veritas", siret:"—", tva:"—", pays:"France", siteWeb:"https://bureauveritas.com",
+      adresse:"Neuilly-sur-Seine, France", contacts:[{nom:"Chargé de certification", role:"Auditeur certificateur", email:"—", tel:"—"}],
+      referentInterne:"Marc Lenoir", dateEntree:"2017-01-01", statut:"actif", categories:["Organisme de certification","Audit"],
+      criticite:"elevee", criticiteJustification:"Organisme réalisant les audits de certification ISO 9001 — conditionne le maintien du certificat.",
+      processIds:["PROC-002"], produitsServices:[{nom:"Audit de certification ISO 9001", description:"Cycle de certification triennal avec audits de surveillance."}] },
+    { id:"FRN-005", raisonSociale:"Docaposte SAS", nomCommercial:"Docaposte", siret:"—", tva:"—", pays:"France", siteWeb:"https://docaposte.com",
+      adresse:"Issy-les-Moulineaux, France", contacts:[{nom:"Gestionnaire de compte", role:"Commercial", email:"—", tel:"—"}],
+      referentInterne:"Marc Lenoir", dateEntree:"2021-09-01", statut:"actif", categories:["Prestataire informatique","Autre"],
+      criticite:"moderee", criticiteJustification:"", processIds:["PROC-002","PROC-008"], produitsServices:[{nom:"Archivage électronique", description:"Archivage à valeur probante des documents qualité."}] },
+    { id:"FRN-006", raisonSociale:"Transport Express SARL", nomCommercial:"Transport Express", siret:"—", tva:"—", pays:"France", siteWeb:"",
+      adresse:"Lyon, France", contacts:[{nom:"Responsable exploitation", role:"Exploitation", email:"—", tel:"—"}],
+      referentInterne:"Thomas Petit", dateEntree:"2019-05-01", statut:"sous_surveillance", categories:["Transport"],
+      criticite:"elevee", criticiteJustification:"Impact direct sur les délais de livraison client ; retards répétés constatés.",
+      processIds:["PROC-004"], produitsServices:[{nom:"Livraison expresse", description:"Transport des produits finis vers les clients."}] },
+    { id:"FRN-007", raisonSociale:"MaintenancePro SAS", nomCommercial:"MaintenancePro", siret:"—", tva:"—", pays:"France", siteWeb:"",
+      adresse:"Grenoble, France", contacts:[{nom:"Technicien référent", role:"Maintenance", email:"—", tel:"—"}],
+      referentInterne:"Thomas Petit", dateEntree:"2020-01-01", statut:"actif", categories:["Maintenance"],
+      criticite:"moderee", criticiteJustification:"", processIds:["PROC-004"], produitsServices:[{nom:"Maintenance préventive lignes A/B", description:"Contrat de maintenance des équipements de production."}] },
+    { id:"FRN-008", raisonSociale:"Composants Précis SARL", nomCommercial:"Composants Précis", siret:"—", tva:"—", pays:"France", siteWeb:"",
+      adresse:"Saint-Étienne, France", contacts:[{nom:"Responsable qualité fournisseur", role:"Qualité", email:"—", tel:"—"}],
+      referentInterne:"Sophie Martin", dateEntree:"2016-02-01", statut:"actif", categories:["Fournisseur de produits"],
+      criticite:"critique", criticiteJustification:"Fournisseur unique pour un composant stratégique — cf. risque RISK-001.",
+      processIds:["PROC-007","PROC-004"], produitsServices:[{nom:"Composant stratégique X", description:"Pièce critique entrant dans la fabrication du produit principal."}] },
+  ],
+
+  fournisseurDocuments: [
+    { id:"FDOC-001", fournisseurId:"FRN-001", type:"certification", titre:"Certification ISO 27001 Microsoft", date:"2025-01-01", version:"2025", echeance:"2027-01-01", responsable:"Karim Belkacem" },
+    { id:"FDOC-002", fournisseurId:"FRN-002", type:"contrat", titre:"Contrat d'hébergement OVHcloud", date:"2024-03-01", version:"1.0", echeance:"2026-10-15", responsable:"Karim Belkacem" },
+    { id:"FDOC-003", fournisseurId:"FRN-004", type:"certification", titre:"Accréditation Bureau Veritas", date:"2023-01-01", version:"1.0", echeance:"2026-01-01", responsable:"Marc Lenoir" },
+    { id:"FDOC-004", fournisseurId:"FRN-006", type:"assurance", titre:"Attestation d'assurance transport", date:"2025-06-01", version:"1.0", echeance:"2026-06-01", responsable:"Thomas Petit" },
+    { id:"FDOC-005", fournisseurId:"FRN-008", type:"qualification", titre:"Dossier de qualification fournisseur", date:"2025-03-01", version:"2.0", echeance:"2027-03-01", responsable:"Sophie Martin" },
+    { id:"FDOC-006", fournisseurId:"FRN-005", type:"nda", titre:"Accord de confidentialité Docaposte", date:"2021-09-01", version:"1.0", echeance:"—", responsable:"Marc Lenoir" },
+  ],
+
+  fournisseurQuestionnaires: [
+    { id:"FQ-001", nom:"Fournisseur informatique", description:"Questionnaire type pour un prestataire ou hébergeur informatique.",
+      criteres:[{nom:"Qualité",ponderation:20},{nom:"Sécurité",ponderation:25},{nom:"Support",ponderation:20},{nom:"Respect des délais",ponderation:15},{nom:"Conformité réglementaire",ponderation:20}] },
+    { id:"FQ-002", nom:"Fournisseur critique", description:"Questionnaire renforcé pour un fournisseur classé critique.",
+      criteres:[{nom:"Qualité",ponderation:25},{nom:"Respect des délais",ponderation:20},{nom:"Gestion des incidents",ponderation:20},{nom:"Conformité réglementaire",ponderation:20},{nom:"Sécurité",ponderation:15}] },
+    { id:"FQ-003", nom:"Hébergeur HDS", description:"Questionnaire dédié à un hébergeur de données de santé.",
+      criteres:[{nom:"Sécurité",ponderation:35},{nom:"Conformité réglementaire",ponderation:30},{nom:"Support",ponderation:15},{nom:"Respect des délais",ponderation:20}] },
+    { id:"FQ-004", nom:"Sous-traitant dispositif médical", description:"Questionnaire pour un sous-traitant impliqué dans la fabrication de dispositifs médicaux.",
+      criteres:[{nom:"Qualité",ponderation:30},{nom:"Conformité réglementaire",ponderation:30},{nom:"Compétence",ponderation:20},{nom:"Gestion des incidents",ponderation:20}] },
+    { id:"FQ-005", nom:"Prestataire qualité", description:"Questionnaire pour un prestataire intervenant sur le système de management (audit, conseil, certification).",
+      criteres:[{nom:"Compétence",ponderation:30},{nom:"Qualité",ponderation:25},{nom:"Réactivité",ponderation:20},{nom:"Satisfaction interne",ponderation:25}] },
+  ],
+
+  fournisseurEvaluations: [
+    { id:"FEVAL-001", fournisseurId:"FRN-001", date:"2026-01-15", periode:"annuelle", evaluateur:"Karim Belkacem", questionnaireId:"FQ-001",
+      criteres:[ {nom:"Qualité",ponderation:20,note:9,commentaire:"",preuve:""}, {nom:"Sécurité",ponderation:30,note:8,commentaire:"",preuve:"FDOC-001"}, {nom:"Support",ponderation:15,note:7,commentaire:"",preuve:""}, {nom:"Respect des délais",ponderation:20,note:9,commentaire:"",preuve:""}, {nom:"Conformité réglementaire",ponderation:15,note:9,commentaire:"",preuve:""} ] },
+    { id:"FEVAL-002", fournisseurId:"FRN-006", date:"2026-07-01", periode:"semestrielle", evaluateur:"Thomas Petit", questionnaireId:null,
+      criteres:[ {nom:"Qualité",ponderation:20,note:6,commentaire:"",preuve:""}, {nom:"Respect des délais",ponderation:30,note:4,commentaire:"Retards répétés ces derniers mois.",preuve:""}, {nom:"Réactivité",ponderation:20,note:5,commentaire:"",preuve:""}, {nom:"Gestion des incidents",ponderation:30,note:4,commentaire:"",preuve:""} ] },
+    { id:"FEVAL-003", fournisseurId:"FRN-008", date:"2026-02-01", periode:"annuelle", evaluateur:"Sophie Martin", questionnaireId:"FQ-002",
+      criteres:[ {nom:"Qualité",ponderation:30,note:7,commentaire:"",preuve:""}, {nom:"Respect des délais",ponderation:25,note:6,commentaire:"",preuve:""}, {nom:"Gestion des incidents",ponderation:20,note:6,commentaire:"",preuve:""}, {nom:"Conformité réglementaire",ponderation:25,note:7,commentaire:"",preuve:""} ] },
+    { id:"FEVAL-004", fournisseurId:"FRN-004", date:"2025-11-01", periode:"annuelle", evaluateur:"Marc Lenoir", questionnaireId:"FQ-005",
+      criteres:[ {nom:"Compétence",ponderation:30,note:9,commentaire:"",preuve:""}, {nom:"Qualité",ponderation:25,note:9,commentaire:"",preuve:""}, {nom:"Réactivité",ponderation:20,note:8,commentaire:"",preuve:""}, {nom:"Satisfaction interne",ponderation:25,note:8,commentaire:"",preuve:""} ] },
+  ],
+
+  fournisseurIncidents: [
+    { id:"FINC-001", fournisseurId:"FRN-006", date:"2026-07-10", type:"retard", description:"Retard de livraison de 4 jours sur la commande client CMD-4521.",
+      impact:"Insatisfaction client, pénalité contractuelle potentielle.", gravite:"majeure", processId:"PROC-005", riskId:"RISK-007", actionId:null, ncEventId:"EVT-004" },
+    { id:"FINC-002", fournisseurId:"FRN-001", date:"2026-03-05", type:"probleme_securite", description:"Interruption de service Azure de 2 heures ayant impacté l'accès aux outils internes.",
+      impact:"Ralentissement de l'activité pendant l'incident.", gravite:"mineure", processId:"PROC-008", riskId:null, actionId:null, ncEventId:null },
+    { id:"FINC-003", fournisseurId:"FRN-008", date:"2026-08-05", type:"defaut_qualite", description:"Lot de composants non conforme livré, hors tolérance dimensionnelle.",
+      impact:"Retard de production, tri à 100 % nécessaire.", gravite:"majeure", processId:"PROC-007", riskId:"RISK-001", actionId:null, ncEventId:"EVT-001" },
+  ],
+
+
 
   requirements: [
     { id:"REQ-001", ref:"4.1", label:"Compréhension de l'organisation et de son contexte", status:"maitrise", processId:"PROC-001" },
@@ -529,7 +648,7 @@ const LABELS = {
   eventStatus:{ ouvert:{l:"Ouvert",c:"warning"}, cloture:{l:"Clôturé",c:"success"} },
   priority:{ critique:{l:"Critique",c:"danger"}, haute:{l:"Haute",c:"warning"}, moyenne:{l:"Moyenne",c:"info"}, basse:{l:"Basse",c:"neutral"} },
   actionStatus:{ retard:{l:"En retard",c:"danger"}, en_cours:{l:"En cours",c:"warning"}, a_faire:{l:"À faire",c:"info"}, termine:{l:"Terminée",c:"success"} },
-  actionOrigin:{ evenement:"Événement", risque:"Risque", audit:"Audit", indicateur:"Indicateur", objectif:"Objectif", changement:"Changement", revue_direction:"Revue de direction", competence:"Compétence" },
+  actionOrigin:{ evenement:"Événement", risque:"Risque", audit:"Audit", indicateur:"Indicateur", objectif:"Objectif", changement:"Changement", revue_direction:"Revue de direction", competence:"Compétence", fournisseur:"Fournisseur" },
   objStatus:{ en_cours:{l:"En cours",c:"warning"}, atteint:{l:"Atteint",c:"success"}, en_retard:{l:"En retard",c:"danger"} },
   indStatus:{ vert:{l:"Sur cible",c:"success"}, orange:{l:"À surveiller",c:"warning"}, rouge:{l:"Hors cible",c:"danger"} },
   auditStatus:{ planifie:{l:"Planifié",c:"info"}, preparation:{l:"Préparation",c:"info"}, en_cours:{l:"En cours",c:"warning"}, analyse:{l:"Analyse",c:"warning"}, synthese:{l:"Synthèse",c:"warning"}, a_valider:{l:"À valider",c:"warning"}, valide:{l:"Validé",c:"success"}, cloture:{l:"Clôturé",c:"success"}, realise:{l:"Validé",c:"success"} },
@@ -556,7 +675,17 @@ const LABELS = {
   conclusionPerf:{ conforme:"Conforme aux objectifs", a_surveiller:"À surveiller", insuffisante:"Insuffisante" },
   conclusionRessources:{ suffisantes:"Suffisantes", a_renforcer:"À renforcer", insuffisantes:"Insuffisantes" },
   conclusionAmelioration:{ aucune_action_majeure:"Aucune action majeure", actions_amelioration:"Actions d'amélioration nécessaires", actions_prioritaires:"Actions prioritaires nécessaires" },
+  fournisseurStatut:{ prospect:{l:"Prospect",c:"info"}, actif:{l:"Actif",c:"success"}, sous_surveillance:{l:"Sous surveillance",c:"warning"}, suspendu:{l:"Suspendu",c:"danger"}, bloque:{l:"Bloqué",c:"danger"}, archive:{l:"Archivé",c:"neutral"} },
+  fournisseurCriticite:{ faible:{l:"Faible",c:"success"}, moderee:{l:"Modérée",c:"info"}, elevee:{l:"Élevée",c:"warning"}, critique:{l:"Critique",c:"danger"} },
+  fournisseurDocType:{ contrat:"Contrat", convention:"Convention", nda:"NDA / confidentialité", certification:"Certification ISO", attestation:"Attestation", assurance:"Assurance", qualification:"Qualification", agrement:"Agrément", habilitation:"Habilitation", audit:"Rapport d'audit", rapport_evaluation:"Rapport d'évaluation" },
+  fournisseurDocStatut:{ valide:{l:"Valide",c:"success"}, a_renouveler:{l:"À renouveler",c:"warning"}, expire:{l:"Expiré",c:"danger"} },
+  incidentType:{ retard:"Retard", erreur:"Erreur", prestation_non_realisee:"Prestation non réalisée", rupture:"Rupture", defaut_qualite:"Défaut qualité", probleme_securite:"Problème sécurité", probleme_cyber:"Problème cybersécurité", probleme_reglementaire:"Problème réglementaire" },
+  incidentGravite:{ mineure:{l:"Mineure",c:"warning"}, majeure:{l:"Majeure",c:"danger"}, critique:{l:"Critique",c:"danger"} },
+  fournisseurEvalNiveau:{ excellent:{l:"Excellent",c:"success"}, satisfaisant:{l:"Satisfaisant",c:"success"}, sous_surveillance:{l:"Sous surveillance",c:"warning"}, insuffisant:{l:"Insuffisant",c:"danger"}, critique:{l:"Critique",c:"danger"} },
+  fournisseurCategorieOptions:["Fournisseur de produits","Fournisseur de services","Sous-traitant","Prestataire informatique","Hébergeur","Cabinet de conseil","Transport","Maintenance","Organisme de formation","Laboratoire","Dispositif médical","Organisme de certification","Audit","Autre"],
 };
+const FOURNISSEUR_WORKFLOW_STEPS = ["prospect","qualification","evaluation_initiale","actif","surveillance","reevaluation","suspension","archivage"];
+const FOURNISSEUR_WORKFLOW_LABELS = ["Prospect","Qualification","Évaluation initiale","Actif","Surveillance","Réévaluation","Suspension","Archivage"];
 const AUDIT_WORKFLOW_STEPS = ["planifie","preparation","en_cours","analyse","synthese","a_valider","valide","cloture"];
 const AUDIT_WORKFLOW_LABELS = ["Planifié","Préparation","En cours","Analyse","Synthèse","À valider","Validé","Clôturé"];
 function isAuditEcart(f){ return f.type==="ecart" || f.type==="nc_majeure"; }
@@ -583,6 +712,11 @@ function normalizeDocuments(){
   if(!DB.competencePreuves) DB.competencePreuves = JSON.parse(JSON.stringify(QONNECT_SEED.competencePreuves));
   if(!DB.personHabilitations) DB.personHabilitations = JSON.parse(JSON.stringify(QONNECT_SEED.personHabilitations));
   if(!DB.competenceReviews) DB.competenceReviews = JSON.parse(JSON.stringify(QONNECT_SEED.competenceReviews));
+  if(!DB.fournisseurs) DB.fournisseurs = JSON.parse(JSON.stringify(QONNECT_SEED.fournisseurs));
+  if(!DB.fournisseurDocuments) DB.fournisseurDocuments = JSON.parse(JSON.stringify(QONNECT_SEED.fournisseurDocuments));
+  if(!DB.fournisseurQuestionnaires) DB.fournisseurQuestionnaires = JSON.parse(JSON.stringify(QONNECT_SEED.fournisseurQuestionnaires));
+  if(!DB.fournisseurEvaluations) DB.fournisseurEvaluations = JSON.parse(JSON.stringify(QONNECT_SEED.fournisseurEvaluations));
+  if(!DB.fournisseurIncidents) DB.fournisseurIncidents = JSON.parse(JSON.stringify(QONNECT_SEED.fournisseurIncidents));
   (DB.referentiels||[]).forEach(r=>{
     if(typeof r.version === "undefined") r.version = null;
     if(typeof r.importDate === "undefined") r.importDate = null;
@@ -679,6 +813,10 @@ const getPoste = id => findBy(DB.postes,id);
 const getHabilitation = id => findBy(DB.habilitations,id);
 const getPerson = id => findBy(DB.people,id);
 const getPersonHabilitation = id => findBy(DB.personHabilitations,id);
+const getFournisseur = id => findBy(DB.fournisseurs,id);
+const getFournisseurDoc = id => findBy(DB.fournisseurDocuments,id);
+const getFournisseurEvaluation = id => findBy(DB.fournisseurEvaluations,id);
+const getFournisseurIncident = id => findBy(DB.fournisseurIncidents,id);
 
 function nextId(prefix, arr){
   let max = 0;

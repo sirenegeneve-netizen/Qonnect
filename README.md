@@ -131,6 +131,18 @@ Formalise ce qui existait jusque-là de façon dispersée (pilotes de processus,
 - **Matrice globale** personnes × compétences avec filtres (service, poste, compétence).
 - **Dashboard dédié** (effectif, % conformes, écarts, formations à réaliser, habilitations actives/expirant/expirées, revues à réaliser) et une **Vue Auditeur** répondant directement aux 9 questions type d'un audit RH — la donnée de démonstration est volontairement câblée sur l'audit RH déjà présent (AUD-005) pour que le lien soit immédiatement visible.
 
+### Fournisseurs
+
+Le trou fonctionnel le plus visible du prototype, comblé sans réinventer ce qui existait déjà : les risques, audits, actions et non-conformités fournisseurs vivent dans les registres existants (Risques, Audits, Actions, Événements) via un simple champ `fournisseurId` — aucune seconde base créée.
+
+- **8 fournisseurs de démonstration** réalistes (Microsoft, OVHcloud, Orange Business, Bureau Veritas, Docaposte, Transport Express, MaintenancePro, Composants Précis SARL — ce dernier étant le fournisseur unique déjà identifié dans `RISK-001`, pour que le lien soit visible dès l'ouverture).
+- **Fiche fournisseur à 9 onglets** : Identification, Produits & services, Documents (avec échéances calculées automatiquement — 🟢 Valide / 🟠 À renouveler / 🔴 Expiré), Évaluations, Incidents, Risques, Audits, Actions, Performance.
+- **Moteur d'évaluation** avec critères pondérés et modèles de questionnaires réutilisables (fournisseur informatique, fournisseur critique, hébergeur HDS, sous-traitant DM, prestataire qualité) — niveau calculé automatiquement (Excellent → Critique).
+- **Incidents fournisseurs**, distincts des non-conformités par principe, mais pouvant créer une NC ou une action en un clic — sans dupliquer.
+- **Score de performance composite transparent** (évaluation, incidents, écarts d'audit, risques ouverts, actions en retard).
+- **Vue Fournisseurs critiques** dédiée aux Achats, à la Qualité et à la Direction.
+- **Deux intégrations transversales concrètes** : l'exigence ISO 9001 §8.4 (« Maîtrise des processus, produits et services fournis par des tiers ») affiche désormais automatiquement les fournisseurs concernés par processus ; la Revue de Direction affiche une section « Performance des fournisseurs » avec les fournisseurs à surveiller.
+
 ## Limites du prototype
 
 - Les exigences du référentiel ISO 9001:2026 affichées sont **simplifiées à des fins de démonstration** et ne reproduisent pas le texte officiel de la norme.
