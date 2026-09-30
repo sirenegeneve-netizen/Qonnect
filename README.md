@@ -143,6 +143,18 @@ Le trou fonctionnel le plus visible du prototype, comblé sans réinventer ce qu
 - **Vue Fournisseurs critiques** dédiée aux Achats, à la Qualité et à la Direction.
 - **Deux intégrations transversales concrètes** : l'exigence ISO 9001 §8.4 (« Maîtrise des processus, produits et services fournis par des tiers ») affiche désormais automatiquement les fournisseurs concernés par processus ; la Revue de Direction affiche une section « Performance des fournisseurs » avec les fournisseurs à surveiller.
 
+### Groupe / Établissements / Services — architecture multi-site
+
+Qonnect reste un SMQ générique unique, désormais capable de représenter un groupe multi-établissements sans créer de second système : chaque établissement et service est une dimension transversale posée sur les registres existants (Risques, Actions, Événements, Fournisseurs, Audits, Documents), jamais une copie de ceux-ci.
+
+- **Hiérarchie Groupe → Établissements → Services**, avec un établissement et un service de démonstration supplémentaires (Site Sud / Ligne Sud) illustrant un second site de production.
+- **Sélecteur de périmètre** dans l'en-tête (pastille 🏢) : bascule instantanément entre la vision Groupe, un établissement ou un service précis — le choix est mémorisé (`localStorage`) et relu au rechargement.
+- **Migration à zéro perte de données** : aucune donnée existante n'a été retaguée à la main. Tout enregistrement sans `etablissementId` est automatiquement rattaché à l'établissement par défaut (Siège) via `entity.etablissementId || DEFAULT_ETABLISSEMENT_ID` — rien ne casse, rien n'est dupliqué.
+- **Élément transversal explicite** : un enregistrement peut porter `etablissementId:"GROUPE"` pour rester visible à tous les périmètres (ex. le risque Cyberattaque, par nature transverse) ; un fournisseur peut lister plusieurs établissements clients (`etablissementIds`) sans être dupliqué (ex. MaintenancePro, partagé entre le Siège et le Site Sud).
+- **Filtrage par périmètre appliqué aux listes** : Risques, Actions, Événements/Non-conformités, Fournisseurs, Audits (tableau de bord et liste) et la vue « Tous les documents » se filtrent selon le périmètre actif, sans dupliquer aucune logique métier.
+- **Vision Groupe** (nouvelle page) : KPI consolidés (établissements, services, risques élevés, audits, incidents fournisseurs) et un tableau de comparaison par établissement (services, risques ouverts, actions en retard, écarts d'audit) avec accès direct « Voir ce périmètre → ».
+- **Restent volontairement transversaux**, quel que soit le périmètre choisi : la Revue de Direction et les Référentiels — un SMQ ne se pilote pas établissement par établissement sur ces deux points, conformément à l'esprit ISO 9001.
+
 ## Limites du prototype
 
 - Les exigences du référentiel ISO 9001:2026 affichées sont **simplifiées à des fins de démonstration** et ne reproduisent pas le texte officiel de la norme.
