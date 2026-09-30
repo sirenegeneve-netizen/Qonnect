@@ -471,3 +471,8 @@ table.dt tr:last-child td{border-bottom:none;}
 .mt-2{margin-top:8px;}
 .mt-4{margin-top:16px;}
 .mb-2{margin-bottom:8px;}
+
+/* Mention de protection des données sur les champs libres */
+.privacy-note{margin-top:6px;padding:8px 10px;border-radius:8px;background:var(--warning-bg);color:#8a5a05;font-size:12px;line-height:1.5;}
+.ctx-block{border:1px dashed var(--border, #CBD5E1);border-radius:10px;padding:12px;margin-bottom:var(--sp-3, 12px);}
+.ctx-block > summary{cursor:pointer;font-weight:600;font-size:13px;}

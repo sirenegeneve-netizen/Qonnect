@@ -1,6 +1,9 @@
 /* ============================================================
    19. FORMULAIRES MODAUX (actions rapides)
    ============================================================ */
+function ctxSelect(id, options){
+  return `<select id="${id}">${Object.keys(options).map(k=>`<option value="${k}" ${k==="nc"?"selected":""}>${esc(options[k])}</option>`).join("")}</select>`;
+}
 function openQuickForm(kind, presets, triggerEl){
   presets = presets || {};
   const processOptions = DB.processes.map(p=>`<option value="${p.id}" ${presets.processId===p.id?"selected":""}>${esc(p.name)}</option>`).join("");
@@ -8,7 +11,7 @@ function openQuickForm(kind, presets, triggerEl){
   if(kind==="event"){
     openModal({title:"Déclarer un événement", wide:false,
       bodyHtml:`
-        <div class="field"><label>Titre <span class="req">*</span></label><input type="text" id="qf-title" placeholder="Ex : Pièce non conforme détectée"></div>
+        <div class="field"><label>Titre <span class="req">*</span></label><input type="text" id="qf-title" placeholder="Ex : Pièce non conforme détectée">${privacyNote()}</div>
         <div class="field"><label>Type <span class="req">*</span></label>
           <select id="qf-type">
             <option value="non_conformite">Non-conformité</option><option value="incident">Incident</option>
@@ -19,18 +22,35 @@ function openQuickForm(kind, presets, triggerEl){
           <div class="field"><label>Processus concerné</label><select id="qf-process"><option value="">—</option>${processOptions}</select></div>
           <div class="field"><label>Priorité</label><select id="qf-priority"><option value="moyenne">Moyenne</option><option value="haute">Haute</option><option value="critique">Critique</option><option value="basse">Basse</option></select></div>
         </div>
-        <div class="field"><label>Description</label><textarea id="qf-desc" placeholder="Décrivez ce qui s'est passé…"></textarea></div>`,
+        <div class="field"><label>Description</label><textarea id="qf-desc" placeholder="Décrivez les faits sans identifier la personne…"></textarea>${privacyNote()}</div>
+        <details class="ctx-block">
+          <summary>Contexte de prise en charge (facultatif, non identifiant)</summary>
+          <div class="field-row mt-2">
+            <div class="field"><label>Tranche d'âge</label>${ctxSelect("qf-ctx-age", EVENT_CONTEXT.ageRange)}</div>
+            <div class="field"><label>Sexe</label>${ctxSelect("qf-ctx-sex", EVENT_CONTEXT.sex)}</div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Type de prise en charge</label>${ctxSelect("qf-ctx-care", EVENT_CONTEXT.careType)}</div>
+            <div class="field"><label>Moment</label>${ctxSelect("qf-ctx-moment", EVENT_CONTEXT.moment)}</div>
+          </div>
+          <div class="field"><label>Conséquence</label>${ctxSelect("qf-ctx-conseq", EVENT_CONTEXT.consequence)}</div>
+        </details>`,
       footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">Déclarer l'événement</button>`,
       onMount:(o)=>{ o.querySelector("#qf-submit").addEventListener("click", ()=>{
         const title = o.querySelector("#qf-title").value.trim();
         if(!title){ toast("Merci de saisir un titre","⚠️"); return; }
+        const descVal = o.querySelector("#qf-desc").value.trim();
+        if(!checkSensitiveFields([title, descVal])) return;
         const type = o.querySelector("#qf-type").value;
         const id = nextId("EVT", DB.events);
         const prefixMap = {non_conformite:"NC",incident:"INC",reclamation:"REC",anomalie:"ANO",suggestion:"SUG",amelioration:"AME"};
-        const ref = `${prefixMap[type]}-2026-${String(DB.events.length+10).padStart(3,"0")}`;
+        const now = new Date();
+        const ref = nextEventRef(prefixMap[type], now.getFullYear());
+        const val = sel=>o.querySelector(sel).value;
         DB.events.push({ id, ref, type, title, processId:o.querySelector("#qf-process").value||null,
-          priority:o.querySelector("#qf-priority").value, status:"ouvert", declaredBy:"Vous", date:new Date().toISOString().slice(0,10), step:0,
-          description:o.querySelector("#qf-desc").value.trim()||"—" });
+          priority:o.querySelector("#qf-priority").value, status:"ouvert", declaredBy:"Vous", date:now.toISOString().slice(0,10), step:0,
+          description:descVal||"—",
+          context:{ ageRange:val("#qf-ctx-age"), sex:val("#qf-ctx-sex"), careType:val("#qf-ctx-care"), moment:val("#qf-ctx-moment"), consequence:val("#qf-ctx-conseq") } });
         saveDB(); closeModal(); toast("Événement déclaré avec succès");
         navigate(`evenements/${type}/${id}`);
       });}

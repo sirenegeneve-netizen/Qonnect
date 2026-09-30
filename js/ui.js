@@ -163,3 +163,58 @@ function breadcrumb(items){
     return `${i>0?'<span class="sep">/</span>':''}${isLast?`<span class="current">${esc(it.label)}</span>`:`<a href="${it.href}">${esc(it.label)}</a>`}`;
   }).join("")}</div>`;
 }
+
+
+/* ---------- Protection des données personnelles / de santé ----------
+   Détecte dans un texte libre des éléments qui ressemblent à une donnée identifiante
+   (nom précédé d'une civilité, identifiant patient, n° de sécurité sociale, date de naissance,
+   e-mail, téléphone). Renvoie { bloquants:[libellés], avertissements:[libellés] }.
+   Ce garde-fou réduit le risque, il ne le supprime pas : il ne remplace pas la vigilance humaine. */
+const SENSITIVE_STOPWORDS = ["Il","Elle","Ce","Cette","Aucun","Aucune","Non","Nous","Vous","Ils","Elles","Le","La","Les","Un","Une","Des","Est","Etait","Était","Avait","Sans","Avec","Dans","Pour","Suite","Lors","Apres","Après"];
+function detectSensitiveText(text){
+  const t = String(text||"");
+  const bloquants = [], avertissements = [];
+  const add = (arr, label, cond)=>{ if(cond && !arr.includes(label)) arr.push(label); };
+
+  add(bloquants, "un numéro de sécurité sociale",
+    /\b[12]\s?\d{2}\s?(0[1-9]|1[0-2]|[2-9]\d)\s?\d{2}\s?\d{3}\s?\d{3}(\s?\d{2})?\b/.test(t));
+  add(bloquants, "une date de naissance",
+    /date\s+de\s+naissance|\bn(?:é|e)e?\s+le\b|\bnaiss(?:ance|\.)\s*:?\s*\d/i.test(t));
+  add(bloquants, "un identifiant patient ou de dossier",
+    /\b(?:IPP|IEP|NIP|NDA)\b\s*:?\s*[A-Z0-9\-]{3,}|\bn[°o]\s*(?:de\s*)?(?:dossier|patient|s[ée]jour|s[ée]cu)\b/i.test(t));
+  add(bloquants, "une adresse e-mail", /[\w.+\-]+@[\w\-]+\.[\w.\-]+/.test(t));
+  add(bloquants, "un numéro de téléphone", /(?:\+33|\b0)\s?[1-9](?:[\s.\-]?\d{2}){4}\b/.test(t));
+  add(bloquants, "un nom de personne (civilité suivie d'un nom)",
+    /\b(?:M\.|Mr|Mme|Mlle|Monsieur|Madame|Mademoiselle|Dr|Docteur|Pr)\s+[A-ZÀ-Ý][a-zà-ÿ'’\-]{2,}/.test(t));
+
+  const pat = t.match(/\bpatient(?:e)?\s+([A-ZÀ-Ý][a-zà-ÿ'’\-]{2,})/g) || [];
+  add(bloquants, "un nom après le mot « patient »",
+    pat.some(m=>!SENSITIVE_STOPWORDS.includes(m.replace(/^patient(?:e)?\s+/,""))));
+
+  add(avertissements, "une date complète (préférez le mois : « en août »)", /\b\d{1,2}[\/.\-]\d{1,2}[\/.\-](?:19|20)\d{2}\b/.test(t));
+  return { bloquants, avertissements };
+}
+
+/* Valide un ou plusieurs champs libres. Renvoie true si l'enregistrement peut continuer. */
+function checkSensitiveFields(fields){
+  const bloquants = [], avertissements = [];
+  fields.forEach(f=>{ const r = detectSensitiveText(f); r.bloquants.forEach(b=>{ if(!bloquants.includes(b)) bloquants.push(b); }); r.avertissements.forEach(a=>{ if(!avertissements.includes(a)) avertissements.push(a); }); });
+  if(bloquants.length){
+    toast("Enregistrement bloqué : le texte semble contenir "+bloquants.join(", ")+". Retirez cette information (aucune donnée identifiante dans Qonnect).","⚠️");
+    return false;
+  }
+  if(avertissements.length) toast("Attention : le texte contient "+avertissements.join(", ")+".","ℹ️");
+  return true;
+}
+
+/* Mention à afficher près d'un champ libre. */
+function privacyNote(){
+  return `<div class="privacy-note">🔒 Ne saisissez <strong>aucun nom, initiales, date de naissance ni identifiant patient</strong>. Décrivez les faits sans identifier la personne : le lien avec le dossier se fait dans le logiciel de soins, à partir de la référence de l'événement.</div>`;
+}
+
+/* Référence d'événement unique et croissante par type (ex. INC-2026-009), sans collision. */
+function nextEventRef(prefix, year){
+  const re = new RegExp("^"+prefix+"-"+year+"-(\\d+)$");
+  const max = DB.events.reduce((m,e)=>{ const x = re.exec(e.ref||""); return x ? Math.max(m, parseInt(x[1],10)) : m; }, 0);
+  return `${prefix}-${year}-${String(max+1).padStart(3,"0")}`;
+}
