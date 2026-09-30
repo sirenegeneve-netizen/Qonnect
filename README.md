@@ -37,7 +37,10 @@ qonnect/
 ├── js/
 │   ├── data.js           # Jeu de données fictif + accès/persistance (localStorage)
 │   ├── ui.js              # Composants réutilisables (badges, modales, panneaux, toasts…)
-│   └── app.js             # Routeur, pages, interactions
+│   └── modules/           # Routeur, pages et interactions, un fichier par module
+│       ├── 00-shell.js    # Navigation, coquille de l'application, routeur
+│       ├── 01-dashboard.js … 27-evenements-globaux.js
+│       └── 28-init.js     # Initialisation (toujours chargé en dernier)
 ```
 
 ## Navigation
