@@ -36,6 +36,15 @@ const NAV = [
       {route:"evenements/reclamation", icon:"📮", label:"Réclamations"},
       {route:"actions", icon:"✅", label:"Actions"},
   ]},
+  { title:"Ressources humaines", items:[
+      {route:"competences", icon:"🎓", label:"Compétences & Habilitations"},
+  ]},
+  { title:"Achats & partenaires", items:[
+      {route:"fournisseurs", icon:"🏭", label:"Fournisseurs"},
+  ]},
+  { title:"Groupe", items:[
+      {route:"groupe", icon:"🏢", label:"Vision Groupe"},
+  ]},
   { title:"Évaluation", items:[
       {route:"audits", icon:"🔍", label:"Audits"},
       {route:"referentiels", icon:"📐", label:"Référentiels"},
@@ -50,7 +59,7 @@ const NAV = [
 const PAGE_TITLES = {
   dashboard:"Vue d'ensemble", contexte:"Contexte & Stratégie", "revue-direction":"Revue de Direction", processus:"Processus", risques:"Risques & opportunités",
   objectifs:"Objectifs & indicateurs", changements:"Changements", documents:"Documentation du SMQ",
-  evenements:"Événements & non-conformités", actions:"Actions", audits:"Audits",
+  evenements:"Événements & non-conformités", actions:"Actions", audits:"Audits", competences:"Compétences & Habilitations", fournisseurs:"Fournisseurs", groupe:"Vision Groupe",
   referentiels:"Référentiels", conformite:"Conformité", connexions:"Connexions du système",
   ai:"Qonnect AI", admin:"Administration",
 };
@@ -85,6 +94,7 @@ function buildShell(){
     <header class="header">
       <button class="mobile-menu-btn" id="mobile-menu-btn">☰</button>
       <div class="header-title" id="header-title">Vue d'ensemble</div>
+      <button class="chip" id="scope-pill" style="white-space:nowrap;">🏢 <span id="scope-label"></span></button>
       <div class="header-search">
         <span class="search-icon">🔎</span>
         <input type="text" id="global-search" placeholder="Rechercher dans Qonnect..." autocomplete="off">
@@ -105,6 +115,7 @@ function buildShell(){
         ${headerHtml}
       </div>
     </div>`;
+  updateScopePill();
 }
 
 function setActiveNav(moduleKey){
@@ -149,8 +160,35 @@ function render(){
       case "objectifs": html = pageObjectives(); break;
       case "evenements": html = parts[2] ? pageEventFiche(parts[2]) : pageEvents(parts[1]||"all"); break;
       case "actions": html = pageActions(); break;
-      case "audits": html = parts[1] ? pageAuditFiche(parts[1]) : pageAudits(); break;
+      case "audits":
+        if(parts[1]==="programme") html = pageAuditProgramme();
+        else html = parts[1] ? pageAuditFiche(parts[1], parts[2], parts[3]) : pageAudits();
+        break;
       case "changements": html = parts[1] ? pageChangeFiche(parts[1]) : pageChanges(); break;
+      case "competences":
+        if(!parts[1]) html = pageCompetences();
+        else if(parts[1]==="referentiel") html = parts[2] ? pageCompetenceFiche(parts[2]) : pageCompetenceReferentiel();
+        else if(parts[1]==="postes") html = parts[2] ? pagePosteFiche(parts[2]) : pagePostes();
+        else if(parts[1]==="matrice") html = pageCompetenceMatrice();
+        else if(parts[1]==="habilitations") html = parts[2] ? pageHabilitationFiche(parts[2]) : pageHabilitations();
+        else if(parts[1]==="personnes") html = parts[2] ? pagePersonneFiche(parts[2], parts[3]) : pagePersonnes();
+        else if(parts[1]==="auditeur") html = pageCompetenceAuditeur();
+        else html = pageCompetences();
+        break;
+      case "fournisseurs":
+        if(!parts[1]) html = pageFournisseurs();
+        else if(parts[1]==="liste") html = parts[2] ? pageFournisseurFiche(parts[2], parts[3]) : pageFournisseursListe();
+        else if(parts[1]==="critiques") html = pageFournisseursCritiques();
+        else if(parts[1]==="evaluations") html = pageFournisseurEvaluationsHub();
+        else if(parts[1]==="audits") html = pageFournisseurAuditsHub();
+        else if(parts[1]==="incidents") html = pageFournisseurIncidentsHub();
+        else if(parts[1]==="risques") html = pageFournisseurRisquesHub();
+        else if(parts[1]==="documents") html = pageFournisseurDocumentsHub();
+        else if(parts[1]==="performance") html = pageFournisseurPerformanceHub();
+        else if(parts[1]==="vues") html = pageFournisseurVues();
+        else html = pageFournisseurs();
+        break;
+      case "groupe": html = pageGroupe(); break;
       case "referentiels": html = parts[1] ? pageReferentielDetail(parts[1], parts[2], parts[3]) : pageReferentiels(); break;
       case "conformite": html = pageConformite(parts[1]); break;
       case "connexions": html = pageConnexions(parts[1], parts[2]); break;
@@ -736,7 +774,7 @@ function reviewAlerts(review){
   Object.entries(ncByProcess).forEach(([pid,count])=>{ if(count>=2){ const p=getProcess(pid); alerts.push({level:"warning", text:`Les non-conformités se répètent sur le processus ${p?p.name:pid} (${count} occurrences).`}); } });
   const indComplaint = getIndicator("IND-002");
   if(indComplaint && indComplaint.trend>0) alerts.push({level:"warning", text:`Les réclamations augmentent (+${indComplaint.trend}).`});
-  const unfavorableAudits = DB.audits.filter(a=>a.findings.some(f=>f.type==="ecart") && a.status!=="cloture");
+  const unfavorableAudits = DB.audits.filter(a=>a.findings.some(f=>isAuditEcart(f)) && a.status!=="cloture");
   if(unfavorableAudits.length) alerts.push({level:"warning", text:`${unfavorableAudits.length} audit(s) présentent des écarts non encore clôturés.`});
   const prevReview = review.previousReviewId ? getReview(review.previousReviewId) : null;
   if(prevReview && prevReview.decisions.length){
@@ -749,7 +787,7 @@ function reviewAlerts(review){
 
 function reviewScoreComponents(){
   const objProgressAvg = Math.round(DB.objectives.reduce((s,o)=>s+o.progress,0)/Math.max(DB.objectives.length,1));
-  const auditsOk = DB.audits.filter(a=>!a.findings.some(f=>f.type==="ecart")).length;
+  const auditsOk = DB.audits.filter(a=>!a.findings.some(f=>isAuditEcart(f))).length;
   const auditsPct = Math.round(auditsOk/Math.max(DB.audits.length,1)*100);
   const ncTotal = DB.events.filter(e=>e.type==="non_conformite").length;
   const ncClosed = DB.events.filter(e=>e.type==="non_conformite" && e.status==="cloture").length;
@@ -804,8 +842,8 @@ function reviewImprovementOpportunities(){
   DB.objectives.filter(o=>o.status==="en_retard" || (o.status==="en_cours" && o.progress<50)).forEach(o=>{
     opps.push({id:"OPP-OBJ-"+o.id, source:"Objectif non atteint : "+o.title, analysis:`Progression actuelle : ${o.progress} %.`, proposal:`Revoir le plan d'action associé à l'objectif « ${o.title} ».`});
   });
-  DB.audits.filter(a=>a.findings.some(f=>f.type==="ecart")).forEach(a=>{
-    opps.push({id:"OPP-AUD-"+a.id, source:"Écart d'audit : "+a.title, analysis:`${a.findings.filter(f=>f.type==="ecart").length} écart(s) relevé(s).`, proposal:`Vérifier l'efficacité des actions correctives associées.`});
+  DB.audits.filter(a=>a.findings.some(f=>isAuditEcart(f))).forEach(a=>{
+    opps.push({id:"OPP-AUD-"+a.id, source:"Écart d'audit : "+a.title, analysis:`${a.findings.filter(f=>isAuditEcart(f)).length} écart(s) relevé(s).`, proposal:`Vérifier l'efficacité des actions correctives associées.`});
   });
   return opps;
 }
@@ -1038,7 +1076,7 @@ function reviewTabNcCapa(review){
 }
 
 function reviewTabAudits(review){
-  const nbEcarts = DB.audits.reduce((s,a)=>s+a.findings.filter(f=>f.type==="ecart").length,0);
+  const nbEcarts = DB.audits.reduce((s,a)=>s+a.findings.filter(f=>isAuditEcart(f)).length,0);
   const actionsFromAudits = DB.actions.filter(a=>a.origin==="audit");
   const cloturees = actionsFromAudits.filter(a=>a.status==="termine").length;
   const tauxCloture = actionsFromAudits.length ? Math.round(cloturees/actionsFromAudits.length*100) : 100;
@@ -1050,7 +1088,7 @@ function reviewTabAudits(review){
   </div>
   ${dataTable(
     [ {label:"Audit", render:a=>`<div class="cell-title">${esc(a.title)}</div>`}, {label:"Date", render:a=>fmtDate(a.date)},
-      {label:"Écarts", render:a=>a.findings.filter(f=>f.type==="ecart").length}, {label:"Statut", render:a=>badge(LABELS.auditStatus[a.status])} ],
+      {label:"Écarts", render:a=>a.findings.filter(f=>isAuditEcart(f)).length}, {label:"Statut", render:a=>badge(LABELS.auditStatus[a.status])} ],
     DB.audits, {rowRoute:a=>`audits/${a.id}`}
   )}`;
 }
@@ -1090,7 +1128,23 @@ function reviewTabRisques(review){
     <div class="card"><div class="kpi"><div class="val" style="color:var(--info)">${opportunites.length}</div><div class="lbl">Opportunités</div></div></div>
   </div>
   ${critiques.length?`<div class="card mb-4"><p class="text-sm">⚠️ ${critiques.length} risque(s) critique(s) restent ouverts${critiques.filter(r=>!DB.actions.some(a=>a.originId===r.id)).length?", dont "+critiques.filter(r=>!DB.actions.some(a=>a.originId===r.id)).length+" sans action arrivée à échéance":""}.</p></div>`:""}
-  <div class="mt-2"><button class="btn btn-secondary btn-sm" data-route="risques">Ouvrir le registre des risques →</button></div>`;
+  <div class="mt-2 mb-4"><button class="btn btn-secondary btn-sm" data-route="risques">Ouvrir le registre des risques →</button></div>
+  <div class="card">
+    <h3 class="mb-2">🏭 Performance des fournisseurs</h3>
+    ${(()=>{
+      const s = fournisseurDashboardStats();
+      const risque = [...DB.fournisseurs].map(f=>({f, perf:fournisseurPerformanceScore(f.id)})).sort((a,b)=>a.perf.score-b.perf.score).slice(0,3);
+      return `<div class="grid grid-4 mb-4">
+        <div class="kpi"><div class="val" style="color:var(--primary)">${s.tauxMaitrise}/100</div><div class="lbl">Maîtrise globale</div></div>
+        <div class="kpi"><div class="val" style="color:${s.critiques?'var(--warning)':'var(--success)'}">${s.critiques}</div><div class="lbl">Fournisseurs critiques</div></div>
+        <div class="kpi"><div class="val" style="color:${s.incidentsOuverts?'var(--danger)':'var(--success)'}">${s.incidentsOuverts}</div><div class="lbl">Incidents ouverts</div></div>
+        <div class="kpi"><div class="val" style="color:${s.actionsRetard?'var(--danger)':'var(--success)'}">${s.actionsRetard}</div><div class="lbl">Actions en retard</div></div>
+      </div>
+      <p class="text-xs mb-2">FOURNISSEURS À SURVEILLER</p>
+      ${risque.map(x=>`<div class="rel-link" data-route="fournisseurs/liste/${x.f.id}"><span class="rel-name">${esc(x.f.nomCommercial)}</span><span class="text-sm" style="font-weight:700;color:${x.perf.score<50?'var(--danger)':'var(--warning)'}">${x.perf.score}/100</span></div>`).join("")}
+      <div class="mt-2"><button class="btn btn-secondary btn-sm" data-route="fournisseurs">Ouvrir le module Fournisseurs →</button></div>`;
+    })()}
+  </div>`;
 }
 
 function reviewTabChangements(review){
@@ -1459,7 +1513,7 @@ function documentAIInsights(){
 function pageDocuments(section){
   let docs;
   let title;
-  if(section==="all"){ docs = DB.documents.filter(d=>d.status!=="obsolete"); title="Tous les documents"; }
+  if(section==="all"){ docs = DB.documents.filter(d=>d.status!=="obsolete" && matchesScope(d)); title="Tous les documents"; }
   else if(section==="obsolete"){ docs = DB.documents.filter(d=>d.status==="obsolete"); title="Documents obsolètes"; }
   else { docs = DB.documents.filter(d=>d.type===section); title = DOC_SECTIONS.find(s=>s.key===section)?.label || "Documents"; }
 
@@ -1735,7 +1789,7 @@ function docTabSante(d){
    8. RISQUES
    ============================================================ */
 function pageRisks(){
-  const risks = DB.risks;
+  const risks = DB.risks.filter(matchesScope);
   return `
   ${pageHeader("Risques & opportunités","Registre des risques et opportunités de l'organisation.",
     `<button class="btn btn-primary" data-open-quick="risk">+ Identifier un risque</button>`)}
@@ -1760,7 +1814,7 @@ function applyRiskFilters(){
   const lvl = document.getElementById("f-risk-level")?.value;
   const proc = document.getElementById("f-risk-process")?.value;
   const status = document.getElementById("f-risk-status")?.value;
-  let rows = DB.risks;
+  let rows = DB.risks.filter(matchesScope);
   if(lvl) rows = rows.filter(r=>r.level===lvl);
   if(proc) rows = rows.filter(r=>r.processId===proc);
   if(status) rows = rows.filter(r=>r.status===status);
@@ -1872,7 +1926,7 @@ function pageObjectives(){
    ============================================================ */
 function pageEvents(typeFilter){
   const isNC = typeFilter==="non_conformite";
-  let events = typeFilter==="all" ? DB.events : DB.events.filter(e=>e.type===typeFilter);
+  let events = (typeFilter==="all" ? DB.events : DB.events.filter(e=>e.type===typeFilter)).filter(matchesScope);
   const chips = [{k:"all",l:"Tous"},{k:"non_conformite",l:"Non-conformités"},{k:"incident",l:"Incidents"},{k:"reclamation",l:"Réclamations"},{k:"anomalie",l:"Anomalies"},{k:"suggestion",l:"Suggestions"},{k:"amelioration",l:"Améliorations"}]
     .map(c=>`<a class="chip ${c.k===typeFilter?'active':''}" data-route="evenements/${c.k}">${esc(c.l)}</a>`).join("");
 
@@ -1905,7 +1959,7 @@ function applyEventFilters(){
   const status = document.getElementById("f-evt-status")?.value;
   const priority = document.getElementById("f-evt-priority")?.value;
   const proc = document.getElementById("f-evt-process")?.value;
-  let rows = typeFilter==="all" ? DB.events : DB.events.filter(e=>e.type===typeFilter);
+  let rows = (typeFilter==="all" ? DB.events : DB.events.filter(e=>e.type===typeFilter)).filter(matchesScope);
   if(status) rows = rows.filter(e=>e.status===status);
   if(priority) rows = rows.filter(e=>e.priority===priority);
   if(proc) rows = rows.filter(e=>e.processId===proc);
@@ -1970,7 +2024,7 @@ function pageActions(){
     ${filterSelect("f-act-origin","Origine",Object.entries(LABELS.actionOrigin).map(([v,l])=>({v,l})))}
     ${filterSelect("f-act-process","Processus", DB.processes.map(p=>({v:p.id,l:p.name})))}
   </div>
-  <div id="action-table-zone">${actionTable(DB.actions)}</div>`;
+  <div id="action-table-zone">${actionTable(DB.actions.filter(matchesScope))}</div>`;
 }
 function actionTable(rows){
   const sorted = [...rows].sort((a,b)=>{
@@ -1992,7 +2046,7 @@ function applyActionFilters(){
   const status = document.getElementById("f-act-status")?.value;
   const origin = document.getElementById("f-act-origin")?.value;
   const proc = document.getElementById("f-act-process")?.value;
-  let rows = DB.actions;
+  let rows = DB.actions.filter(matchesScope);
   if(status) rows = rows.filter(a=>a.status===status);
   if(origin) rows = rows.filter(a=>a.origin===origin);
   if(proc) rows = rows.filter(a=>a.processId===proc);
@@ -2000,58 +2054,404 @@ function applyActionFilters(){
 }
 
 /* ============================================================
-   12. AUDITS
+   12. AUDITS — processus d'audit complet et transversal
    ============================================================ */
+
+/* ---------- Helpers ---------- */
+function resolveExigence(id){
+  if(!id) return null;
+  const legacy = findBy(DB.requirements, id);
+  if(legacy) return {ref:legacy.ref, label:legacy.label, referentielId:"ISO9001"};
+  const custom = getCustomExigence(id);
+  if(custom) return {ref:custom.ref, label:custom.title, referentielId:custom.referentielId};
+  return null;
+}
+function auditConformityRate(a){
+  const evaluated = a.questions.filter(q=>["conforme","partiellement_conforme","non_conforme"].includes(q.statut));
+  if(!evaluated.length) return null;
+  const conformeCount = evaluated.filter(q=>q.statut==="conforme").length;
+  return Math.round(conformeCount/evaluated.length*100);
+}
+function auditProcessHistory(a){
+  return DB.audits.filter(x=>x.processId===a.processId && x.id!==a.id).sort((x,y)=>x.date.localeCompare(y.date));
+}
+function auditRuleBasedAnalysis(a){
+  const history = auditProcessHistory(a);
+  const bullets = [];
+  a.findings.filter(isAuditEcart).forEach(f=>{
+    if(!f.requirementId) return;
+    const recurrence = history.filter(h=>h.findings.some(hf=>isAuditEcart(hf) && hf.requirementId===f.requirementId));
+    if(recurrence.length){
+      const ex = resolveExigence(f.requirementId);
+      bullets.push({fact:`Écart constaté sur ${ex?ex.ref:f.requirementId} — déjà relevé lors de ${recurrence.length} audit(s) précédent(s) de ce processus.`, analysis:"Une analyse de cause systémique est recommandée plutôt qu'une action ponctuelle."});
+    }
+  });
+  if(!bullets.length) bullets.push({fact:"Aucune récurrence détectée entre cet audit et les audits précédents de ce processus.", analysis:"Sur la base des données actuellement disponibles."});
+  return bullets;
+}
+function generateAuditQuestions(processIds, referentielIds){
+  const qs = [];
+  (referentielIds && referentielIds.length ? referentielIds : ["ISO9001"]).forEach(refId=>{
+    const order = {non_couvert:0,partiellement:1,a_renforcer:2,maitrise:3,optimise:4};
+    const views = getReferentielExigenceViews(refId).filter(v=>v.process && processIds.includes(v.process.id)).sort((a,b)=>order[a.level]-order[b.level]);
+    views.slice(0,5).forEach(v=>{
+      qs.push({ id:"Q-"+Math.random().toString(36).slice(2,8), question:`Comment l'exigence ${v.ref} — ${v.title} est-elle mise en œuvre et démontrée ?`,
+        requirementId:v.id, processId:v.process.id, critere:v.ref, preuveAttendue:"Procédure, enregistrement ou indicateur associé", responsableInterroge:v.process.pilot, statut:"non_evalue", commentaire:"", preuveIds:[] });
+    });
+  });
+  processIds.forEach(pid=>{
+    const p = getProcess(pid);
+    const topRisk = DB.risks.filter(r=>r.processId===pid && r.type==="risque" && r.status==="ouvert").sort((a,b)=>(b.probability*b.impact)-(a.probability*a.impact))[0];
+    if(topRisk) qs.push({ id:"Q-"+Math.random().toString(36).slice(2,8), question:`Comment le risque « ${topRisk.name} » est-il maîtrisé ?`, requirementId:null, processId:pid, critere:topRisk.name, preuveAttendue:"Plan de maîtrise du risque", responsableInterroge:p?p.pilot:"", statut:"non_evalue", commentaire:"", preuveIds:[] });
+    const priorNc = DB.events.filter(e=>e.processId===pid && e.type==="non_conformite")[0];
+    if(priorNc) qs.push({ id:"Q-"+Math.random().toString(36).slice(2,8), question:`L'action corrective suite à « ${priorNc.title} » est-elle efficace ?`, requirementId:null, processId:pid, critere:priorNc.ref, preuveAttendue:"Preuve de vérification d'efficacité", responsableInterroge:p?p.pilot:"", statut:"non_evalue", commentaire:"", preuveIds:[] });
+  });
+  return qs.slice(0,10);
+}
+
+/* ---------- Tableau de bord & programme ---------- */
 function pageAudits(){
+  const today = new Date().toISOString().slice(0,10);
+  const scopedAudits = DB.audits.filter(matchesScope);
+  const aVenir = scopedAudits.filter(a=>a.status==="planifie" && a.date>=today);
+  const enRetard = scopedAudits.filter(a=>["planifie","preparation"].includes(a.status) && a.date<today);
+  const enCours = scopedAudits.filter(a=>["preparation","en_cours","analyse","synthese","a_valider"].includes(a.status));
+  const clotures = scopedAudits.filter(a=>["valide","cloture"].includes(a.status));
+  const ncIssues = scopedAudits.reduce((s,a)=>s+a.findings.filter(isAuditEcart).length,0);
+  const actionsAudit = DB.actions.filter(a=>a.origin==="audit" && a.status!=="termine" && matchesScope(a));
+  const rates = scopedAudits.map(auditConformityRate).filter(r=>r!==null);
+  const tauxGlobal = rates.length? Math.round(rates.reduce((s,r)=>s+r,0)/rates.length) : null;
+
   return `
-  ${pageHeader("Audits","Programme et suivi des audits internes.",
-    `<button class="btn btn-primary" data-open-quick="audit">+ Créer un audit</button>`)}
+  ${pageHeader("Audits","Le pilotage transversal de vos audits — de la préparation à la revue de direction.",
+    `<button class="btn btn-secondary" data-route="audits/programme">📅 Programme d'audit</button><button class="btn btn-primary" data-open-audit-wizard>+ Nouvel audit</button>`)}
+  <div class="grid grid-4 mb-4">
+    <div class="card"><div class="kpi"><div class="val">${aVenir.length}</div><div class="lbl">Audits à venir</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--warning)">${enCours.length}</div><div class="lbl">Audits en cours</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:${enRetard.length?'var(--danger)':'var(--success)'}">${enRetard.length}</div><div class="lbl">Audits en retard</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--success)">${clotures.length}</div><div class="lbl">Audits clôturés</div></div></div>
+  </div>
+  <div class="grid grid-3 mb-4">
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--danger)">${ncIssues}</div><div class="lbl">Écarts / NC issus des audits</div></div></div>
+    <div class="card"><div class="kpi"><div class="val">${actionsAudit.length}</div><div class="lbl">Actions en cours (origine audit)</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--primary)">${tauxGlobal===null?"—":tauxGlobal+" %"}</div><div class="lbl">Taux de conformité moyen</div></div></div>
+  </div>
   ${dataTable(
-    [ {label:"Audit", render:a=>`<div class="cell-title">${esc(a.title)}</div>`},
+    [ {label:"Réf.", render:a=>esc(a.ref||a.id)},
+      {label:"Audit", render:a=>`<div class="cell-title">${esc(a.title)}</div><div class="cell-sub">${esc(LABELS.auditType[a.type]||a.type||"—")}</div>`},
       {label:"Processus", render:a=>{const p=getProcess(a.processId); return p?esc(p.name):"—";}},
-      {label:"Auditeur", render:a=>esc(a.auditor)},
+      {label:"Responsable", render:a=>esc(a.responsable||a.auditor)},
       {label:"Date", render:a=>fmtDate(a.date)},
       {label:"Constats", render:a=>a.findings.length},
       {label:"Statut", render:a=>badge(LABELS.auditStatus[a.status])} ],
-    DB.audits, {rowRoute:a=>`audits/${a.id}`, emptyEmoji:"🔍", emptyTitle:"Aucun audit", emptyText:"Aucun audit n'est encore planifié."}
+    scopedAudits, {rowRoute:a=>`audits/${a.id}`, emptyEmoji:"🔍", emptyTitle:"Aucun audit", emptyText:"Aucun audit n'est encore planifié."}
   )}`;
 }
-function pageAuditFiche(id){
+
+function pageAuditProgramme(){
+  const rows = DB.processes.map(p=>{
+    const processAudits = DB.audits.filter(a=>a.processId===p.id).sort((a,b)=>a.date.localeCompare(b.date));
+    const last = processAudits.filter(a=>["valide","cloture"].includes(a.status)).slice(-1)[0];
+    const next = processAudits.find(a=>["planifie","preparation"].includes(a.status));
+    const critRisk = DB.risks.some(r=>r.processId===p.id && r.type==="risque" && r.status==="ouvert" && r.level==="critique");
+    const highRisk = DB.risks.some(r=>r.processId===p.id && r.type==="risque" && r.status==="ouvert" && r.level==="eleve");
+    const ncCount = DB.events.filter(e=>e.processId===p.id && e.type==="non_conformite").length;
+    const monthsSinceLast = last ? Math.round((Date.now()-new Date(last.date+"T00:00:00").getTime())/(1000*3600*24*30)) : 999;
+    let score = 0;
+    if(critRisk) score+=3; else if(highRisk) score+=2;
+    score += Math.min(ncCount,3);
+    if(monthsSinceLast>12) score+=2; else if(monthsSinceLast>6) score+=1;
+    if(!last) score+=3;
+    const priorite = score>=5?"haute":score>=3?"moyenne":"basse";
+    return {process:p, last, next, priorite, critRisk};
+  }).sort((a,b)=>({haute:0,moyenne:1,basse:2}[a.priorite])-({haute:0,moyenne:1,basse:2}[b.priorite]));
+
+  return `
+  ${breadcrumb([{label:"Audits",href:"#/audits"},{label:"Programme d'audit"}])}
+  ${pageHeader("Programme d'audit","Priorités suggérées selon la criticité des processus, les risques, l'historique des écarts et l'ancienneté du dernier audit.")}
+  ${dataTable(
+    [ {label:"Processus", render:r=>esc(r.process.name)},
+      {label:"Risque critique", render:r=>r.critRisk?badgeRaw("danger","Oui"):badgeRaw("neutral","Non")},
+      {label:"Dernier audit", render:r=>r.last?fmtDate(r.last.date):"Jamais audité"},
+      {label:"Prochain audit", render:r=>r.next?fmtDate(r.next.date):"Non planifié"},
+      {label:"Priorité suggérée", render:r=>badge(LABELS.priority[r.priorite])},
+      {label:"", render:r=>`<button class="btn btn-secondary btn-sm" data-open-audit-wizard data-preset-process="${r.process.id}">+ Planifier</button>`} ],
+    rows
+  )}`;
+}
+
+/* ---------- Fiche audit ---------- */
+function auditTabsHtml(a, active){
+  const tabs = [
+    {id:"resume",label:"Résumé"}, {id:"perimetre",label:"Périmètre & objectifs"}, {id:"grille",label:"Grille d'audit"},
+    {id:"constats",label:"Constats ("+a.findings.length+")"}, {id:"parties",label:"Parties prenantes"}, {id:"analyse",label:"Analyse"},
+    {id:"tracabilite",label:"Traçabilité"}, {id:"rapport",label:"Rapport"}, {id:"validation",label:"Validation"},
+  ];
+  return `<div class="tabs">${tabs.map(t=>`<button class="tab ${t.id===active?'active':''}" data-route="audits/${a.id}/${t.id}">${esc(t.label)}</button>`).join("")}</div>`;
+}
+
+function pageAuditFiche(id, tab, qIdx){
   const a = getAudit(id);
   if(!a) return emptyState("🔍","Audit introuvable","Cet audit n'existe pas.");
+  tab = tab || "resume";
   const p = getProcess(a.processId);
-  return `
+  const isLocked = a.status==="cloture";
+  const stepIndex = AUDIT_WORKFLOW_STEPS.indexOf(a.status);
+
+  const header = `
   ${breadcrumb([{label:"Audits",href:"#/audits"},{label:a.title}])}
-  <div class="grid" style="grid-template-columns:2fr 1fr;gap:24px;">
-    <div>
-      <div class="card mb-2">
-        <div class="flex justify-between items-center">${badge(LABELS.auditStatus[a.status])}</div>
+  <div class="card mb-2">
+    <div class="flex justify-between items-center" style="flex-wrap:wrap;gap:10px;">
+      <div>
+        <span class="badge badge-neutral">${esc(a.ref||a.id)}</span> ${badge(LABELS.auditStatus[a.status])}
         <h1 class="mt-2">${esc(a.title)}</h1>
-        <p class="section-sub mt-2">Processus : ${p?esc(p.name):"—"} · Auditeur : ${esc(a.auditor)} · Date : ${fmtDate(a.date)}</p>
-        <div class="grid grid-2 mt-4">
-          <div><div class="text-xs">OBJECTIF</div><p class="text-sm mt-2" style="color:var(--text-primary)">${esc(a.objective)}</p></div>
-          <div><div class="text-xs">PÉRIMÈTRE</div><p class="text-sm mt-2" style="color:var(--text-primary)">${esc(a.scope)}</p></div>
-        </div>
+        <p class="section-sub mt-2">${esc(LABELS.auditType[a.type]||a.type||"—")} · Processus : ${p?esc(p.name):"—"} · Responsable : ${esc(a.responsable||a.auditor)} · Date : ${fmtDate(a.date)}${a.site?" · Site : "+esc(a.site):""}</p>
       </div>
-      <div class="card">
-        <div class="flex justify-between items-center mb-2"><h3>Constats</h3>
-          <button class="btn btn-secondary btn-sm" data-open-quick="finding" data-preset-audit="${a.id}">+ Ajouter un constat</button>
-        </div>
-        ${a.findings.length ? a.findings.map(f=>`
-          <div class="rel-link" style="align-items:flex-start;">
-            <div>
-              ${f.type==="ecart"?badge(LABELS.priority.haute,"Écart"):badgeRaw("info","Point fort")}
-              <p class="text-sm mt-2" style="color:var(--text-primary)">${esc(f.text)}</p>
-            </div>
-            ${f.actionId?`<span class="badge badge-neutral">Action générée</span>`:""}
-          </div>`).join("") : `<p class="text-sm">Aucun constat enregistré pour cet audit.</p>`}
-      </div>
+    </div>
+    <div class="mt-4">${workflowStepper(AUDIT_WORKFLOW_LABELS, stepIndex<0?0:stepIndex)}</div>
+    <div class="flex gap-2 mt-4" style="flex-wrap:wrap;">
+      ${!isLocked && stepIndex<AUDIT_WORKFLOW_STEPS.length-1 ? `<button class="btn btn-primary" data-advance-audit="${a.id}">Passer à l'étape suivante : ${AUDIT_WORKFLOW_LABELS[stepIndex+1]}</button>` : ""}
+      ${isLocked?`<span class="badge badge-neutral"><span class="badge-dot"></span>Audit clôturé — verrouillé</span>`:""}
+    </div>
+  </div>
+  ${auditTabsHtml(a, tab)}`;
+
+  let body = "";
+  if(tab==="resume") body = auditTabResume(a);
+  else if(tab==="perimetre") body = auditTabPerimetre(a, isLocked);
+  else if(tab==="grille") body = auditTabGrille(a, qIdx, isLocked);
+  else if(tab==="constats") body = auditTabConstats(a, isLocked);
+  else if(tab==="parties") body = auditTabParties(a, isLocked);
+  else if(tab==="analyse") body = auditTabAnalyse(a);
+  else if(tab==="tracabilite") body = auditTabTracabilite(a);
+  else if(tab==="rapport") body = auditTabRapport(a);
+  else if(tab==="validation") body = auditTabValidation(a, isLocked);
+  return header + body;
+}
+
+function auditTabResume(a){
+  const rate = auditConformityRate(a);
+  const forces = a.findings.filter(f=>f.type==="point_fort").slice(0,3);
+  const vigilance = a.findings.filter(f=>f.type==="vigilance"||f.type==="opportunite").slice(0,3);
+  const ncCount = a.findings.filter(isAuditEcart).length;
+  const oppCount = a.findings.filter(f=>f.type==="opportunite").length;
+  const actionsCount = a.findings.filter(f=>f.actionId).length;
+  return `
+  <div class="grid grid-2">
+    <div class="card">
+      <h3 class="mb-2">Périmètre</h3>
+      <p class="text-sm">${esc(a.perimeter?.activites||a.scope||"—")}</p>
+      <p class="text-xs mt-2">${a.perimeter?.periodeDebut?"Période : "+fmtDate(a.perimeter.periodeDebut)+" → "+fmtDate(a.perimeter.periodeFin):""}</p>
+      ${a.perimeter?.exclusions?`<p class="text-xs mt-2">Exclusions : ${esc(a.perimeter.exclusions)}</p>`:""}
     </div>
     <div class="card">
-      <h3 class="mb-2">Relations</h3>
-      ${p?`<div class="rel-link" data-route="processus/${p.id}"><span class="rel-name">🧩 ${esc(p.name)}</span><span class="chev">›</span></div>`:""}
-      ${a.findings.filter(f=>f.actionId).map(f=>`<div class="rel-link" data-route="actions"><span class="rel-name">✅ ${esc(getAction(f.actionId)?.title||"Action")}</span><span class="chev">›</span></div>`).join("")}
+      <h3 class="mb-2">Objectifs</h3>
+      ${(a.objectifs&&a.objectifs.length?a.objectifs:[a.objective]).filter(Boolean).map(o=>`<p class="text-sm mt-2">• ${esc(o)}</p>`).join("")}
     </div>
+  </div>
+  <div class="card mt-4">
+    <h3 class="mb-2">Résultat</h3>
+    <div class="flex items-center gap-3">
+      ${rate!==null?ringGauge(rate,"var(--primary)",72):""}
+      <div class="kpi"><div class="val">${rate===null?"—":rate+" %"}</div><div class="lbl">des critères vérifiés sont conformes</div></div>
+    </div>
+    <div class="grid grid-4 mt-4">
+      <div class="kpi"><div class="val" style="color:var(--danger)">${ncCount}</div><div class="lbl">Non-conformités / écarts</div></div>
+      <div class="kpi"><div class="val" style="color:var(--warning)">${oppCount}</div><div class="lbl">Opportunités d'amélioration</div></div>
+      <div class="kpi"><div class="val">${actionsCount}</div><div class="lbl">Actions</div></div>
+      <div class="kpi"><div class="val">${a.questions.length}</div><div class="lbl">Questions</div></div>
+    </div>
+  </div>
+  <div class="grid grid-2 mt-4">
+    <div class="card">
+      <h3 class="mb-2">🟢 Points forts</h3>
+      ${forces.length?forces.map(f=>`<p class="text-sm mt-2">${esc(f.text)}</p>`).join(""):`<p class="text-sm">Aucun point fort enregistré pour le moment.</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">🟠 Points de vigilance</h3>
+      ${vigilance.length?vigilance.map(f=>`<p class="text-sm mt-2">${esc(f.text)}</p>`).join(""):`<p class="text-sm">Aucun point de vigilance enregistré.</p>`}
+    </div>
+  </div>`;
+}
+
+function auditTabPerimetre(a, isLocked){
+  const pr = a.perimeter || {};
+  const processesNames = (a.processIds||[a.processId]).filter(Boolean).map(id=>{const p=getProcess(id); return p?p.name:id;});
+  const docs = (a.criteres?.documentIds||[]).map(getDocument).filter(Boolean);
+  const reqs = (a.criteres?.requirementIds||[]).map(resolveExigence).filter(Boolean);
+  return `
+  <div class="card mb-4">
+    <div class="flex justify-between items-center mb-2"><h3>Périmètre de l'audit</h3>${!isLocked?`<button class="btn btn-secondary btn-sm" data-edit-audit-perimeter="${a.id}">✏️ Modifier</button>`:""}</div>
+    <p class="text-sm">Processus : ${processesNames.map(esc).join(", ")||"—"}</p>
+    <p class="text-sm mt-2">Site : ${esc(a.site||"—")}</p>
+    <p class="text-sm mt-2">Activités : ${esc(pr.activites||"—")}</p>
+    ${pr.produits?`<p class="text-sm mt-2">Produits / services : ${esc(pr.produits)}</p>`:""}
+    <p class="text-sm mt-2">Période auditée : ${pr.periodeDebut?fmtDate(pr.periodeDebut)+" → "+fmtDate(pr.periodeFin):"—"}</p>
+    <p class="text-sm mt-2">Exclusions : ${esc(pr.exclusions||"Aucune")}</p>
+    <p class="text-sm mt-2">Motifs : ${(a.motifs||[]).map(m=>esc(LABELS.auditMotif[m]||m)).join(", ")||"—"}</p>
+  </div>
+  <div class="card mb-4">
+    <h3 class="mb-2">Objectifs</h3>
+    ${(a.objectifs&&a.objectifs.length?a.objectifs:[a.objective]).filter(Boolean).map(o=>`<p class="text-sm mt-2">• ${esc(o)}</p>`).join("")}
+  </div>
+  <div class="card">
+    <h3 class="mb-2">Critères d'audit</h3>
+    <p class="text-xs mb-2">RÉFÉRENTIEL(S)</p>
+    <p class="text-sm">${(a.referentielIds||[]).map(id=>{const r=getReferentiel(id); return r?esc(r.name):esc(id);}).join(", ")||"—"}</p>
+    <p class="text-xs mb-2 mt-4">EXIGENCES</p>
+    ${reqs.length?reqs.map(r=>`<div class="rel-link"><span class="rel-name">${esc(r.ref)} — ${esc(r.label)}</span></div>`).join(""):`<p class="text-sm">Aucune exigence sélectionnée.</p>`}
+    <p class="text-xs mb-2 mt-4">DOCUMENTS APPLICABLES</p>
+    ${docs.length?docs.map(d=>`<div class="rel-link" data-route="documents/${d.type}/${d.id}"><span class="rel-name">📄 ${esc(d.title)}</span></div>`).join(""):`<p class="text-sm">Aucun document applicable sélectionné.</p>`}
+  </div>`;
+}
+
+function auditTabGrille(a, qIdx, isLocked){
+  const total = a.questions.length;
+  if(!total){
+    return `<div class="card">${emptyState("📋","Aucune question","Générez ou ajoutez des questions pour construire la grille d'audit.",
+      `<button class="btn btn-primary" data-generate-questions="${a.id}">🧠 Générer des questions</button>`)}</div>`;
+  }
+  let idx = qIdx!=null ? parseInt(qIdx,10) : 0;
+  if(isNaN(idx) || idx<0) idx = 0;
+  if(idx>=total) idx = total-1;
+  const q = a.questions[idx];
+  const answered = a.questions.filter(x=>x.statut!=="non_evalue").length;
+  const ex = resolveExigence(q.requirementId);
+  const proc = getProcess(q.processId);
+  const availableDocs = DB.documents.filter(d=>d.status!=="obsolete");
+
+  return `
+  <div class="card mb-4">
+    <div class="flex justify-between items-center"><span class="text-sm" style="font-weight:700;">${answered} / ${total} questions évaluées</span>
+      ${!isLocked?`<button class="btn btn-secondary btn-sm" data-generate-questions="${a.id}">🧠 Générer plus</button>`:""}
+    </div>
+    <div class="progress mt-2"><div style="width:${Math.round(answered/total*100)}%"></div></div>
+  </div>
+  <div class="card mb-4">
+    <div class="flex justify-between items-center">${badge(LABELS.questionStatus[q.statut])}${ex?badgeRaw("info",ex.ref):""}</div>
+    <h3 class="mt-2">${esc(q.question)}</h3>
+    <p class="text-xs mt-4">PROCESSUS</p><p class="text-sm">${proc?esc(proc.name):"—"}</p>
+    <p class="text-xs mt-4">CRITÈRE</p><p class="text-sm">${esc(q.critere||"—")}</p>
+    <p class="text-xs mt-4">PREUVE ATTENDUE</p><p class="text-sm">${esc(q.preuveAttendue||"—")}</p>
+    <p class="text-xs mt-4">RESPONSABLE INTERROGÉ</p><p class="text-sm">${esc(q.responsableInterroge||"—")}</p>
+    ${!isLocked?`
+    <div class="field mt-4"><label>Statut</label><select id="q-statut">${Object.entries(LABELS.questionStatus).map(([v,l])=>`<option value="${v}" ${q.statut===v?"selected":""}>${l.l}</option>`).join("")}</select></div>
+    <div class="field"><label>Commentaire / réponse</label><textarea id="q-comment">${esc(q.commentaire)}</textarea></div>
+    <div class="field"><label>Preuve(s) constatée(s) — sélectionner un document déjà présent dans Qonnect</label>
+      <div style="max-height:120px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
+        ${availableDocs.map(d=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="q-preuve-cb" value="${d.id}" ${q.preuveIds.includes(d.id)?"checked":""} style="width:auto;"> ${esc(d.title)}</label>`).join("")}
+      </div>
+    </div>
+    <button class="btn btn-primary" data-save-question='${jsonAttr({auditId:a.id, questionId:q.id, qIdx:idx})}'>Enregistrer la réponse</button>
+    `:`
+    <p class="text-sm mt-4"><strong>Commentaire :</strong> ${esc(q.commentaire||"—")}</p>
+    ${q.preuveIds.length?`<p class="text-xs mt-4">PREUVES</p>${q.preuveIds.map(id=>{const d=getDocument(id); return d?`<div class="rel-link" data-route="documents/${d.type}/${d.id}"><span class="rel-name">📄 ${esc(d.title)}</span></div>`:"";}).join("")}`:""}
+    `}
+    <div class="flex justify-between mt-4">
+      <button class="btn btn-secondary" ${idx<=0?"disabled":""} data-route="audits/${a.id}/grille/${idx-1}">← Précédent</button>
+      <button class="btn btn-secondary" ${idx>=total-1?"disabled":""} data-route="audits/${a.id}/grille/${idx+1}">Suivant →</button>
+    </div>
+  </div>
+  ${!isLocked?`<div class="mb-2"><button class="btn btn-secondary btn-sm" data-add-question="${a.id}">+ Ajouter une question manuelle</button></div>`:""}
+  <div class="card card-flush table-wrap">
+    <table class="dt"><thead><tr><th>#</th><th>Question</th><th>Statut</th></tr></thead><tbody>
+      ${a.questions.map((qq,i)=>`<tr class="clickable" data-route="audits/${a.id}/grille/${i}" style="${i===idx?'background:var(--primary-soft);':''}"><td>${i+1}</td><td>${esc(qq.question)}</td><td>${badge(LABELS.questionStatus[qq.statut])}</td></tr>`).join("")}
+    </tbody></table>
+  </div>`;
+}
+
+function auditTabConstats(a, isLocked){
+  return `
+  ${!isLocked?`<div class="flex justify-between items-center mb-2"><span></span><button class="btn btn-primary btn-sm" data-open-quick="finding" data-preset-audit="${a.id}">+ Ajouter un constat</button></div>`:""}
+  ${a.findings.length? a.findings.map(f=>{
+    const ct = LABELS.constatType[f.type]||{l:f.type,c:"neutral",e:""};
+    const ex = resolveExigence(f.requirementId);
+    return `<div class="card mb-2">
+      <div class="flex justify-between items-center">${badge(ct)}${f.gravite?badgeRaw("neutral",LABELS.constatGravite[f.gravite]):""}</div>
+      <p class="text-sm mt-2" style="color:var(--text-primary)">${esc(f.text)}</p>
+      ${ex?`<p class="text-xs mt-2">Exigence : ${esc(ex.ref)} — ${esc(ex.label)}</p>`:""}
+      ${f.cause?`<p class="text-xs mt-2">Cause potentielle : ${esc(f.cause)}</p>`:""}
+      <div class="flex gap-2 mt-2" style="flex-wrap:wrap;">
+        ${f.ncEventId?`<span class="badge badge-neutral" data-route="evenements/non_conformite/${f.ncEventId}" style="cursor:pointer;">NC créée →</span>`:(isAuditEcart(f)&&!isLocked?`<button class="btn btn-secondary btn-sm" data-create-nc-from-constat='${jsonAttr({auditId:a.id, constatId:f.id})}'>+ Créer une NC</button>`:"")}
+        ${f.actionId?`<span class="badge badge-neutral" data-route="actions" style="cursor:pointer;">Action créée →</span>`:(!isLocked?`<button class="btn btn-secondary btn-sm" data-create-action-from-constat='${jsonAttr({auditId:a.id, constatId:f.id})}'>+ Créer une action</button>`:"")}
+        ${f.riskId?`<span class="badge badge-neutral" data-route="risques/${f.riskId}" style="cursor:pointer;">Risque associé →</span>`:""}
+      </div>
+    </div>`;
+  }).join("") : `<div class="card">${emptyState("📝","Aucun constat","Ajoutez les constats relevés pendant l'audit.")}</div>`}`;
+}
+
+function auditTabParties(a, isLocked){
+  return `
+  ${!isLocked?`<div class="flex justify-between items-center mb-2"><span></span><button class="btn btn-primary btn-sm" data-add-party="${a.id}">+ Ajouter une partie prenante</button></div>`:""}
+  ${a.parties.length? a.parties.map(pt=>{
+    const qs = a.questions.filter(q=>pt.questionIds.includes(q.id));
+    const answered = qs.filter(q=>q.statut!=="non_evalue").length;
+    return `<div class="card mb-2">
+      <div class="flex justify-between items-center"><h3>${esc(pt.name)}</h3>${badge(LABELS.partyStatus[pt.status])}</div>
+      <p class="text-sm mt-2">${esc(pt.role)} · ${qs.length} question(s) à compléter · ${answered}/${qs.length} répondue(s)</p>
+      <p class="text-xs mt-2">Échéance : ${fmtDate(pt.echeance)}</p>
+      ${!isLocked && pt.status!=="complete"?`<button class="btn btn-secondary btn-sm mt-2" data-relaunch-party='${jsonAttr({auditId:a.id, partyName:pt.name})}'>🔔 Relancer</button>`:""}
+    </div>`;
+  }).join("") : `<div class="card">${emptyState("🤝","Aucune partie prenante","Ajoutez les personnes qui doivent contribuer à cet audit.")}</div>`}`;
+}
+
+function auditTabAnalyse(a){
+  const history = auditProcessHistory(a);
+  const analysis = auditRuleBasedAnalysis(a);
+  return `
+  <div class="card mb-4">
+    <h3 class="mb-2">Comparaison avec les audits précédents du même processus</h3>
+    ${history.length? `<div class="table-wrap"><table class="dt"><thead><tr><th>Date</th><th>Écarts</th><th>Points forts</th></tr></thead><tbody>
+      ${[...history, a].sort((x,y)=>x.date.localeCompare(y.date)).map(h=>`<tr ${h.id===a.id?'style="background:var(--primary-soft);"':""}><td>${fmtDate(h.date)}${h.id===a.id?" (cet audit)":""}</td><td>${h.findings.filter(isAuditEcart).length}</td><td>${h.findings.filter(f=>f.type==="point_fort").length}</td></tr>`).join("")}
+    </tbody></table></div>` : `<p class="text-sm">Aucun audit précédent sur ce processus pour établir une comparaison.</p>`}
+  </div>
+  <div class="card">
+    <h3 class="mb-2">🤖 Analyse Qonnect</h3>
+    ${analysis.map(b=>`<div class="mt-2"><p class="text-sm"><strong>Fait constaté :</strong> ${esc(b.fact)}</p><p class="text-sm mt-2" style="color:var(--text-secondary);"><strong>Analyse proposée :</strong> ${esc(b.analysis)}</p></div>`).join("<hr style='border:none;border-top:1px solid var(--border);margin:12px 0;'>")}
+    <p class="text-xs mt-4">Qonnect distingue toujours le fait constaté de l'analyse proposée — aucune preuve ni résultat n'est inventé.</p>
+  </div>`;
+}
+
+function auditTabTracabilite(a){
+  const rows = a.questions.map(q=>{
+    const ex = resolveExigence(q.requirementId);
+    const proc = getProcess(q.processId);
+    const constat = a.findings.find(f=>f.questionId===q.id);
+    return {q, ex, proc, constat};
+  });
+  return dataTable(
+    [ {label:"Question", render:r=>esc(r.q.question.slice(0,50))+(r.q.question.length>50?"…":"")},
+      {label:"Exigence", render:r=>r.ex?esc(r.ex.ref):"—"},
+      {label:"Processus", render:r=>r.proc?esc(r.proc.name):"—"},
+      {label:"Preuve", render:r=>r.q.preuveIds.length+" doc(s)"},
+      {label:"Constat", render:r=>r.constat?badge(LABELS.constatType[r.constat.type]):"—"},
+      {label:"Action / NC", render:r=>r.constat?(r.constat.actionId?"✅ Action":"")+(r.constat.ncEventId?" 🚨 NC":""):"—"} ],
+    rows
+  );
+}
+
+function auditTabRapport(a){
+  return `
+  <div class="card">
+    <h3 class="mb-2">Générer les sorties de l'audit</h3>
+    <p class="text-sm mb-4">Le rapport reprend l'identification, les objectifs, le périmètre, les référentiels, la méthodologie, les questions, les preuves, les constats, la synthèse et la conclusion — sans ressaisie.</p>
+    <div class="quick-actions">
+      <button class="btn btn-primary" data-generate-audit-report="${a.id}">📄 Générer le rapport d'audit</button>
+      <button class="btn btn-secondary" data-route="audits/${a.id}/resume">📊 Résumé exécutif (vue Direction)</button>
+    </div>
+  </div>`;
+}
+
+function auditTabValidation(a, isLocked){
+  const stepIndex = AUDIT_WORKFLOW_STEPS.indexOf(a.status);
+  return `
+  <div class="card">
+    <h3 class="mb-2">Workflow de validation</h3>
+    ${workflowStepper(AUDIT_WORKFLOW_LABELS, stepIndex<0?0:stepIndex)}
+    <div class="flex gap-2 mt-4">
+      ${!isLocked && stepIndex<AUDIT_WORKFLOW_STEPS.length-1 ? `<button class="btn btn-primary" data-advance-audit="${a.id}">Passer à l'étape suivante : ${AUDIT_WORKFLOW_LABELS[stepIndex+1]}</button>` : `<span class="badge badge-success"><span class="badge-dot"></span>Audit clôturé — conservé et tracé</span>`}
+    </div>
+    <p class="text-xs mt-4">Une fois clôturé, l'audit devient non modifiable par défaut ; la traçabilité de chaque étape est conservée.</p>
   </div>`;
 }
 
@@ -2115,6 +2515,1037 @@ function pageChangeFiche(id){
 }
 
 /* ============================================================
+   13bis. COMPÉTENCES & HABILITATIONS
+   ============================================================ */
+
+/* ---------- Logique métier ---------- */
+function personRequiredCompetences(personId){
+  const p = getPerson(personId);
+  const poste = p ? getPoste(p.posteId) : null;
+  return poste ? poste.competencesRequises : [];
+}
+function personLatestEvaluation(personId, competenceId){
+  const evals = DB.competenceEvaluations.filter(e=>e.personId===personId && e.competenceId===competenceId).sort((a,b)=>a.date.localeCompare(b.date));
+  return evals.length ? evals[evals.length-1] : null;
+}
+function personCompetenceRow(personId, req){
+  const evalLatest = personLatestEvaluation(personId, req.competenceId);
+  const niveauActuel = evalLatest ? evalLatest.niveauEvalue : null;
+  let statut;
+  if(niveauActuel===null) statut = "non_evalue";
+  else if(niveauActuel >= req.niveauRequis) statut = "conforme";
+  else statut = "a_renforcer";
+  return { competence:getCompetence(req.competenceId), niveauRequis:req.niveauRequis, obligatoire:req.obligatoire, niveauActuel, ecart: niveauActuel===null?null:(niveauActuel-req.niveauRequis), statut, evaluation:evalLatest };
+}
+function personMatrix(personId){ return personRequiredCompetences(personId).map(req=>personCompetenceRow(personId, req)); }
+function personConformityRate(personId){
+  const rows = personMatrix(personId);
+  if(!rows.length) return null;
+  return Math.round(rows.filter(r=>r.statut==="conforme").length/rows.length*100);
+}
+function habilitationStatusCompute(ph){
+  if(ph.statut==="suspendue") return "suspendue";
+  const diffDays = Math.round((new Date(ph.dateExpiration+"T00:00:00")-new Date())/(1000*3600*24));
+  if(diffDays<0) return "expiree";
+  if(diffDays<=60) return "expire_bientot";
+  return "active";
+}
+function personHabilitationsList(personId){
+  return DB.personHabilitations.filter(ph=>ph.personId===personId).map(ph=>({...ph, statutCalcule:habilitationStatusCompute(ph), habilitation:getHabilitation(ph.habilitationId)}));
+}
+function competenceDashboardStats(){
+  const today = new Date().toISOString().slice(0,10);
+  const effectif = DB.people.length;
+  const fullyConform = DB.people.filter(p=>{ const m=personMatrix(p.id); return m.length && m.every(r=>r.statut==="conforme"); }).length;
+  const pctConformes = effectif? Math.round(fullyConform/effectif*100) : 0;
+  let ecarts = 0;
+  DB.people.forEach(p=> ecarts += personMatrix(p.id).filter(r=>r.statut==="a_renforcer").length);
+  const formationsAFaire = DB.actions.filter(a=>a.origin==="competence" && a.status!=="termine").length;
+  const allPH = DB.personHabilitations.map(ph=>({...ph, statutCalcule:habilitationStatusCompute(ph)}));
+  const habActives = allPH.filter(ph=>ph.statutCalcule==="active").length;
+  const habExpirantBientot = allPH.filter(ph=>ph.statutCalcule==="expire_bientot").length;
+  const habExpirees = allPH.filter(ph=>ph.statutCalcule==="expiree").length;
+  const revuesARealiser = DB.people.filter(p=>p.prochaineRevue && p.prochaineRevue<=today).length;
+  return {effectif, pctConformes, ecarts, formationsAFaire, habActives, habExpirantBientot, habExpirees, revuesARealiser};
+}
+function competenceAlerts(){
+  const alerts = [];
+  DB.personHabilitations.forEach(ph=>{
+    const st = habilitationStatusCompute(ph);
+    const person = getPerson(ph.personId), hab = getHabilitation(ph.habilitationId);
+    if(!person||!hab) return;
+    if(st==="expire_bientot"){ const days = Math.round((new Date(ph.dateExpiration+"T00:00:00")-new Date())/(1000*3600*24)); alerts.push({level:"warning", text:`L'habilitation ${hab.nom} de ${person.name} expire dans ${days} jour(s).`}); }
+    if(st==="expiree") alerts.push({level:"danger", text:`${person.name} possède une habilitation expirée : ${hab.nom}. Une action est requise.`});
+  });
+  DB.people.forEach(p=>{
+    personMatrix(p.id).forEach(row=>{
+      if(row.statut==="a_renforcer") alerts.push({level:"warning", text:`Le niveau de compétence de ${p.name} en ${row.competence.nom} est inférieur au niveau requis pour son poste.`});
+      if(row.statut==="non_evalue" && row.obligatoire) alerts.push({level:"info", text:`La compétence ${row.competence.nom} requise pour le poste de ${p.name} n'a pas encore été évaluée.`});
+    });
+  });
+  const today = new Date().toISOString().slice(0,10);
+  DB.people.filter(p=>p.prochaineRevue && p.prochaineRevue<today).forEach(p=> alerts.push({level:"warning", text:`La revue de compétences de ${p.name} est en retard (prévue le ${fmtDate(p.prochaineRevue)}).`}));
+  return alerts;
+}
+
+/* ---------- Dashboard ---------- */
+function pageCompetences(){
+  const s = competenceDashboardStats();
+  const kpi = (route, val, label, color)=>`<div class="card card-hover" data-route="${route}"><div class="kpi"><div class="val" style="color:${color||'var(--text-primary)'}">${val}</div><div class="lbl">${esc(label)}</div></div></div>`;
+  return `
+  ${pageHeader("Compétences & Habilitations","Pour chaque poste, les compétences requises. Pour chaque personne, ce qu'elle maîtrise, comment c'est prouvé, et ce qu'elle est habilitée à faire.",
+    `<button class="btn btn-secondary" data-route="competences/auditeur">🔍 Vue Auditeur</button><button class="btn btn-primary" data-open-person-form>+ Collaborateur</button>`)}
+  <div class="quick-actions mb-4">
+    <button class="qa-btn" data-route="competences/referentiel">📘 Référentiel des compétences</button>
+    <button class="qa-btn" data-route="competences/postes">🧭 Postes / fonctions</button>
+    <button class="qa-btn" data-route="competences/matrice">🗂️ Matrice globale</button>
+    <button class="qa-btn" data-route="competences/habilitations">🪪 Habilitations</button>
+    <button class="qa-btn" data-route="competences/personnes">👥 Collaborateurs</button>
+  </div>
+  <div class="grid grid-4 mb-4">
+    ${kpi("competences/personnes", s.effectif, "Effectif suivi")}
+    ${kpi("competences/matrice", s.pctConformes+" %", "Compétences conformes", s.pctConformes>=80?"var(--success)":"var(--warning)")}
+    ${kpi("competences/matrice", s.ecarts, "Écarts de compétences", s.ecarts?"var(--danger)":"var(--success)")}
+    ${kpi("actions", s.formationsAFaire, "Formations / actions à réaliser", s.formationsAFaire?"var(--warning)":"var(--success)")}
+  </div>
+  <div class="grid grid-4 mb-4">
+    ${kpi("competences/habilitations", s.habActives, "Habilitations actives", "var(--success)")}
+    ${kpi("competences/habilitations", s.habExpirantBientot, "Expirant bientôt", s.habExpirantBientot?"var(--warning)":"var(--success)")}
+    ${kpi("competences/habilitations", s.habExpirees, "Habilitations expirées", s.habExpirees?"var(--danger)":"var(--success)")}
+    ${kpi("competences/personnes", s.revuesARealiser, "Revues à réaliser", s.revuesARealiser?"var(--warning)":"var(--success)")}
+  </div>
+  <div class="card">
+    <h3 class="mb-2">🔔 Alertes</h3>
+    ${(()=>{ const al=competenceAlerts(); return al.length ? al.slice(0,8).map(a=>`<div class="rel-link"><span class="rel-name">${a.level==="danger"?"🔴":a.level==="warning"?"🟠":"🔵"} ${esc(a.text)}</span></div>`).join("") : `<p class="text-sm">Aucune alerte active.</p>`; })()}
+  </div>`;
+}
+
+/* ---------- Référentiel des compétences ---------- */
+function pageCompetenceReferentiel(){
+  return `
+  ${breadcrumb([{label:"Compétences & Habilitations",href:"#/competences"},{label:"Référentiel des compétences"}])}
+  ${pageHeader("Référentiel des compétences","", `<button class="btn btn-primary" data-open-competence-form>+ Nouvelle compétence</button>`)}
+  <div class="grid grid-3">
+    ${DB.competences.map(c=>`
+      <div class="card card-hover" data-route="competences/referentiel/${c.id}">
+        <div class="flex justify-between items-center"><span class="badge badge-neutral">${esc(c.code)}</span>${badge(LABELS.competenceCriticite[c.criticite])}</div>
+        <h3 class="mt-2">${esc(c.nom)}</h3>
+        <p class="text-sm mt-2">${esc(c.domaine)} ${c.reglementaire?"· 🛡️ Réglementaire":""}</p>
+        ${!c.actif?badgeRaw("neutral","Inactive"):""}
+      </div>`).join("")}
+  </div>`;
+}
+function pageCompetenceFiche(id){
+  const c = getCompetence(id);
+  if(!c) return emptyState("📘","Compétence introuvable","Cette compétence n'existe pas.");
+  const postesReq = DB.postes.filter(p=>p.competencesRequises.some(r=>r.competenceId===id));
+  const personnesEvaluees = DB.people.filter(p=>DB.competenceEvaluations.some(e=>e.personId===p.id && e.competenceId===id));
+  const docs = (c.documentIds||[]).map(getDocument).filter(Boolean);
+  const habs = (c.habilitationIds||[]).map(getHabilitation).filter(Boolean);
+  return `
+  ${breadcrumb([{label:"Compétences & Habilitations",href:"#/competences"},{label:"Référentiel",href:"#/competences/referentiel"},{label:c.nom}])}
+  <div class="card mb-2">
+    <div class="flex justify-between items-center">
+      <div><span class="badge badge-neutral">${esc(c.code)}</span> ${badge(LABELS.competenceCriticite[c.criticite])} ${c.reglementaire?badgeRaw("danger","Réglementaire"):""}</div>
+      <button class="btn btn-secondary btn-sm" data-open-competence-form="${c.id}">✏️ Modifier</button>
+    </div>
+    <h1 class="mt-2">${esc(c.nom)}</h1>
+    <p class="section-sub mt-2">${esc(c.domaine)} · ${esc(c.type)}</p>
+    <p class="text-sm mt-4" style="color:var(--text-primary);">${esc(c.description)}</p>
+  </div>
+  <div class="grid grid-2">
+    <div class="card">
+      <h3 class="mb-2">Postes concernés</h3>
+      ${postesReq.length?postesReq.map(p=>{const req=p.competencesRequises.find(r=>r.competenceId===id);return `<div class="rel-link" data-route="competences/postes/${p.id}"><span class="rel-name">${esc(p.intitule)}</span><span class="text-xs">Niveau requis : ${req.niveauRequis} ${req.obligatoire?"(obligatoire)":""}</span></div>`;}).join(""):`<p class="text-sm">Aucun poste ne requiert cette compétence.</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Personnes évaluées</h3>
+      ${personnesEvaluees.length?personnesEvaluees.map(p=>{const ev=personLatestEvaluation(p.id,id); return `<div class="rel-link" data-route="competences/personnes/${p.id}"><span class="rel-name">${esc(p.name)}</span><span class="text-xs">Niveau ${ev.niveauEvalue} — ${esc(LABELS.niveauCompetence[ev.niveauEvalue])}</span></div>`;}).join(""):`<p class="text-sm">Aucune évaluation enregistrée.</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Documents associés</h3>
+      ${docs.length?docs.map(d=>`<div class="rel-link" data-route="documents/${d.type}/${d.id}"><span class="rel-name">📄 ${esc(d.title)}</span></div>`).join(""):`<p class="text-sm">Aucun document associé.</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Habilitations liées</h3>
+      ${habs.length?habs.map(h=>`<div class="rel-link" data-route="competences/habilitations/${h.id}"><span class="rel-name">🪪 ${esc(h.nom)}</span></div>`).join(""):`<p class="text-sm">Aucune habilitation liée.</p>`}
+    </div>
+  </div>`;
+}
+
+/* ---------- Référentiel des postes ---------- */
+function pagePostes(){
+  return `
+  ${breadcrumb([{label:"Compétences & Habilitations",href:"#/competences"},{label:"Postes / fonctions"}])}
+  ${pageHeader("Postes / fonctions","", `<button class="btn btn-primary" data-open-poste-form>+ Nouveau poste</button>`)}
+  ${dataTable(
+    [ {label:"Poste", render:p=>`<div class="cell-title">${esc(p.intitule)}</div><div class="cell-sub">${esc(p.code)}</div>`},
+      {label:"Département", render:p=>esc(p.departement)},
+      {label:"Responsable", render:p=>esc(p.responsable)},
+      {label:"Compétences requises", render:p=>p.competencesRequises.length},
+      {label:"Criticité", render:p=>badge(LABELS.competenceCriticite[p.criticite])},
+      {label:"Effectif", render:p=>DB.people.filter(x=>x.posteId===p.id).length} ],
+    DB.postes, {rowRoute:p=>`competences/postes/${p.id}`}
+  )}`;
+}
+function pagePosteFiche(id){
+  const p = getPoste(id);
+  if(!p) return emptyState("🧭","Poste introuvable","Ce poste n'existe pas.");
+  const titulaires = DB.people.filter(x=>x.posteId===id);
+  const habs = (p.habilitationsObligatoires||[]).map(getHabilitation).filter(Boolean);
+  return `
+  ${breadcrumb([{label:"Compétences & Habilitations",href:"#/competences"},{label:"Postes",href:"#/competences/postes"},{label:p.intitule}])}
+  <div class="card mb-2">
+    <div class="flex justify-between items-center">
+      <div><span class="badge badge-neutral">${esc(p.code)}</span> ${badge(LABELS.competenceCriticite[p.criticite])} ${!p.actif?badgeRaw("neutral","Inactif"):""}</div>
+      <button class="btn btn-secondary btn-sm" data-open-poste-form="${p.id}">✏️ Modifier</button>
+    </div>
+    <h1 class="mt-2">${esc(p.intitule)}</h1>
+    <p class="section-sub mt-2">${esc(p.departement)} · Responsable : ${esc(p.responsable)}</p>
+    <p class="text-sm mt-4" style="color:var(--text-primary);">${esc(p.description)}</p>
+  </div>
+  <div class="card mb-2">
+    <div class="flex justify-between items-center mb-2"><h3>Compétences requises</h3><button class="btn btn-secondary btn-sm" data-add-poste-competence="${p.id}">+ Ajouter</button></div>
+    ${dataTable(
+      [ {label:"Compétence", render:r=>{const c=getCompetence(r.competenceId); return c?esc(c.nom):r.competenceId;}},
+        {label:"Niveau requis", render:r=>esc(LABELS.niveauCompetence[r.niveauRequis])},
+        {label:"Obligatoire", render:r=>r.obligatoire?badgeRaw("danger","Oui"):badgeRaw("neutral","Non")},
+        {label:"", render:r=>`<button class="btn btn-ghost btn-sm" data-remove-poste-competence='${jsonAttr({posteId:p.id, competenceId:r.competenceId})}'>✕</button>`} ],
+      p.competencesRequises
+    )}
+  </div>
+  <div class="grid grid-2">
+    <div class="card">
+      <h3 class="mb-2">Habilitations obligatoires</h3>
+      ${habs.length?habs.map(h=>`<div class="rel-link" data-route="competences/habilitations/${h.id}"><span class="rel-name">🪪 ${esc(h.nom)}</span></div>`).join(""):`<p class="text-sm">Aucune.</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Titulaires du poste</h3>
+      ${titulaires.length?titulaires.map(t=>`<div class="rel-link" data-route="competences/personnes/${t.id}"><span class="rel-name">${esc(t.name)}</span><span class="chev">›</span></div>`).join(""):`<p class="text-sm">Aucun titulaire actuellement.</p>`}
+    </div>
+  </div>`;
+}
+
+/* ---------- Matrice globale ---------- */
+function pageCompetenceMatrice(){
+  const allComps = DB.competences.filter(c=>c.actif);
+  return `
+  ${breadcrumb([{label:"Compétences & Habilitations",href:"#/competences"},{label:"Matrice globale"}])}
+  ${pageHeader("Matrice des compétences","Personnes × compétences — conformité calculée automatiquement.")}
+  <div class="filters-bar">
+    ${filterSelect("f-comp-service","Service", [...new Set(DB.people.map(p=>p.service))].map(s=>({v:s,l:s})))}
+    ${filterSelect("f-comp-poste","Poste", DB.postes.map(p=>({v:p.id,l:p.intitule})))}
+    ${filterSelect("f-comp-competence","Compétence", allComps.map(c=>({v:c.id,l:c.nom})))}
+  </div>
+  <div id="comp-matrix-zone">${competenceMatrixTable(DB.people, allComps)}</div>`;
+}
+function competenceMatrixTable(people, comps){
+  return `<div class="card card-flush table-wrap"><table class="dt">
+    <thead><tr><th>Collaborateur</th>${comps.map(c=>`<th>${esc(c.nom)}</th>`).join("")}</tr></thead>
+    <tbody>${people.map(p=>{
+      const poste = getPoste(p.posteId);
+      return `<tr class="clickable" data-route="competences/personnes/${p.id}"><td data-label="Collaborateur"><div class="cell-title">${esc(p.name)}</div><div class="cell-sub">${poste?esc(poste.intitule):"—"}</div></td>
+      ${comps.map(c=>{
+        const req = poste ? poste.competencesRequises.find(r=>r.competenceId===c.id) : null;
+        if(!req) return `<td data-label="${esc(c.nom)}" style="text-align:center;color:var(--text-secondary);">—</td>`;
+        const row = personCompetenceRow(p.id, req);
+        const color = row.statut==="conforme"?"var(--success)":row.statut==="a_renforcer"?"var(--danger)":"var(--text-secondary)";
+        const val = row.niveauActuel===null?"?":row.niveauActuel;
+        return `<td data-label="${esc(c.nom)}" style="text-align:center;font-weight:700;color:${color};">${val}</td>`;
+      }).join("")}</tr>`;
+    }).join("")}</tbody>
+  </table></div>
+  <p class="text-xs mt-2">🟢 Conforme · 🔴 À renforcer · « ? » Non évalué · « — » Compétence non requise pour le poste.</p>`;
+}
+function applyCompetenceMatrixFilters(){
+  const service = document.getElementById("f-comp-service")?.value;
+  const posteId = document.getElementById("f-comp-poste")?.value;
+  const compId = document.getElementById("f-comp-competence")?.value;
+  let people = DB.people;
+  if(service) people = people.filter(p=>p.service===service);
+  if(posteId) people = people.filter(p=>p.posteId===posteId);
+  let comps = DB.competences.filter(c=>c.actif);
+  if(compId) comps = comps.filter(c=>c.id===compId);
+  document.getElementById("comp-matrix-zone").innerHTML = competenceMatrixTable(people, comps);
+}
+
+/* ---------- Référentiel des habilitations ---------- */
+function pageHabilitations(){
+  return `
+  ${breadcrumb([{label:"Compétences & Habilitations",href:"#/competences"},{label:"Habilitations"}])}
+  ${pageHeader("Référentiel des habilitations","", `<button class="btn btn-primary" data-open-habilitation-form>+ Nouvelle habilitation</button>`)}
+  <div class="grid grid-3">
+    ${DB.habilitations.map(h=>{
+      const nb = DB.personHabilitations.filter(ph=>ph.habilitationId===h.id).length;
+      return `<div class="card card-hover" data-route="competences/habilitations/${h.id}">
+        <div class="flex justify-between items-center"><span class="badge badge-neutral">${esc(h.code)}</span>${!h.actif?badgeRaw("neutral","Inactive"):""}</div>
+        <h3 class="mt-2">${esc(h.nom)}</h3>
+        <p class="text-sm mt-2">${esc(h.activite)}</p>
+        <p class="text-xs mt-2">${nb} attribution(s) · Validité ${h.dureeValiditeMois} mois</p>
+      </div>`;
+    }).join("")}
+  </div>`;
+}
+function pageHabilitationFiche(id){
+  const h = getHabilitation(id);
+  if(!h) return emptyState("🪪","Habilitation introuvable","Cette habilitation n'existe pas.");
+  const attributions = DB.personHabilitations.filter(ph=>ph.habilitationId===id).map(ph=>({...ph, statutCalcule:habilitationStatusCompute(ph), person:getPerson(ph.personId)}));
+  const comps = (h.competencesNecessaires||[]).map(getCompetence).filter(Boolean);
+  return `
+  ${breadcrumb([{label:"Compétences & Habilitations",href:"#/competences"},{label:"Habilitations",href:"#/competences/habilitations"},{label:h.nom}])}
+  <div class="card mb-2">
+    <div class="flex justify-between items-center">
+      <span class="badge badge-neutral">${esc(h.code)}</span>
+      <button class="btn btn-secondary btn-sm" data-open-habilitation-form="${h.id}">✏️ Modifier</button>
+    </div>
+    <h1 class="mt-2">${esc(h.nom)}</h1>
+    <p class="section-sub mt-2">${esc(h.activite)} · Niveau ${esc(h.niveau)} · Validité ${h.dureeValiditeMois} mois</p>
+    <p class="text-sm mt-4" style="color:var(--text-primary);">${esc(h.description)}</p>
+    <div class="grid grid-2 mt-4">
+      <div><div class="text-xs">AUTORITÉ POUVANT ATTRIBUER</div><div class="text-sm" style="color:var(--text-primary)">${esc(h.autorite)}</div></div>
+      <div><div class="text-xs">PRÉREQUIS</div><div class="text-sm" style="color:var(--text-primary)">${esc(h.prerequis||"—")}</div></div>
+    </div>
+    <p class="text-xs mt-4">Compétences nécessaires : ${comps.map(c=>esc(c.nom)).join(", ")||"—"}</p>
+    <p class="text-xs mt-2">${h.formationObligatoire?"✓ Formation obligatoire":""} ${h.evaluationObligatoire?"· ✓ Évaluation obligatoire":""}</p>
+  </div>
+  <div class="card">
+    <div class="flex justify-between items-center mb-2"><h3>Attributions</h3><button class="btn btn-secondary btn-sm" data-attribute-habilitation="${h.id}">+ Attribuer</button></div>
+    ${dataTable(
+      [ {label:"Collaborateur", render:a=>a.person?esc(a.person.name):"—"},
+        {label:"Date d'attribution", render:a=>fmtDate(a.dateAttribution)},
+        {label:"Expiration", render:a=>fmtDate(a.dateExpiration)},
+        {label:"Statut", render:a=>badge(LABELS.habilitationStatut[a.statutCalcule])},
+        {label:"", render:a=>`<button class="btn btn-secondary btn-sm" data-renew-habilitation="${a.id}">Renouveler</button> <button class="btn btn-ghost btn-sm" data-suspend-habilitation="${a.id}">${a.statut==='suspendue'?'Réactiver':'Suspendre'}</button>`} ],
+      attributions
+    )}
+  </div>`;
+}
+
+/* ---------- Fiche collaborateur ---------- */
+function pagePersonnes(){
+  return `
+  ${breadcrumb([{label:"Compétences & Habilitations",href:"#/competences"},{label:"Collaborateurs"}])}
+  ${pageHeader("Collaborateurs","", `<button class="btn btn-primary" data-open-person-form>+ Nouveau collaborateur</button>`)}
+  <div class="grid grid-3">
+    ${DB.people.map(p=>{
+      const poste = getPoste(p.posteId);
+      const rate = personConformityRate(p.id);
+      const today = new Date().toISOString().slice(0,10);
+      const revueEnRetard = p.prochaineRevue && p.prochaineRevue<today;
+      return `<div class="card card-hover" data-route="competences/personnes/${p.id}">
+        <div class="flex justify-between items-center"><h3>${esc(p.name)}</h3>${rate!==null?badgeRaw(rate>=80?"success":"warning",rate+"%"):badgeRaw("neutral","Non évalué")}</div>
+        <p class="text-sm mt-2">${poste?esc(poste.intitule):"—"} · ${esc(p.service)}</p>
+        ${revueEnRetard?`<p class="text-xs mt-2" style="color:var(--danger);">🔴 Revue de compétences en retard</p>`:""}
+      </div>`;
+    }).join("")}
+  </div>`;
+}
+function personTabsHtml(p, active){
+  const tabs = [{id:"infos",label:"Informations"},{id:"matrice",label:"Matrice individuelle"},{id:"evaluations",label:"Évaluations"},{id:"preuves",label:"Preuves"},{id:"habilitations",label:"Habilitations"},{id:"revues",label:"Revues"}];
+  return `<div class="tabs">${tabs.map(t=>`<button class="tab ${t.id===active?'active':''}" data-route="competences/personnes/${p.id}/${t.id}">${esc(t.label)}</button>`).join("")}</div>`;
+}
+function pagePersonneFiche(id, tab){
+  const p = getPerson(id);
+  if(!p) return emptyState("👤","Collaborateur introuvable","Ce collaborateur n'existe pas.");
+  tab = tab || "infos";
+  const poste = getPoste(p.posteId);
+  const rate = personConformityRate(p.id);
+  const header = `
+  ${breadcrumb([{label:"Compétences & Habilitations",href:"#/competences"},{label:"Collaborateurs",href:"#/competences/personnes"},{label:p.name}])}
+  <div class="card mb-2">
+    <div class="flex justify-between items-center">
+      <div><h1>${esc(p.name)}</h1><p class="section-sub mt-2">${poste?esc(poste.intitule):"—"} · ${esc(p.service)}${p.manager?" · Manager : "+esc(p.manager):""}</p></div>
+      <div class="flex gap-2 items-center">
+        ${rate!==null?badgeRaw(rate>=80?"success":"warning","Conformité : "+rate+"%"):badgeRaw("neutral","Non évalué")}
+        <button class="btn btn-secondary btn-sm" data-open-person-form="${p.id}">✏️</button>
+      </div>
+    </div>
+  </div>
+  ${personTabsHtml(p, tab)}`;
+  let body = "";
+  if(tab==="infos") body = personTabInfos(p, poste);
+  else if(tab==="matrice") body = personTabMatrice(p);
+  else if(tab==="evaluations") body = personTabEvaluations(p);
+  else if(tab==="preuves") body = personTabPreuves(p);
+  else if(tab==="habilitations") body = personTabHabilitations(p);
+  else if(tab==="revues") body = personTabRevues(p);
+  return header + body;
+}
+function personTabInfos(p, poste){
+  return `
+  <div class="grid grid-2">
+    <div class="card">
+      <h3 class="mb-2">Informations</h3>
+      <p class="text-sm">Fonction : ${poste?esc(poste.intitule):"—"}</p>
+      <p class="text-sm mt-2">Service : ${esc(p.service)}</p>
+      <p class="text-sm mt-2">Manager : ${esc(p.manager||"—")}</p>
+      <p class="text-sm mt-2">Date d'entrée : ${fmtDate(p.dateEntree)}</p>
+      <p class="text-sm mt-2">Dernière revue : ${p.derniereRevue?fmtDate(p.derniereRevue):"Jamais réalisée"}</p>
+      <p class="text-sm mt-2">Prochaine revue : ${fmtDate(p.prochaineRevue)}</p>
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Processus rattaché</h3>
+      ${p.processId?(()=>{const pr=getProcess(p.processId); return pr?`<div class="rel-link" data-route="processus/${pr.id}"><span class="rel-name">🧩 ${esc(pr.name)}</span><span class="chev">›</span></div>`:"";})():`<p class="text-sm">—</p>`}
+    </div>
+  </div>`;
+}
+function personTabMatrice(p){
+  const rows = personMatrix(p.id);
+  return `
+  ${!rows.length?`<div class="card">${emptyState("🗂️","Aucune compétence requise","Ce collaborateur n'est rattaché à aucun poste avec compétences définies.")}</div>`:dataTable(
+    [ {label:"Compétence", render:r=>esc(r.competence.nom)},
+      {label:"Niveau requis", render:r=>r.niveauRequis+" — "+esc(LABELS.niveauCompetence[r.niveauRequis])},
+      {label:"Niveau actuel", render:r=>r.niveauActuel===null?"—":r.niveauActuel+" — "+esc(LABELS.niveauCompetence[r.niveauActuel])},
+      {label:"Écart", render:r=>r.ecart===null?"—":(r.ecart>=0?"+":"")+r.ecart},
+      {label:"Statut", render:r=>badge(LABELS.ecartStatut[r.statut])},
+      {label:"", render:r=>`
+        <button class="btn btn-secondary btn-sm" data-open-evaluation-form='${jsonAttr({personId:p.id, competenceId:r.competence.id})}'>Évaluer</button>
+        ${r.statut==="a_renforcer"?`<button class="btn btn-secondary btn-sm" data-create-dev-action='${jsonAttr({personId:p.id, competenceId:r.competence.id})}'>+ Action</button>`:""}
+      `} ],
+    rows
+  )}`;
+}
+function personTabEvaluations(p){
+  const evals = DB.competenceEvaluations.filter(e=>e.personId===p.id).sort((a,b)=>b.date.localeCompare(a.date));
+  return dataTable(
+    [ {label:"Compétence", render:e=>{const c=getCompetence(e.competenceId); return c?esc(c.nom):"—";}},
+      {label:"Niveau évalué", render:e=>e.niveauEvalue},
+      {label:"Date", render:e=>fmtDate(e.date)},
+      {label:"Évaluateur", render:e=>esc(e.evaluateur)},
+      {label:"Méthode", render:e=>esc(e.methode)},
+      {label:"Résultat", render:e=>esc(e.resultat)} ],
+    evals, {emptyEmoji:"📋", emptyTitle:"Aucune évaluation", emptyText:"Aucune évaluation n'a encore été enregistrée."}
+  );
+}
+function personTabPreuves(p){
+  const preuves = DB.competencePreuves.filter(pr=>pr.personId===p.id);
+  return `
+  <div class="flex justify-between items-center mb-2"><span></span><button class="btn btn-primary btn-sm" data-open-preuve-form="${p.id}">+ Ajouter une preuve</button></div>
+  ${preuves.length? preuves.map(pr=>{
+    const c = getCompetence(pr.competenceId);
+    const doc = pr.documentId ? getDocument(pr.documentId) : null;
+    return `<div class="card mb-2">
+      <div class="flex justify-between items-center"><h3 style="font-size:14.5px;">${esc(pr.label)}</h3>${badgeRaw("info",LABELS.preuveCompetenceType[pr.type]||pr.type)}</div>
+      <p class="text-sm mt-2">Compétence : ${c?esc(c.nom):"—"} · ${fmtDate(pr.date)} · Évaluateur : ${esc(pr.evaluateur)}</p>
+      <p class="text-xs mt-2">Résultat : ${esc(pr.resultat)}</p>
+      ${doc?`<div class="rel-link" data-route="documents/${doc.type}/${doc.id}"><span class="rel-name">📄 ${esc(doc.title)}</span></div>`:""}
+    </div>`;
+  }).join("") : `<div class="card">${emptyState("📎","Aucune preuve","Aucune preuve de compétence n'a encore été associée.")}</div>`}`;
+}
+function personTabHabilitations(p){
+  const list = personHabilitationsList(p.id);
+  return `
+  <div class="flex justify-between items-center mb-2"><span></span><button class="btn btn-primary btn-sm" data-attribute-habilitation-for="${p.id}">+ Attribuer une habilitation</button></div>
+  ${list.length? dataTable(
+    [ {label:"Habilitation", render:ph=>ph.habilitation?esc(ph.habilitation.nom):"—"},
+      {label:"Attribution", render:ph=>fmtDate(ph.dateAttribution)},
+      {label:"Expiration", render:ph=>fmtDate(ph.dateExpiration)},
+      {label:"Statut", render:ph=>badge(LABELS.habilitationStatut[ph.statutCalcule])},
+      {label:"", render:ph=>`<button class="btn btn-secondary btn-sm" data-renew-habilitation="${ph.id}">Renouveler</button>`} ],
+    list
+  ) : `<div class="card">${emptyState("🪪","Aucune habilitation","Aucune habilitation n'est attribuée à ce collaborateur.")}</div>`}`;
+}
+function personTabRevues(p){
+  const reviews = DB.competenceReviews.filter(r=>r.personId===p.id).sort((a,b)=>b.date.localeCompare(a.date));
+  return `
+  <div class="flex justify-between items-center mb-2"><span></span><button class="btn btn-primary btn-sm" data-open-review-form="${p.id}">+ Nouvelle revue</button></div>
+  ${reviews.length? reviews.map(r=>`
+    <div class="card mb-2">
+      <div class="flex justify-between items-center"><h3 style="font-size:14.5px;">Revue du ${fmtDate(r.date)}</h3><span class="text-xs">Évaluateur : ${esc(r.evaluateur)}</span></div>
+      <p class="text-sm mt-2"><strong>Compétences maîtrisées :</strong> ${r.competencesMaitrisees.join(", ")||"—"}</p>
+      <p class="text-sm mt-2"><strong>À renforcer :</strong> ${r.competencesARenforcer.join(", ")||"—"}</p>
+      <p class="text-sm mt-2"><strong>Conclusion :</strong> ${esc(r.conclusion)}</p>
+      <p class="text-xs mt-2">Prochaine revue : ${fmtDate(r.prochaineDateRevue)}</p>
+    </div>`).join("") : `<div class="card">${emptyState("📝","Aucune revue","Aucune revue de compétences n'a encore été réalisée pour ce collaborateur.")}</div>`}`;
+}
+
+/* ---------- Vue Auditeur ---------- */
+function pageCompetenceAuditeur(){
+  const s = competenceDashboardStats();
+  const nonEvaluees = [];
+  DB.people.forEach(p=> personMatrix(p.id).filter(r=>r.statut==="non_evalue" && r.obligatoire).forEach(r=> nonEvaluees.push({person:p, row:r})));
+  const habExpirees = DB.personHabilitations.map(ph=>({...ph, statutCalcule:habilitationStatusCompute(ph)})).filter(ph=>ph.statutCalcule==="expiree");
+  const today = new Date().toISOString().slice(0,10);
+  const revuesRetard = DB.people.filter(p=>p.prochaineRevue && p.prochaineRevue<today);
+  return `
+  ${breadcrumb([{label:"Compétences & Habilitations",href:"#/competences"},{label:"Vue Auditeur"}])}
+  ${pageHeader("État des compétences et habilitations","Vue synthétique conçue pour répondre rapidement aux questions d'un audit RH.")}
+  <div class="grid grid-4 mb-4">
+    <div class="card"><div class="kpi"><div class="val">${DB.people.length}</div><div class="lbl">Collaborateurs</div></div></div>
+    <div class="card"><div class="kpi"><div class="val">${DB.postes.length}</div><div class="lbl">Postes</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:var(--primary)">${s.pctConformes} %</div><div class="lbl">Taux de conformité</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:${s.ecarts?'var(--danger)':'var(--success)'}">${s.ecarts}</div><div class="lbl">Écarts</div></div></div>
+  </div>
+  <div class="grid grid-2">
+    <div class="card">
+      <h3 class="mb-2">Formations obligatoires non réalisées / compétences non évaluées</h3>
+      ${nonEvaluees.length?nonEvaluees.slice(0,8).map(x=>`<div class="rel-link" data-route="competences/personnes/${x.person.id}"><span class="rel-name">${esc(x.person.name)} — ${esc(x.row.competence.nom)}</span></div>`).join(""):`<p class="text-sm">Toutes les compétences obligatoires sont évaluées.</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Habilitations expirées</h3>
+      ${habExpirees.length?habExpirees.map(ph=>{const person=getPerson(ph.personId); return `<div class="rel-link" data-route="competences/personnes/${ph.personId}"><span class="rel-name">${person?esc(person.name):"—"} — ${esc(ph.habilitation?ph.habilitation.nom:getHabilitation(ph.habilitationId).nom)}</span></div>`;}).join(""):`<p class="text-sm">Aucune habilitation expirée.</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Revues de compétences en retard</h3>
+      ${revuesRetard.length?revuesRetard.map(p=>`<div class="rel-link" data-route="competences/personnes/${p.id}"><span class="rel-name">${esc(p.name)}</span></div>`).join(""):`<p class="text-sm">Aucune revue en retard.</p>`}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Réponses aux questions d'audit RH</h3>
+      <p class="text-xs">1. Compétences définies par fonction ? <strong>Oui</strong> — ${DB.postes.length} postes avec exigences formalisées.</p>
+      <p class="text-xs mt-2">2-3. Compétences détenues et évaluées ? ${DB.competenceEvaluations.length} évaluation(s) enregistrée(s).</p>
+      <p class="text-xs mt-2">4. Écarts identifiés ? ${s.ecarts} écart(s) détecté(s) automatiquement.</p>
+      <p class="text-xs mt-2">5. Actions suivies ? ${DB.actions.filter(a=>a.origin==="competence").length} action(s), dont ${s.formationsAFaire} en cours.</p>
+      <p class="text-xs mt-2">7. Habilitations suivies ? ${s.habActives} active(s), ${s.habExpirees} expirée(s).</p>
+      <p class="text-xs mt-2">8. Preuves disponibles ? ${DB.competencePreuves.length} preuve(s) enregistrée(s), consultables depuis chaque évaluation.</p>
+      <p class="text-xs mt-2">9. Revues réalisées ? ${DB.competenceReviews.length} revue(s) enregistrée(s) ; ${revuesRetard.length} en retard.</p>
+    </div>
+  </div>`;
+}
+
+/* ============================================================
+   13ter. FOURNISSEURS
+   ============================================================ */
+
+/* ---------- Logique métier ---------- */
+function fournisseurEvalScore(evaluation){
+  const totalPoids = evaluation.criteres.reduce((s,c)=>s+c.ponderation,0)||1;
+  const weighted = evaluation.criteres.reduce((s,c)=>s+c.note*c.ponderation,0);
+  return Math.round((weighted/totalPoids)*10)/10;
+}
+function fournisseurEvalNiveau(score){
+  if(score>=8.5) return "excellent";
+  if(score>=7) return "satisfaisant";
+  if(score>=5) return "sous_surveillance";
+  if(score>=3) return "insuffisant";
+  return "critique";
+}
+function fournisseurLatestEvaluation(fid){
+  const evals = DB.fournisseurEvaluations.filter(e=>e.fournisseurId===fid).sort((a,b)=>a.date.localeCompare(b.date));
+  return evals.length ? evals[evals.length-1] : null;
+}
+function fournisseurDocStatusCompute(doc){
+  if(!doc.echeance || doc.echeance==="—") return "valide";
+  const diffDays = Math.round((new Date(doc.echeance+"T00:00:00")-new Date())/(1000*3600*24));
+  if(diffDays<0) return "expire";
+  if(diffDays<=90) return "a_renouveler";
+  return "valide";
+}
+function fournisseurRisks(fid){ return DB.risks.filter(r=>r.fournisseurId===fid); }
+function fournisseurIncidents(fid){ return DB.fournisseurIncidents.filter(i=>i.fournisseurId===fid); }
+function fournisseurAudits(fid){ return DB.audits.filter(a=>a.fournisseurId===fid); }
+function fournisseurActions(fid){ return DB.actions.filter(a=>a.fournisseurId===fid); }
+function fournisseurDocs(fid){ return DB.fournisseurDocuments.filter(d=>d.fournisseurId===fid); }
+function fournisseurPerformanceScore(fid){
+  const evalLatest = fournisseurLatestEvaluation(fid);
+  let score = evalLatest ? fournisseurEvalScore(evalLatest)*10 : 60;
+  const incidents = fournisseurIncidents(fid);
+  score -= incidents.filter(i=>i.gravite==="majeure").length*8;
+  score -= incidents.filter(i=>i.gravite==="critique").length*15;
+  score -= incidents.filter(i=>i.gravite==="mineure").length*3;
+  const audits = fournisseurAudits(fid);
+  const ecarts = audits.reduce((s,a)=>s+a.findings.filter(isAuditEcart).length,0);
+  score -= ecarts*5;
+  const risksOuverts = fournisseurRisks(fid).filter(r=>r.status==="ouvert" && (r.level==="critique"||r.level==="eleve")).length;
+  score -= risksOuverts*7;
+  const actionsRetard = fournisseurActions(fid).filter(a=>a.status==="retard").length;
+  score -= actionsRetard*5;
+  return {score: Math.max(0, Math.min(100, Math.round(score))), evalLatest, incidents, ecarts, risksOuverts, actionsRetard};
+}
+function fournisseurDashboardStats(){
+  const total = DB.fournisseurs.length;
+  const critiques = DB.fournisseurs.filter(f=>f.criticite==="critique").length;
+  const surveillance = DB.fournisseurs.filter(f=>f.statut==="sous_surveillance").length;
+  const bloques = DB.fournisseurs.filter(f=>f.statut==="bloque"||f.statut==="suspendu").length;
+  const evalARealiser = DB.fournisseurs.filter(f=>{ const e=fournisseurLatestEvaluation(f.id); if(!e) return true; const mois=(Date.now()-new Date(e.date+"T00:00:00").getTime())/(1000*3600*24*30); return mois>12; }).length;
+  const auditsAPlanifier = DB.audits.filter(a=>a.type==="fournisseur" && a.status==="planifie").length;
+  const incidentsOuverts = DB.fournisseurIncidents.filter(i=>!i.actionId).length;
+  const risquesEleves = DB.risks.filter(r=>r.fournisseurId && r.status==="ouvert" && (r.level==="critique"||r.level==="eleve")).length;
+  const actionsRetard = DB.actions.filter(a=>a.origin==="fournisseur" && a.status==="retard").length;
+  const scores = DB.fournisseurs.map(f=>fournisseurPerformanceScore(f.id).score);
+  const tauxMaitrise = scores.length ? Math.round(scores.reduce((s,v)=>s+v,0)/scores.length) : 0;
+  return {total, critiques, surveillance, bloques, evalARealiser, auditsAPlanifier, incidentsOuverts, risquesEleves, actionsRetard, tauxMaitrise};
+}
+function fournisseurAlerts(){
+  const alerts = [];
+  DB.fournisseurDocuments.forEach(d=>{
+    const st = fournisseurDocStatusCompute(d);
+    const f = getFournisseur(d.fournisseurId);
+    if(!f) return;
+    if(st==="expire") alerts.push({level:"danger", text:`Le document « ${d.titre} » de ${f.nomCommercial} est expiré.`});
+    else if(st==="a_renouveler") alerts.push({level:"warning", text:`Le document « ${d.titre} » de ${f.nomCommercial} arrive à échéance (${fmtDate(d.echeance)}).`});
+  });
+  DB.fournisseurs.filter(f=>f.criticite==="critique").forEach(f=>{
+    const perf = fournisseurPerformanceScore(f.id);
+    if(perf.score<50) alerts.push({level:"danger", text:`${f.nomCommercial} est un fournisseur critique avec une performance dégradée (${perf.score}/100).`});
+  });
+  DB.fournisseurs.filter(f=>f.statut==="sous_surveillance").forEach(f=> alerts.push({level:"warning", text:`${f.nomCommercial} est sous surveillance.`}));
+  return alerts;
+}
+
+/* ---------- Tableau de bord ---------- */
+function pageFournisseurs(){
+  const s = fournisseurDashboardStats();
+  const kpi = (route, val, label, color)=>`<div class="card card-hover" data-route="${route}"><div class="kpi"><div class="val" style="color:${color||'var(--text-primary)'}">${val}</div><div class="lbl">${esc(label)}</div></div></div>`;
+  const ranked = [...DB.fournisseurs].map(f=>({f, perf:fournisseurPerformanceScore(f.id)})).sort((a,b)=>b.perf.score-a.perf.score);
+  const top = ranked.slice(0,3);
+  const risque = ranked.slice(-3).reverse();
+  return `
+  ${pageHeader("Fournisseurs","Le centre de maîtrise des prestataires externes de Qonnect.",
+    `<button class="btn btn-secondary" data-route="fournisseurs/critiques">🛡️ Fournisseurs critiques</button><button class="btn btn-primary" data-open-fournisseur-form>+ Nouveau fournisseur</button>`)}
+  <div class="quick-actions mb-4">
+    <button class="qa-btn" data-route="fournisseurs/liste">📋 Tous les fournisseurs</button>
+    <button class="qa-btn" data-route="fournisseurs/evaluations">📊 Évaluations</button>
+    <button class="qa-btn" data-route="fournisseurs/audits">🔍 Audits fournisseurs</button>
+    <button class="qa-btn" data-route="fournisseurs/incidents">🚨 Incidents</button>
+    <button class="qa-btn" data-route="fournisseurs/risques">⚠️ Risques</button>
+    <button class="qa-btn" data-route="fournisseurs/documents">🗂️ Contrats & documents</button>
+    <button class="qa-btn" data-route="fournisseurs/performance">📈 Performance</button>
+    <button class="qa-btn" data-route="fournisseurs/vues">👁️ Vues Achats / Qualité / Direction / Auditeur</button>
+  </div>
+  <div class="grid grid-4 mb-4">
+    ${kpi("fournisseurs/liste", s.total, "Fournisseurs")}
+    ${kpi("fournisseurs/critiques", s.critiques, "Fournisseurs critiques", "var(--danger)")}
+    ${kpi("fournisseurs/liste", s.surveillance, "Sous surveillance", s.surveillance?"var(--warning)":"var(--success)")}
+    ${kpi("fournisseurs/liste", s.bloques, "Bloqués / suspendus", s.bloques?"var(--danger)":"var(--success)")}
+  </div>
+  <div class="grid grid-4 mb-4">
+    ${kpi("fournisseurs/evaluations", s.evalARealiser, "Évaluations à réaliser", s.evalARealiser?"var(--warning)":"var(--success)")}
+    ${kpi("fournisseurs/audits", s.auditsAPlanifier, "Audits à planifier")}
+    ${kpi("fournisseurs/incidents", s.incidentsOuverts, "Incidents ouverts", s.incidentsOuverts?"var(--warning)":"var(--success)")}
+    ${kpi("fournisseurs/risques", s.risquesEleves, "Risques élevés", s.risquesEleves?"var(--danger)":"var(--success)")}
+  </div>
+  <div class="card mb-4"><div class="kpi"><div class="val" style="color:var(--primary)">${s.tauxMaitrise} / 100</div><div class="lbl">Taux global de maîtrise des fournisseurs</div></div></div>
+  <div class="grid grid-2 mb-4">
+    <div class="card">
+      <h3 class="mb-2">🏆 Top fournisseurs performants</h3>
+      ${top.map(x=>`<div class="rel-link" data-route="fournisseurs/liste/${x.f.id}"><span class="rel-name">${esc(x.f.nomCommercial)}</span><span class="text-sm" style="font-weight:700;color:var(--success);">${x.perf.score}/100</span></div>`).join("")}
+    </div>
+    <div class="card">
+      <h3 class="mb-2">⚠️ Fournisseurs à risque</h3>
+      ${risque.map(x=>`<div class="rel-link" data-route="fournisseurs/liste/${x.f.id}"><span class="rel-name">${esc(x.f.nomCommercial)}</span><span class="text-sm" style="font-weight:700;color:var(--danger);">${x.perf.score}/100</span></div>`).join("")}
+    </div>
+  </div>
+  <div class="card">
+    <h3 class="mb-2">🔔 Alertes</h3>
+    ${(()=>{ const al=fournisseurAlerts(); return al.length? al.slice(0,8).map(a=>`<div class="rel-link"><span class="rel-name">${a.level==="danger"?"🔴":"🟠"} ${esc(a.text)}</span></div>`).join("") : `<p class="text-sm">Aucune alerte active.</p>`; })()}
+  </div>`;
+}
+
+function pageFournisseursListe(){
+  return `
+  ${breadcrumb([{label:"Fournisseurs",href:"#/fournisseurs"},{label:"Tous les fournisseurs"}])}
+  ${pageHeader("Fournisseurs","", `<button class="btn btn-primary" data-open-fournisseur-form>+ Nouveau fournisseur</button>`)}
+  <div class="filters-bar">
+    ${filterSelect("f-frn-statut","Statut", Object.entries(LABELS.fournisseurStatut).map(([v,l])=>({v,l:l.l})))}
+    ${filterSelect("f-frn-criticite","Criticité", Object.entries(LABELS.fournisseurCriticite).map(([v,l])=>({v,l:l.l})))}
+  </div>
+  <div id="frn-list-zone">${fournisseurTable(DB.fournisseurs.filter(fournisseurMatchesScope))}</div>`;
+}
+function fournisseurTable(list){
+  return dataTable(
+    [ {label:"Fournisseur", render:f=>`<div class="cell-title">${esc(f.nomCommercial)}</div><div class="cell-sub">${(f.categories||[]).join(", ")}</div>`},
+      {label:"Criticité", render:f=>badge(LABELS.fournisseurCriticite[f.criticite])},
+      {label:"Statut", render:f=>badge(LABELS.fournisseurStatut[f.statut])},
+      {label:"Performance", render:f=>{const p=fournisseurPerformanceScore(f.id); return `<span style="font-weight:700;color:${p.score>=70?'var(--success)':p.score>=50?'var(--warning)':'var(--danger)'}">${p.score}/100</span>`;}},
+      {label:"Référent interne", render:f=>esc(f.referentInterne)} ],
+    list, {rowRoute:f=>`fournisseurs/liste/${f.id}`, emptyEmoji:"🏭", emptyTitle:"Aucun fournisseur", emptyText:"Aucun fournisseur ne correspond à ces filtres."}
+  );
+}
+function applyFournisseurFilters(){
+  const statut = document.getElementById("f-frn-statut")?.value;
+  const criticite = document.getElementById("f-frn-criticite")?.value;
+  let rows = DB.fournisseurs.filter(fournisseurMatchesScope);
+  if(statut) rows = rows.filter(f=>f.statut===statut);
+  if(criticite) rows = rows.filter(f=>f.criticite===criticite);
+  document.getElementById("frn-list-zone").innerHTML = fournisseurTable(rows);
+}
+
+function pageFournisseursCritiques(){
+  const critiques = DB.fournisseurs.filter(f=>f.criticite==="critique");
+  return `
+  ${breadcrumb([{label:"Fournisseurs",href:"#/fournisseurs"},{label:"Fournisseurs critiques"}])}
+  ${pageHeader("Fournisseurs critiques","Vue dédiée aux Achats, à la Qualité et à la Direction — dépendances, risques et continuité.")}
+  ${critiques.length? critiques.map(f=>{
+    const perf = fournisseurPerformanceScore(f.id);
+    const risks = fournisseurRisks(f.id);
+    const incidents = fournisseurIncidents(f.id);
+    return `<div class="card mb-4">
+      <div class="flex justify-between items-center"><h3>${esc(f.nomCommercial)}</h3><span style="font-weight:700;color:${perf.score>=70?'var(--success)':perf.score>=50?'var(--warning)':'var(--danger)'}">${perf.score}/100</span></div>
+      <p class="text-sm mt-2">${esc(f.criticiteJustification||"—")}</p>
+      <div class="grid grid-3 mt-4">
+        <div><div class="text-xs">RISQUES</div>${risks.length?risks.map(r=>`<div class="rel-link" data-route="risques/${r.id}"><span class="rel-name">${esc(r.name)}</span></div>`).join(""):`<p class="text-sm">Aucun</p>`}</div>
+        <div><div class="text-xs">INCIDENTS</div>${incidents.length?incidents.map(i=>`<p class="text-sm mt-2">${esc(i.description.slice(0,60))}</p>`).join(""):`<p class="text-sm">Aucun</p>`}</div>
+        <div><div class="text-xs">DÉPENDANCE</div><p class="text-sm">${(f.produitsServices||[]).map(p=>p.nom).join(", ")}</p></div>
+      </div>
+      <button class="btn btn-secondary btn-sm mt-4" data-route="fournisseurs/liste/${f.id}">Voir la fiche complète</button>
+    </div>`;
+  }).join("") : `<div class="card">${emptyState("🟢","Aucun fournisseur critique","Aucun fournisseur n'est classé critique actuellement.")}</div>`}`;
+}
+
+function pageFournisseurEvaluationsHub(){
+  return `
+  ${breadcrumb([{label:"Fournisseurs",href:"#/fournisseurs"},{label:"Évaluations"}])}
+  ${pageHeader("Évaluations fournisseurs","")}
+  ${dataTable(
+    [ {label:"Fournisseur", render:e=>{const f=getFournisseur(e.fournisseurId); return f?esc(f.nomCommercial):"—";}},
+      {label:"Date", render:e=>fmtDate(e.date)},
+      {label:"Périodicité", render:e=>esc(e.periode)},
+      {label:"Score", render:e=>fournisseurEvalScore(e)+"/10"},
+      {label:"Niveau", render:e=>badge(LABELS.fournisseurEvalNiveau[fournisseurEvalNiveau(fournisseurEvalScore(e))])},
+      {label:"Évaluateur", render:e=>esc(e.evaluateur)} ],
+    [...DB.fournisseurEvaluations].sort((a,b)=>b.date.localeCompare(a.date)), {rowRoute:e=>`fournisseurs/liste/${e.fournisseurId}/evaluations`}
+  )}`;
+}
+function pageFournisseurAuditsHub(){
+  const audits = DB.audits.filter(a=>a.type==="fournisseur");
+  return `
+  ${breadcrumb([{label:"Fournisseurs",href:"#/fournisseurs"},{label:"Audits fournisseurs"}])}
+  ${pageHeader("Audits fournisseurs","", `<button class="btn btn-primary" data-open-audit-wizard>+ Nouvel audit fournisseur</button>`)}
+  ${dataTable(
+    [ {label:"Fournisseur", render:a=>{const f=getFournisseur(a.fournisseurId); return f?esc(f.nomCommercial):"—";}},
+      {label:"Audit", render:a=>`<div class="cell-title">${esc(a.title)}</div>`},
+      {label:"Date", render:a=>fmtDate(a.date)},
+      {label:"Constats", render:a=>a.findings.length},
+      {label:"Statut", render:a=>badge(LABELS.auditStatus[a.status])} ],
+    audits, {rowRoute:a=>`audits/${a.id}`, emptyEmoji:"🔍", emptyTitle:"Aucun audit fournisseur", emptyText:"Aucun audit fournisseur n'est encore planifié."}
+  )}`;
+}
+function pageFournisseurIncidentsHub(){
+  return `
+  ${breadcrumb([{label:"Fournisseurs",href:"#/fournisseurs"},{label:"Incidents"}])}
+  ${pageHeader("Incidents fournisseurs","À ne pas confondre avec les non-conformités du module NC/CAPA.")}
+  ${dataTable(
+    [ {label:"Fournisseur", render:i=>{const f=getFournisseur(i.fournisseurId); return f?esc(f.nomCommercial):"—";}},
+      {label:"Type", render:i=>esc(LABELS.incidentType[i.type]||i.type)},
+      {label:"Description", render:i=>esc(i.description.slice(0,60))},
+      {label:"Gravité", render:i=>badge(LABELS.incidentGravite[i.gravite])},
+      {label:"Date", render:i=>fmtDate(i.date)},
+      {label:"Lien", render:i=>(i.ncEventId?"🚨 NC · ":"")+(i.riskId?"⚠️ Risque · ":"")+(i.actionId?"✅ Action":"")||"—"} ],
+    [...DB.fournisseurIncidents].sort((a,b)=>b.date.localeCompare(a.date)), {rowRoute:i=>`fournisseurs/liste/${i.fournisseurId}/incidents`}
+  )}`;
+}
+function pageFournisseurRisquesHub(){
+  const risks = DB.risks.filter(r=>r.fournisseurId);
+  return `
+  ${breadcrumb([{label:"Fournisseurs",href:"#/fournisseurs"},{label:"Risques fournisseurs"}])}
+  ${pageHeader("Risques fournisseurs","")}
+  ${dataTable(
+    [ {label:"Fournisseur", render:r=>{const f=getFournisseur(r.fournisseurId); return f?esc(f.nomCommercial):"—";}},
+      {label:"Risque", render:r=>esc(r.name)},
+      {label:"Niveau", render:r=>badge(LABELS.riskLevel[r.level])},
+      {label:"Responsable", render:r=>esc(r.owner)},
+      {label:"Statut", render:r=>badge(LABELS.riskStatus[r.status])} ],
+    risks, {rowRoute:r=>`risques/${r.id}`, emptyEmoji:"⚠️", emptyTitle:"Aucun risque fournisseur", emptyText:"Aucun risque n'est encore associé à un fournisseur."}
+  )}`;
+}
+function pageFournisseurDocumentsHub(){
+  const docs = DB.fournisseurDocuments.map(d=>({...d, statutCalcule:fournisseurDocStatusCompute(d)}));
+  return `
+  ${breadcrumb([{label:"Fournisseurs",href:"#/fournisseurs"},{label:"Contrats & documents"}])}
+  ${pageHeader("Contrats & documents fournisseurs","Gestion des échéances — contrats, certifications, assurances.")}
+  ${dataTable(
+    [ {label:"Fournisseur", render:d=>{const f=getFournisseur(d.fournisseurId); return f?esc(f.nomCommercial):"—";}},
+      {label:"Document", render:d=>`<div class="cell-title">${esc(d.titre)}</div><div class="cell-sub">${esc(LABELS.fournisseurDocType[d.type]||d.type)}</div>`},
+      {label:"Échéance", render:d=>fmtDate(d.echeance)},
+      {label:"Responsable", render:d=>esc(d.responsable)},
+      {label:"Statut", render:d=>badge(LABELS.fournisseurDocStatut[d.statutCalcule])} ],
+    [...docs].sort((a,b)=>(a.echeance||"").localeCompare(b.echeance||"")), {rowRoute:d=>`fournisseurs/liste/${d.fournisseurId}/documents`}
+  )}`;
+}
+function pageFournisseurPerformanceHub(){
+  const ranked = [...DB.fournisseurs].map(f=>({f, perf:fournisseurPerformanceScore(f.id)})).sort((a,b)=>b.perf.score-a.perf.score);
+  return `
+  ${breadcrumb([{label:"Fournisseurs",href:"#/fournisseurs"},{label:"Performance"}])}
+  ${pageHeader("Performance des fournisseurs","Score composite : dernière évaluation, incidents, écarts d'audit, risques ouverts, actions en retard.")}
+  ${dataTable(
+    [ {label:"Fournisseur", render:x=>esc(x.f.nomCommercial)},
+      {label:"Score", render:x=>`<strong style="color:${x.perf.score>=70?'var(--success)':x.perf.score>=50?'var(--warning)':'var(--danger)'}">${x.perf.score}/100</strong>`},
+      {label:"Dernière évaluation", render:x=>x.perf.evalLatest?fournisseurEvalScore(x.perf.evalLatest)+"/10 le "+fmtDate(x.perf.evalLatest.date):"Non évalué"},
+      {label:"Incidents", render:x=>x.perf.incidents.length},
+      {label:"Écarts d'audit", render:x=>x.perf.ecarts},
+      {label:"Risques ouverts", render:x=>x.perf.risksOuverts} ],
+    ranked, {rowRoute:x=>`fournisseurs/liste/${x.f.id}`}
+  )}`;
+}
+function pageFournisseurVues(){
+  const s = fournisseurDashboardStats();
+  const views = [{id:"achats",l:"Vue Achats"},{id:"qualite",l:"Vue Qualité"},{id:"direction",l:"Vue Direction"},{id:"auditeur",l:"Vue Auditeur"}];
+  const active = "achats";
+  let content = "";
+  if(active==="achats"){
+    content = `<div class="card"><h3 class="mb-2">Vue Achats</h3><p class="text-sm">Suivi opérationnel : ${s.total} fournisseurs, ${s.evalARealiser} évaluation(s) à réaliser, ${s.actionsRetard} action(s) en retard.</p></div>`;
+  }
+  return `
+  ${breadcrumb([{label:"Fournisseurs",href:"#/fournisseurs"},{label:"Vues"}])}
+  ${pageHeader("Vues Achats / Qualité / Direction / Auditeur","")}
+  <div class="filters-bar">${views.map(v=>`<a class="chip ${v.id==='achats'?'active':''}" data-route="fournisseurs/vues/${v.id}">${esc(v.l)}</a>`).join("")}</div>
+  <div class="grid grid-2">
+    <div class="card"><h3 class="mb-2">🛒 Vue Achats</h3><p class="text-sm">${s.total} fournisseurs suivis · ${s.evalARealiser} évaluation(s) à réaliser · ${s.actionsRetard} action(s) en retard.</p></div>
+    <div class="card"><h3 class="mb-2">✅ Vue Qualité</h3><p class="text-sm">${s.auditsAPlanifier} audit(s) à planifier · ${s.incidentsOuverts} incident(s) ouvert(s) · ${DB.fournisseurEvaluations.length} évaluation(s) enregistrée(s).</p></div>
+    <div class="card"><h3 class="mb-2">🧭 Vue Direction</h3><p class="text-sm">Taux global de maîtrise : <strong>${s.tauxMaitrise}/100</strong> · ${s.critiques} fournisseur(s) critique(s) · ${s.risquesEleves} risque(s) élevé(s).</p></div>
+    <div class="card"><h3 class="mb-2">🔍 Vue Auditeur</h3><p class="text-sm">${DB.fournisseurDocuments.length} document(s) suivi(s) · ${DB.audits.filter(a=>a.type==='fournisseur').length} audit(s) fournisseur réalisé(s) ou planifié(s).</p></div>
+  </div>`;
+}
+
+/* ---------- Fiche fournisseur ---------- */
+function fournisseurTabsHtml(f, active){
+  const tabs = [
+    {id:"identification",label:"Identification"}, {id:"produits",label:"Produits & services"}, {id:"documents",label:"Documents"},
+    {id:"evaluations",label:"Évaluations"}, {id:"incidents",label:"Incidents"}, {id:"risques",label:"Risques"},
+    {id:"audits",label:"Audits"}, {id:"actions",label:"Actions"}, {id:"performance",label:"Performance"},
+  ];
+  return `<div class="tabs">${tabs.map(t=>`<button class="tab ${t.id===active?'active':''}" data-route="fournisseurs/liste/${f.id}/${t.id}">${esc(t.label)}</button>`).join("")}</div>`;
+}
+function pageFournisseurFiche(id, tab){
+  const f = getFournisseur(id);
+  if(!f) return emptyState("🏭","Fournisseur introuvable","Ce fournisseur n'existe pas.");
+  tab = tab || "identification";
+  const perf = fournisseurPerformanceScore(id);
+  const stepIndex = FOURNISSEUR_WORKFLOW_STEPS.indexOf(f.statut==="actif"?"actif":f.statut==="sous_surveillance"?"surveillance":f.statut==="suspendu"?"suspension":f.statut==="bloque"?"suspension":f.statut==="archive"?"archivage":"prospect");
+  const header = `
+  ${breadcrumb([{label:"Fournisseurs",href:"#/fournisseurs"},{label:"Liste",href:"#/fournisseurs/liste"},{label:f.nomCommercial}])}
+  <div class="card mb-2">
+    <div class="flex justify-between items-center" style="flex-wrap:wrap;gap:10px;">
+      <div>
+        ${badge(LABELS.fournisseurCriticite[f.criticite])} ${badge(LABELS.fournisseurStatut[f.statut])}
+        <h1 class="mt-2">${esc(f.nomCommercial)}</h1>
+        <p class="section-sub mt-2">${esc(f.raisonSociale)} · ${(f.categories||[]).join(", ")}</p>
+      </div>
+      <div class="flex gap-2 items-center">
+        <span style="font-weight:700;font-size:20px;color:${perf.score>=70?'var(--success)':perf.score>=50?'var(--warning)':'var(--danger)'}">${perf.score}/100</span>
+        <button class="btn btn-secondary btn-sm" data-open-fournisseur-form="${f.id}">✏️</button>
+      </div>
+    </div>
+    <div class="mt-4">${workflowStepper(FOURNISSEUR_WORKFLOW_LABELS, stepIndex<0?0:stepIndex)}</div>
+  </div>
+  ${fournisseurTabsHtml(f, tab)}`;
+  let body = "";
+  if(tab==="identification") body = frnTabIdentification(f);
+  else if(tab==="produits") body = frnTabProduits(f);
+  else if(tab==="documents") body = frnTabDocuments(f);
+  else if(tab==="evaluations") body = frnTabEvaluations(f);
+  else if(tab==="incidents") body = frnTabIncidents(f);
+  else if(tab==="risques") body = frnTabRisques(f);
+  else if(tab==="audits") body = frnTabAudits(f);
+  else if(tab==="actions") body = frnTabActions(f);
+  else if(tab==="performance") body = frnTabPerformance(f, perf);
+  return header + body;
+}
+function frnTabIdentification(f){
+  return `
+  <div class="grid grid-2">
+    <div class="card">
+      <h3 class="mb-2">Identification</h3>
+      <p class="text-sm">Raison sociale : ${esc(f.raisonSociale)}</p>
+      <p class="text-sm mt-2">SIRET : ${esc(f.siret)} · TVA : ${esc(f.tva)}</p>
+      <p class="text-sm mt-2">Pays : ${esc(f.pays)}</p>
+      <p class="text-sm mt-2">Site web : ${esc(f.siteWeb||"—")}</p>
+      <p class="text-sm mt-2">Adresse : ${esc(f.adresse)}</p>
+      <p class="text-sm mt-2">Référent interne : ${esc(f.referentInterne)}</p>
+      <p class="text-sm mt-2">Date d'entrée : ${fmtDate(f.dateEntree)}</p>
+    </div>
+    <div class="card">
+      <h3 class="mb-2">Contacts</h3>
+      ${(f.contacts||[]).map(c=>`<div class="rel-link"><span class="rel-name">${esc(c.nom)}</span><span class="text-sm">${esc(c.role)}</span></div>`).join("")||`<p class="text-sm">Aucun contact renseigné.</p>`}
+      <h3 class="mb-2 mt-4">Criticité</h3>
+      ${badge(LABELS.fournisseurCriticite[f.criticite])}
+      <p class="text-sm mt-2">${esc(f.criticiteJustification||"—")}</p>
+    </div>
+  </div>
+  <div class="card mt-4">
+    <h3 class="mb-2">Processus concernés</h3>
+    ${(f.processIds||[]).map(pid=>{const p=getProcess(pid); return p?`<div class="rel-link" data-route="processus/${p.id}"><span class="rel-name">🧩 ${esc(p.name)}</span><span class="chev">›</span></div>`:"";}).join("")||`<p class="text-sm">Aucun processus associé.</p>`}
+  </div>`;
+}
+function frnTabProduits(f){
+  return `<div class="grid grid-2">${(f.produitsServices||[]).map(p=>`<div class="card"><h3>${esc(p.nom)}</h3><p class="text-sm mt-2">${esc(p.description)}</p></div>`).join("")||`<div class="card">${emptyState("📦","Aucun produit/service","Aucun produit ou service n'est encore associé à ce fournisseur.")}</div>`}</div>`;
+}
+function frnTabDocuments(f){
+  const docs = fournisseurDocs(f.id).map(d=>({...d, statutCalcule:fournisseurDocStatusCompute(d)}));
+  return `
+  <div class="flex justify-between items-center mb-2"><span></span><button class="btn btn-primary btn-sm" data-open-fournisseur-doc-form="${f.id}">+ Ajouter un document</button></div>
+  ${docs.length? dataTable(
+    [ {label:"Document", render:d=>`<div class="cell-title">${esc(d.titre)}</div><div class="cell-sub">${esc(LABELS.fournisseurDocType[d.type]||d.type)}</div>`},
+      {label:"Date", render:d=>fmtDate(d.date)},
+      {label:"Échéance", render:d=>fmtDate(d.echeance)},
+      {label:"Responsable", render:d=>esc(d.responsable)},
+      {label:"Statut", render:d=>badge(LABELS.fournisseurDocStatut[d.statutCalcule])} ],
+    docs
+  ) : `<div class="card">${emptyState("🗂️","Aucun document","Aucun document n'est encore associé à ce fournisseur.")}</div>`}`;
+}
+function frnTabEvaluations(f){
+  const evals = DB.fournisseurEvaluations.filter(e=>e.fournisseurId===f.id).sort((a,b)=>b.date.localeCompare(a.date));
+  return `
+  <div class="flex justify-between items-center mb-2"><span></span><button class="btn btn-primary btn-sm" data-open-fournisseur-eval-form="${f.id}">+ Nouvelle évaluation</button></div>
+  ${evals.length? evals.map(e=>{
+    const score = fournisseurEvalScore(e);
+    const niveau = fournisseurEvalNiveau(score);
+    return `<div class="card mb-2">
+      <div class="flex justify-between items-center"><h3 style="font-size:14.5px;">Évaluation du ${fmtDate(e.date)} (${esc(e.periode)})</h3>${badge(LABELS.fournisseurEvalNiveau[niveau])}</div>
+      <p class="text-sm mt-2">Score global : <strong>${score}/10</strong> · Évaluateur : ${esc(e.evaluateur)}</p>
+      ${e.criteres.map(c=>`<div class="flex justify-between items-center mt-2"><span class="text-sm">${esc(c.nom)} (pondération ${c.ponderation}%)</span><span class="text-sm" style="font-weight:700;">${c.note}/10</span></div>${c.commentaire?`<p class="text-xs mt-2">${esc(c.commentaire)}</p>`:""}`).join("")}
+    </div>`;
+  }).join("") : `<div class="card">${emptyState("📊","Aucune évaluation","Aucune évaluation n'a encore été réalisée pour ce fournisseur.")}</div>`}`;
+}
+function frnTabIncidents(f){
+  const incidents = fournisseurIncidents(f.id);
+  return `
+  <div class="flex justify-between items-center mb-2"><span></span><button class="btn btn-primary btn-sm" data-open-fournisseur-incident-form="${f.id}">+ Déclarer un incident</button></div>
+  ${incidents.length? incidents.map(i=>`
+    <div class="card mb-2">
+      <div class="flex justify-between items-center">${badgeRaw("info",LABELS.incidentType[i.type]||i.type)}${badge(LABELS.incidentGravite[i.gravite])}</div>
+      <p class="text-sm mt-2" style="color:var(--text-primary);">${esc(i.description)}</p>
+      <p class="text-xs mt-2">Impact : ${esc(i.impact)} · ${fmtDate(i.date)}</p>
+      <div class="flex gap-2 mt-2" style="flex-wrap:wrap;">
+        ${i.ncEventId?`<span class="badge badge-neutral" data-route="evenements/non_conformite/${i.ncEventId}" style="cursor:pointer;">NC liée →</span>`:`<button class="btn btn-secondary btn-sm" data-create-nc-from-incident="${i.id}">+ Créer une NC</button>`}
+        ${i.actionId?`<span class="badge badge-neutral" data-route="actions" style="cursor:pointer;">Action liée →</span>`:`<button class="btn btn-secondary btn-sm" data-create-action-from-incident="${i.id}">+ Créer une action</button>`}
+        ${i.riskId?`<span class="badge badge-neutral" data-route="risques/${i.riskId}" style="cursor:pointer;">Risque associé →</span>`:""}
+      </div>
+    </div>`).join("") : `<div class="card">${emptyState("🚨","Aucun incident","Aucun incident n'a été déclaré pour ce fournisseur.")}</div>`}`;
+}
+function frnTabRisques(f){
+  const risks = fournisseurRisks(f.id);
+  return risks.length? dataTable(
+    [ {label:"Risque", render:r=>esc(r.name)}, {label:"Niveau", render:r=>badge(LABELS.riskLevel[r.level])},
+      {label:"Responsable", render:r=>esc(r.owner)}, {label:"Statut", render:r=>badge(LABELS.riskStatus[r.status])} ],
+    risks, {rowRoute:r=>`risques/${r.id}`}
+  ) : `<div class="card">${emptyState("⚠️","Aucun risque","Aucun risque n'est encore identifié pour ce fournisseur.", `<button class="btn btn-primary" data-open-quick="risk" data-preset-process="${(f.processIds||[])[0]||''}">+ Identifier un risque</button>`)}</div>`;
+}
+function frnTabAudits(f){
+  const audits = fournisseurAudits(f.id);
+  return audits.length? dataTable(
+    [ {label:"Audit", render:a=>esc(a.title)}, {label:"Date", render:a=>fmtDate(a.date)},
+      {label:"Constats", render:a=>a.findings.length}, {label:"Statut", render:a=>badge(LABELS.auditStatus[a.status])} ],
+    audits, {rowRoute:a=>`audits/${a.id}`}
+  ) : `<div class="card">${emptyState("🔍","Aucun audit","Aucun audit n'a encore été réalisé pour ce fournisseur.", `<button class="btn btn-primary" data-open-audit-wizard data-preset-process="${(f.processIds||[])[0]||''}">+ Créer un audit</button>`)}</div>`;
+}
+function frnTabActions(f){
+  const actions = fournisseurActions(f.id);
+  return actions.length? actionTable(actions) : `<div class="card">${emptyState("✅","Aucune action","Aucune action n'est encore ouverte pour ce fournisseur.")}</div>`;
+}
+function frnTabPerformance(f, perf){
+  return `
+  <div class="card mb-4">
+    <div class="flex items-center gap-3">
+      ${ringGauge(perf.score, perf.score>=70?"var(--success)":perf.score>=50?"var(--warning)":"var(--danger)", 80)}
+      <div class="kpi"><div class="val">${perf.score}/100</div><div class="lbl">Score de performance global</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3 class="mb-2">Composantes du score</h3>
+    <p class="text-sm">Dernière évaluation : ${perf.evalLatest?fournisseurEvalScore(perf.evalLatest)+"/10 le "+fmtDate(perf.evalLatest.date):"Non évaluée"}</p>
+    <p class="text-sm mt-2">Incidents pris en compte : ${perf.incidents.length}</p>
+    <p class="text-sm mt-2">Écarts d'audit : ${perf.ecarts}</p>
+    <p class="text-sm mt-2">Risques élevés/critiques ouverts : ${perf.risksOuverts}</p>
+    <p class="text-sm mt-2">Actions en retard : ${perf.actionsRetard}</p>
+    <p class="text-xs mt-4">Score calculé automatiquement à partir des données réelles — jamais déclaré sans preuve.</p>
+  </div>`;
+}
+
+/* ============================================================
+   13quater. GROUPE / ÉTABLISSEMENTS / SERVICES
+   ============================================================ */
+function loadScope(){
+  try{ const raw = localStorage.getItem("qonnect_scope_v1"); if(raw) return JSON.parse(raw); }catch(e){}
+  return {level:"groupe"};
+}
+function saveScope(){ localStorage.setItem("qonnect_scope_v1", JSON.stringify(CURRENT_SCOPE)); }
+let CURRENT_SCOPE = loadScope();
+function scopeLabel(){
+  if(CURRENT_SCOPE.level==="groupe") return DB.groupe.nom;
+  const etab = getEtablissement(CURRENT_SCOPE.etablissementId);
+  if(CURRENT_SCOPE.level==="etablissement") return DB.groupe.nom+" / "+(etab?etab.nom:"?");
+  const svc = getService(CURRENT_SCOPE.serviceId);
+  return DB.groupe.nom+" / "+(etab?etab.nom:"?")+" / "+(svc?svc.nom:"?");
+}
+function updateScopePill(){
+  const el = document.getElementById("scope-label");
+  if(el) el.textContent = scopeLabel();
+}
+function matchesScope(entity){
+  if(CURRENT_SCOPE.level==="groupe") return true;
+  const eid = entity.etablissementId;
+  if(eid==="GROUPE") return true;
+  const effectiveEid = eid || DEFAULT_ETABLISSEMENT_ID;
+  if(effectiveEid!==CURRENT_SCOPE.etablissementId) return false;
+  if(CURRENT_SCOPE.level==="service"){
+    if(!entity.serviceId) return true;
+    return entity.serviceId===CURRENT_SCOPE.serviceId;
+  }
+  return true;
+}
+function openScopeSelector(){
+  const etabs = DB.etablissements;
+  openModal({title:"Changer de périmètre",
+    bodyHtml:`
+      <p class="text-xs mb-2">Le périmètre sélectionné filtre les vues des principaux modules (risques, audits, actions, événements, fournisseurs, documents). La Revue de Direction et les Référentiels restent transversaux.</p>
+      <div class="rel-link" data-set-scope='${jsonAttr({level:"groupe"})}' style="cursor:pointer;"><span class="rel-name">🏢 ${esc(DB.groupe.nom)}</span><span class="text-xs">Groupe — vision consolidée</span></div>
+      ${etabs.map(e=>{
+        const services = DB.services.filter(s=>s.etablissementId===e.id);
+        return `<div class="rel-link" data-set-scope='${jsonAttr({level:"etablissement", etablissementId:e.id})}' style="cursor:pointer;"><span class="rel-name">🏭 ${esc(e.nom)}</span></div>`
+          + services.map(s=>`<div class="rel-link" style="padding-left:24px;cursor:pointer;" data-set-scope='${jsonAttr({level:"service", etablissementId:e.id, serviceId:s.id})}'><span class="rel-name">↳ ${esc(s.nom)}</span></div>`).join("");
+      }).join("")}
+    `,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Fermer</button>`,
+  });
+}
+function fournisseurMatchesScope(f){
+  if(CURRENT_SCOPE.level==="groupe") return true;
+  if(Array.isArray(f.etablissementIds) && f.etablissementIds.length){
+    return f.etablissementIds.includes(CURRENT_SCOPE.etablissementId);
+  }
+  return matchesScope(f);
+}
+function etablissementStats(eid){
+  return {
+    services: DB.services.filter(s=>s.etablissementId===eid).length,
+    risksOpen: DB.risks.filter(r=>scopeEtablissementId(r)===eid && r.type==="risque" && r.status==="ouvert").length,
+    actionsRetard: DB.actions.filter(a=>scopeEtablissementId(a)===eid && a.status==="retard").length,
+    auditsEcarts: DB.audits.filter(a=>scopeEtablissementId(a)===eid).reduce((s,a)=>s+a.findings.filter(isAuditEcart).length,0),
+  };
+}
+function pageGroupe(){
+  const s = {
+    etablissements: DB.etablissements.length,
+    services: DB.services.length,
+    risquesEleves: DB.risks.filter(r=>r.type==="risque"&&r.status==="ouvert"&&(r.level==="critique"||r.level==="eleve")).length,
+    audits: DB.audits.length,
+    incidentsFournisseurs: DB.fournisseurIncidents.length,
+    reclamations: DB.events.filter(e=>e.type==="reclamation").length,
+    fournisseurs: DB.fournisseurs.length,
+    actionsOuvertes: DB.actions.filter(a=>a.status!=="termine").length,
+  };
+  const rows = DB.etablissements.map(e=>({etab:e, stats:etablissementStats(e.id)}));
+  return `
+  ${pageHeader("Vision Groupe", esc(DB.groupe.nom)+" — vue consolidée de l'ensemble des établissements, sans jamais perdre l'établissement d'origine de chaque donnée.",
+    `<button class="btn btn-secondary" data-open-scope-selector>🏢 Changer de périmètre</button>`)}
+  <div class="grid grid-4 mb-4">
+    <div class="card"><div class="kpi"><div class="val">${s.etablissements}</div><div class="lbl">Établissements</div></div></div>
+    <div class="card"><div class="kpi"><div class="val">${s.services}</div><div class="lbl">Services</div></div></div>
+    <div class="card"><div class="kpi"><div class="val" style="color:${s.risquesEleves?'var(--danger)':'var(--success)'}">${s.risquesEleves}</div><div class="lbl">Risques élevés/critiques (Groupe)</div></div></div>
+    <div class="card"><div class="kpi"><div class="val">${s.actionsOuvertes}</div><div class="lbl">Actions ouvertes (Groupe)</div></div></div>
+  </div>
+  <div class="grid grid-4 mb-4">
+    <div class="card"><div class="kpi"><div class="val">${s.audits}</div><div class="lbl">Audits (Groupe)</div></div></div>
+    <div class="card"><div class="kpi"><div class="val">${s.incidentsFournisseurs}</div><div class="lbl">Incidents fournisseurs</div></div></div>
+    <div class="card"><div class="kpi"><div class="val">${s.reclamations}</div><div class="lbl">Réclamations</div></div></div>
+    <div class="card"><div class="kpi"><div class="val">${s.fournisseurs}</div><div class="lbl">Fournisseurs référencés</div></div></div>
+  </div>
+  <div class="card">
+    <div class="flex justify-between items-center mb-2" style="flex-wrap:wrap;gap:8px;"><h3>Comparaison entre établissements</h3><span class="text-xs">Règle d'agrégation : somme pour les compteurs ci-dessous.</span></div>
+    ${dataTable(
+      [ {label:"Établissement", render:r=>`<div class="cell-title">${esc(r.etab.nom)}</div><div class="cell-sub">${esc(r.etab.type)}</div>`},
+        {label:"Services", render:r=>r.stats.services},
+        {label:"Risques ouverts", render:r=>r.stats.risksOpen},
+        {label:"Actions en retard", render:r=>r.stats.actionsRetard},
+        {label:"Écarts d'audit", render:r=>r.stats.auditsEcarts},
+        {label:"", render:r=>`<button class="btn btn-secondary btn-sm" data-set-scope='${jsonAttr({level:"etablissement", etablissementId:r.etab.id})}'>Voir ce périmètre →</button>`} ],
+      rows
+    )}
+  </div>`;
+}
+
+/* ============================================================
    14. RÉFÉRENTIELS — moteur de conformité
    ============================================================ */
 
@@ -2138,7 +3569,7 @@ function legacyRequirementBundle(r){
   (r.extraRiskIds||[]).forEach(id=>{ const rk=getRisk(id); if(rk && rk.status==="ouvert") riskMap.set(rk.id,rk); });
   const risksOpen = [...riskMap.values()];
   const indicatorsBad = process ? DB.indicators.filter(i=>i.processId===process.id && i.status!=="vert") : [];
-  const auditEcarts = audits.some(a=>a.findings.some(f=>f.type==="ecart") && a.status!=="cloture");
+  const auditEcarts = audits.some(a=>a.findings.some(f=>isAuditEcart(f)) && a.status!=="cloture");
   return {docs, audits, actionsOpen, actionsLate, risksOpen, indicatorsBad, auditEcarts, process, processes:process?[process]:[]};
 }
 function customExigenceBundle(e){
@@ -2152,7 +3583,7 @@ function customExigenceBundle(e){
   let risksOpen = (e.riskIds||[]).map(getRisk).filter(Boolean).filter(r=>r.status==="ouvert");
   processes.forEach(p=>{ DB.risks.filter(r=>r.processId===p.id && r.type==="risque" && r.status==="ouvert" && (r.level==="critique"||r.level==="eleve")).forEach(r=>{ if(!risksOpen.find(x=>x.id===r.id)) risksOpen.push(r); }); });
   const indicatorsBad = processes.flatMap(p=> DB.indicators.filter(i=>i.processId===p.id && i.status!=="vert"));
-  const auditEcarts = audits.some(a=>a.findings.some(f=>f.type==="ecart") && a.status!=="cloture");
+  const auditEcarts = audits.some(a=>a.findings.some(f=>isAuditEcart(f)) && a.status!=="cloture");
   return {docs, audits, actionsOpen, actionsLate, risksOpen, indicatorsBad, auditEcarts, process:processes[0]||null, processes};
 }
 function scoreCoverage(bundle){
@@ -2606,6 +4037,7 @@ function refTabExigences(ref, score){
 
 function refExigenceDetail(ref, v){
   const reasons = coverageReasons(v.bundle);
+  const fournisseursConcernes = v.bundle.processes.length ? DB.fournisseurs.filter(f=>(f.processIds||[]).some(pid=>v.bundle.processes.some(p=>p.id===pid))) : [];
   return `
   ${breadcrumb([{label:"Référentiels",href:"#/referentiels"},{label:ref.name,href:"#/referentiels/"+ref.id},{label:v.ref}])}
   <div class="grid" style="grid-template-columns:2fr 1fr;gap:24px;">
@@ -2620,6 +4052,11 @@ function refExigenceDetail(ref, v){
         <ul>${reasons.map(r=>`<li class="text-sm mt-2">${esc(r)}</li>`).join("")}</ul>
         <p class="text-xs mt-4">Calcul basé sur les preuves réellement enregistrées dans Qonnect — jamais déclaré sans preuve.</p>
       </div>
+      ${fournisseursConcernes.length?`<div class="card mb-2">
+        <h3 class="mb-2">Fournisseurs concernés</h3>
+        <p class="text-xs mb-2">Prestataires externes rattachés aux processus couverts par cette exigence (ISO 9001 §8.4 — maîtrise des processus, produits et services fournis par des tiers).</p>
+        ${fournisseursConcernes.map(f=>{const perf=fournisseurPerformanceScore(f.id); return `<div class="rel-link" data-route="fournisseurs/liste/${f.id}"><span class="rel-name">🏭 ${esc(f.nomCommercial)}</span>${badge(LABELS.fournisseurCriticite[f.criticite])}<span class="text-sm">${perf.score}/100</span></div>`;}).join("")}
+      </div>`:""}
       <div class="card">
         <h3 class="mb-2">Analyse d'impact — si cette exigence évolue</h3>
         <p class="text-xs mb-2">En cas de modification de cette exigence (ou de sa source normative), Qonnect identifie automatiquement ce qui serait à revoir :</p>
@@ -3021,51 +4458,11 @@ function openQuickForm(kind, presets, triggerEl){
   }
 
   else if(kind==="audit"){
-    openModal({title:"Créer un audit",
-      bodyHtml:`
-        <div class="field"><label>Titre <span class="req">*</span></label><input type="text" id="qf-title" placeholder="Ex : Audit interne Production"></div>
-        <div class="field-row">
-          <div class="field"><label>Processus</label><select id="qf-process"><option value="">—</option>${processOptions}</select></div>
-          <div class="field"><label>Date</label><input type="date" id="qf-date"></div>
-        </div>
-        <div class="field"><label>Auditeur</label><input type="text" id="qf-auditor" placeholder="Nom de l'auditeur"></div>
-        <div class="field"><label>Objectif de l'audit</label><textarea id="qf-obj"></textarea></div>`,
-      footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">Créer l'audit</button>`,
-      onMount:(o)=>{ o.querySelector("#qf-submit").addEventListener("click", ()=>{
-        const title = o.querySelector("#qf-title").value.trim();
-        if(!title){ toast("Merci de saisir un titre","⚠️"); return; }
-        const id = nextId("AUD", DB.audits);
-        DB.audits.push({ id, title, processId:o.querySelector("#qf-process").value||presets.processId||null,
-          objective:o.querySelector("#qf-obj").value.trim()||"—", scope:"—", auditor:o.querySelector("#qf-auditor").value.trim()||"Non assigné",
-          date:o.querySelector("#qf-date").value||new Date().toISOString().slice(0,10), status:"planifie", findings:[] });
-        saveDB(); closeModal(); toast("Audit créé avec succès"); navigate(`audits/${id}`);
-      });}
-    });
+    openAuditWizard(presets);
   }
 
   else if(kind==="finding"){
-    openModal({title:"Ajouter un constat",
-      bodyHtml:`
-        <div class="field"><label>Type</label><select id="qf-type"><option value="ecart">Écart</option><option value="point_fort">Point fort</option></select></div>
-        <div class="field"><label>Constat <span class="req">*</span></label><textarea id="qf-text"></textarea></div>
-        <div class="field"><label><input type="checkbox" id="qf-gen-action" style="width:auto;margin-right:6px;">Générer automatiquement une action corrective</label></div>`,
-      footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">Ajouter</button>`,
-      onMount:(o)=>{ o.querySelector("#qf-submit").addEventListener("click", ()=>{
-        const text = o.querySelector("#qf-text").value.trim();
-        if(!text){ toast("Merci de décrire le constat","⚠️"); return; }
-        const audit = getAudit(presets.auditId);
-        const type = o.querySelector("#qf-type").value;
-        const fid = "C-"+String(Date.now()).slice(-5);
-        let actionId = null;
-        if(o.querySelector("#qf-gen-action").checked && type==="ecart"){
-          actionId = nextId("ACT", DB.actions);
-          DB.actions.push({ id:actionId, title:"Traiter le constat : "+text.slice(0,60), owner:audit.auditor, due:new Date(Date.now()+14*86400000).toISOString().slice(0,10),
-            priority:"moyenne", status:"a_faire", origin:"audit", originId:audit.id, processId:audit.processId });
-        }
-        audit.findings.push({id:fid, type, text, actionId});
-        saveDB(); closeModal(); toast("Constat ajouté"+(actionId?" — action générée":"")); render();
-      });}
-    });
+    openConstatForm(presets.auditId, null);
   }
 
   else if(kind==="change"){
@@ -3209,6 +4606,759 @@ function openTrainingForm(documentId){
       const id = "TRN-"+String(Date.now()).slice(-6);
       DB.trainings.push({ id, documentId, title:"Prise de connaissance — "+d.title+" v"+d.version, audience, completedBy:[], quiz:o.querySelector("#qf-quiz").checked, dueDate:o.querySelector("#qf-due").value||"—" });
       saveDB(); closeModal(); toast("Campagne de lecture lancée"); render();
+    });}
+  });
+}
+
+/* ============================================================
+   19bis-audit. ASSISTANT DE CRÉATION D'AUDIT & FORMULAIRES
+   ============================================================ */
+const AUDIT_TYPE_OBJECTIVES = {
+  interne: ["Vérifier la conformité au référentiel","Vérifier l'application des procédures"],
+  fournisseur: ["Évaluer la performance du fournisseur","Vérifier la maîtrise des risques fournisseur"],
+  certification: ["Vérifier la conformité en vue de la certification"],
+  suivi: ["Vérifier l'efficacité des actions correctives précédentes"],
+  cible: ["Vérifier la maîtrise d'un risque ou d'un point spécifique"],
+  processus: ["Évaluer l'efficacité du processus"],
+};
+function openAuditWizard(presets){
+  presets = presets || {};
+  const state = {
+    step:1, title:"", type:"interne", referentielIds: DB.referentiels.filter(r=>r.active).map(r=>r.id),
+    date:"", duration:"1 jour", responsable:"", auditeurs:"", site:"",
+    processIds: presets.processId ? [presets.processId] : [],
+    motifs:[], activites:"", produits:"", periodeDebut:"", periodeFin:"", exclusions:"",
+    objectifs:[], requirementIds:[], documentIds:[], questions:[],
+  };
+  const stepper = ()=>`<div class="stepper-progress">${[1,2,3,4,5,6].map(i=>`<div class="${i<=state.step?'done':''}"></div>`).join("")}</div>`;
+  const processCbs = ()=> DB.processes.map(p=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="wiz-process-cb" value="${p.id}" ${state.processIds.includes(p.id)?"checked":""} style="width:auto;"> ${esc(p.name)}</label>`).join("");
+  const refCbs = ()=> DB.referentiels.map(r=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="wiz-ref-cb" value="${r.id}" ${state.referentielIds.includes(r.id)?"checked":""} style="width:auto;"> ${esc(r.name)}</label>`).join("");
+
+  function step1Html(){ return stepper()+`
+    <div class="step-title">Étape 1/6 — Identification</div>
+    <div class="field"><label>Nom de l'audit <span class="req">*</span></label><input type="text" id="wiz-title" value="${esc(state.title)}" placeholder="Ex : Audit interne Production"></div>
+    <div class="field-row">
+      <div class="field"><label>Type d'audit</label><select id="wiz-type">${Object.entries(LABELS.auditType).map(([v,l])=>`<option value="${v}" ${state.type===v?"selected":""}>${esc(l)}</option>`).join("")}</select></div>
+      <div class="field"><label>Site / établissement</label><input type="text" id="wiz-site" value="${esc(state.site)}" placeholder="Ex : Siège"></div>
+    </div>
+    <div class="field"><label>Référentiel(s)</label>${refCbs()}</div>
+    <div class="field-row">
+      <div class="field"><label>Date prévue</label><input type="date" id="wiz-date" value="${state.date}"></div>
+      <div class="field"><label>Durée</label><input type="text" id="wiz-duration" value="${esc(state.duration)}" placeholder="Ex : 1 jour"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Responsable d'audit</label><input type="text" id="wiz-responsable" value="${esc(state.responsable)}"></div>
+      <div class="field"><label>Auditeur(s) (séparés par une virgule)</label><input type="text" id="wiz-auditeurs" value="${esc(state.auditeurs)}"></div>
+    </div>
+    <div class="field"><label>Processus concerné(s)</label>${processCbs()}</div>`;
+  }
+  function step2Html(){ return stepper()+`
+    <div class="step-title">Étape 2/6 — Pourquoi cet audit est-il réalisé ?</div>
+    <div class="field">${Object.entries(LABELS.auditMotif).map(([v,l])=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="wiz-motif-cb" value="${v}" ${state.motifs.includes(v)?"checked":""} style="width:auto;"> ${esc(l)}</label>`).join("")}</div>`;
+  }
+  function step3Html(){ return stepper()+`
+    <div class="step-title">Étape 3/6 — Périmètre</div>
+    <div class="field"><label>Processus (confirmés)</label>${processCbs()}</div>
+    <div class="field"><label>Activités</label><input type="text" id="wiz-activites" value="${esc(state.activites)}" placeholder="Ex : Sélection et évaluation des fournisseurs"></div>
+    <div class="field"><label>Produits / services (optionnel)</label><input type="text" id="wiz-produits" value="${esc(state.produits)}"></div>
+    <div class="field-row">
+      <div class="field"><label>Période auditée — début</label><input type="date" id="wiz-periode-debut" value="${state.periodeDebut}"></div>
+      <div class="field"><label>Période auditée — fin</label><input type="date" id="wiz-periode-fin" value="${state.periodeFin}"></div>
+    </div>
+    <div class="field"><label>Exclusions</label><textarea id="wiz-exclusions" placeholder="Ce qui est explicitement hors périmètre">${esc(state.exclusions)}</textarea></div>
+    <div class="card" style="background:var(--background);">
+      <p class="text-xs" style="font-weight:700;">PÉRIMÈTRE DE L'AUDIT</p>
+      <p class="text-sm mt-2">Processus : ${state.processIds.map(id=>{const p=getProcess(id);return p?p.name:id;}).join(", ")||"—"}</p>
+      <p class="text-sm mt-2">Site : ${esc(state.site)||"—"}</p>
+    </div>`;
+  }
+  function step4Html(){
+    const suggestions = AUDIT_TYPE_OBJECTIVES[state.type] || ["Vérifier la conformité au référentiel","Évaluer l'efficacité du processus","Identifier des opportunités d'amélioration"];
+    return stepper()+`
+    <div class="step-title">Étape 4/6 — Objectifs</div>
+    <div class="quick-actions mb-2">${suggestions.map(s=>`<button class="chip" data-wiz-add-objectif="${esc(s)}">+ ${esc(s)}</button>`).join("")}</div>
+    <div id="wiz-objectifs-list">${state.objectifs.map((o,i)=>`<div class="rel-link"><span class="rel-name">${esc(o)}</span><button class="btn btn-ghost btn-sm" data-wiz-remove-objectif="${i}">✕</button></div>`).join("")}</div>
+    <div class="field-row mt-2">
+      <div class="field" style="flex:1;"><input type="text" id="wiz-objectif-input" placeholder="Ajouter un objectif personnalisé"></div>
+      <button class="btn btn-secondary" id="wiz-add-custom-objectif" style="height:40px;">+ Ajouter</button>
+    </div>`;
+  }
+  function step5Html(){
+    const relevantViews = state.processIds.length ? (state.referentielIds.length?state.referentielIds:["ISO9001"]).flatMap(refId=>getReferentielExigenceViews(refId).filter(v=>v.process && state.processIds.includes(v.process.id))) : [];
+    const relevantDocs = state.processIds.length ? DB.documents.filter(d=>d.status!=="obsolete" && state.processIds.includes(d.processId)) : [];
+    return stepper()+`
+    <div class="step-title">Étape 5/6 — Critères d'audit</div>
+    <p class="text-sm mb-2">Qonnect propose les exigences pertinentes selon le périmètre sélectionné.</p>
+    <div class="field" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
+      ${relevantViews.length?relevantViews.map(v=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="wiz-req-cb" value="${v.id}" ${state.requirementIds.includes(v.id)?"checked":""} style="width:auto;"> ${esc(v.ref)} — ${esc(v.title)} ${badge(LABELS.exigenceCoverage[v.level])}</label>`).join(""):`<p class="text-sm">Sélectionnez un processus et un référentiel pour voir les exigences suggérées.</p>`}
+    </div>
+    <div class="field mt-4"><label>Documents applicables</label>
+      <div style="max-height:150px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
+        ${relevantDocs.length?relevantDocs.map(d=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="wiz-doc-cb" value="${d.id}" ${state.documentIds.includes(d.id)?"checked":""} style="width:auto;"> ${esc(d.title)}</label>`).join(""):`<p class="text-sm">Aucun document disponible pour ce périmètre.</p>`}
+      </div>
+    </div>`;
+  }
+  function step6Html(){
+    const questionsList = state.questions.length ? `<p class="text-sm mb-2">${state.questions.length} question(s) proposée(s) — modifiables après création de l'audit.</p>`+state.questions.map(q=>`<div class="rel-link"><span class="rel-name">${esc(q.question)}</span></div>`).join("") : "";
+    return stepper()+`
+    <div class="step-title">Étape 6/6 — Plan d'audit & récapitulatif</div>
+    <div class="card" style="background:var(--background);margin-bottom:16px;">
+      <p class="text-sm"><strong>${esc(state.title||"(sans titre)")}</strong> — ${esc(LABELS.auditType[state.type])}</p>
+      <p class="text-xs mt-2">Processus : ${state.processIds.map(id=>{const p=getProcess(id);return p?p.name:id;}).join(", ")||"—"} · Date : ${state.date?fmtDate(state.date):"—"}</p>
+      <p class="text-xs mt-2">${state.requirementIds.length} exigence(s) retenue(s) comme critères d'audit</p>
+    </div>
+    ${state.questions.length?"":`<button class="btn btn-primary" id="wiz-generate-plan">🧠 Générer le plan d'audit</button>`}
+    <div id="wiz-questions-preview">${questionsList}</div>`;
+  }
+  function bodyForStep(){ return state.step===1?step1Html():state.step===2?step2Html():state.step===3?step3Html():state.step===4?step4Html():state.step===5?step5Html():step6Html(); }
+  function stepFoot(){ return `
+    ${state.step>1?`<button class="btn btn-secondary" id="wiz-prev">← Précédent</button>`:`<button class="btn btn-secondary" data-close-modal>Annuler</button>`}
+    ${state.step<6?`<button class="btn btn-primary" id="wiz-next">Suivant →</button>`:`<button class="btn btn-primary" id="wiz-finish">Créer l'audit</button>`}
+  `; }
+  function captureStepValues(o){
+    if(state.step===1){
+      state.title = o.querySelector("#wiz-title").value.trim(); state.type = o.querySelector("#wiz-type").value;
+      state.site = o.querySelector("#wiz-site").value.trim(); state.date = o.querySelector("#wiz-date").value;
+      state.duration = o.querySelector("#wiz-duration").value.trim(); state.responsable = o.querySelector("#wiz-responsable").value.trim();
+      state.auditeurs = o.querySelector("#wiz-auditeurs").value.trim();
+    }
+    if(state.step===3){
+      state.activites = o.querySelector("#wiz-activites").value.trim(); state.produits = o.querySelector("#wiz-produits").value.trim();
+      state.periodeDebut = o.querySelector("#wiz-periode-debut").value; state.periodeFin = o.querySelector("#wiz-periode-fin").value;
+      state.exclusions = o.querySelector("#wiz-exclusions").value.trim();
+    }
+  }
+  function mount(o){
+    if(state.step===1||state.step===3) o.querySelectorAll(".wiz-process-cb").forEach(cb=>cb.addEventListener("change", ()=>{ state.processIds = [...o.querySelectorAll(".wiz-process-cb:checked")].map(c=>c.value); }));
+    if(state.step===1) o.querySelectorAll(".wiz-ref-cb").forEach(cb=>cb.addEventListener("change", ()=>{ state.referentielIds = [...o.querySelectorAll(".wiz-ref-cb:checked")].map(c=>c.value); }));
+    if(state.step===2) o.querySelectorAll(".wiz-motif-cb").forEach(cb=>cb.addEventListener("change", ()=>{ state.motifs = [...o.querySelectorAll(".wiz-motif-cb:checked")].map(c=>c.value); }));
+    if(state.step===4){
+      o.querySelectorAll("[data-wiz-add-objectif]").forEach(btn=>btn.addEventListener("click", ()=>{ state.objectifs.push(btn.getAttribute("data-wiz-add-objectif")); refresh(o); }));
+      o.querySelectorAll("[data-wiz-remove-objectif]").forEach(btn=>btn.addEventListener("click", ()=>{ state.objectifs.splice(parseInt(btn.getAttribute("data-wiz-remove-objectif"),10),1); refresh(o); }));
+      o.querySelector("#wiz-add-custom-objectif").addEventListener("click", ()=>{ const val=o.querySelector("#wiz-objectif-input").value.trim(); if(val){ state.objectifs.push(val); refresh(o); } });
+    }
+    if(state.step===5){
+      o.querySelectorAll(".wiz-req-cb").forEach(cb=>cb.addEventListener("change", ()=>{ state.requirementIds = [...o.querySelectorAll(".wiz-req-cb:checked")].map(c=>c.value); }));
+      o.querySelectorAll(".wiz-doc-cb").forEach(cb=>cb.addEventListener("change", ()=>{ state.documentIds = [...o.querySelectorAll(".wiz-doc-cb:checked")].map(c=>c.value); }));
+    }
+    if(state.step===6){
+      const genBtn = o.querySelector("#wiz-generate-plan");
+      if(genBtn) genBtn.addEventListener("click", ()=>{ state.questions = generateAuditQuestions(state.processIds, state.referentielIds); refresh(o); });
+    }
+    const prevBtn = o.querySelector("#wiz-prev"); if(prevBtn) prevBtn.addEventListener("click", ()=>{ captureStepValues(o); state.step--; refresh(o); });
+    const nextBtn = o.querySelector("#wiz-next"); if(nextBtn) nextBtn.addEventListener("click", ()=>{
+      captureStepValues(o);
+      if(state.step===1 && !state.title){ toast("Merci de saisir un nom d'audit","⚠️"); return; }
+      if(state.step===1 && !state.processIds.length){ toast("Sélectionnez au moins un processus","⚠️"); return; }
+      state.step++; refresh(o);
+    });
+    const finishBtn = o.querySelector("#wiz-finish"); if(finishBtn) finishBtn.addEventListener("click", ()=>{ captureStepValues(o); finishWizard(); });
+  }
+  function refresh(o){ o.querySelector(".modal-body").innerHTML = bodyForStep(); o.querySelector(".modal-foot").innerHTML = stepFoot(); mount(o); }
+  function finishWizard(){
+    const id = nextId("AUD", DB.audits);
+    const ref = "AUD-"+new Date().getFullYear()+"-"+String(DB.audits.length+1).padStart(3,"0");
+    const auditeursArr = state.auditeurs ? state.auditeurs.split(",").map(s=>s.trim()).filter(Boolean) : [];
+    DB.audits.push({
+      id, ref, title:state.title, type:state.type, referentielIds:state.referentielIds.length?state.referentielIds:["ISO9001"],
+      processId: state.processIds[0]||null, processIds: state.processIds, date: state.date||new Date().toISOString().slice(0,10), duration: state.duration,
+      responsable: state.responsable||"Non assigné", auditeurs: auditeursArr.length?auditeursArr:[state.responsable||"Non assigné"], site: state.site,
+      objective: state.objectifs.join(" "), scope: state.activites, auditor: state.responsable||"Non assigné", status:"planifie",
+      motifs: state.motifs, perimeter:{ processIds: state.processIds, activites: state.activites, produits: state.produits, periodeDebut: state.periodeDebut, periodeFin: state.periodeFin, exclusions: state.exclusions },
+      objectifs: state.objectifs, criteres:{ referentielIds: state.referentielIds, requirementIds: state.requirementIds, documentIds: state.documentIds },
+      questions: state.questions, parties: [], findings: [],
+    });
+    saveDB(); closeModal(); toast("Audit créé avec succès — "+state.questions.length+" question(s) préparée(s)");
+    navigate(`audits/${id}`);
+  }
+  openModal({title:"Nouvel audit", wide:true, bodyHtml:bodyForStep(), footHtml:stepFoot(), onMount:(o)=>mount(o)});
+}
+
+function openConstatForm(auditId, existing){
+  const audit = getAudit(auditId);
+  openModal({title: existing?"Modifier le constat":"Ajouter un constat", wide:true,
+    bodyHtml:`
+      <div class="field"><label>Type de constat</label><select id="qf-type">${Object.entries(LABELS.constatType).map(([v,l])=>`<option value="${v}" ${existing&&existing.type===v?"selected":""}>${l.e} ${l.l}</option>`).join("")}</select></div>
+      <div class="field"><label>Fait constaté <span class="req">*</span></label><textarea id="qf-text">${esc(existing?existing.text:"")}</textarea></div>
+      <div class="field-row">
+        <div class="field"><label>Exigence concernée</label><select id="qf-req"><option value="">—</option>${(audit.criteres&&audit.criteres.requirementIds||[]).map(rid=>{const ex=resolveExigence(rid); return ex?`<option value="${rid}" ${existing&&existing.requirementId===rid?"selected":""}>${esc(ex.ref)} — ${esc(ex.label)}</option>`:"";}).join("")}</select></div>
+        <div class="field" id="qf-gravite-wrap"><label>Niveau de gravité</label><select id="qf-gravite"><option value="mineure">Mineure</option><option value="majeure">Majeure</option><option value="critique">Critique</option></select></div>
+      </div>
+      <div class="field"><label>Cause potentielle (si déjà identifiée)</label><textarea id="qf-cause" placeholder="L'analyse de cause approfondie se fait dans le module NC/CAPA">${esc(existing?existing.cause:"")}</textarea></div>
+      <div class="field"><label>Risque associé</label><select id="qf-risk"><option value="">—</option>${DB.risks.map(r=>`<option value="${r.id}" ${existing&&existing.riskId===r.id?"selected":""}>${esc(r.name)}</option>`).join("")}</select></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">${existing?"Enregistrer":"Ajouter"}</button>`,
+    onMount:(o)=>{
+      const typeSel = o.querySelector("#qf-type");
+      const toggleGravite = ()=> o.querySelector("#qf-gravite-wrap").style.display = (typeSel.value==="ecart"||typeSel.value==="nc_majeure")?"block":"none";
+      typeSel.addEventListener("change", toggleGravite); toggleGravite();
+      o.querySelector("#qf-submit").addEventListener("click", ()=>{
+        const text = o.querySelector("#qf-text").value.trim();
+        if(!text){ toast("Merci de décrire le constat","⚠️"); return; }
+        const payload = { type:typeSel.value, text, requirementId:o.querySelector("#qf-req").value||null, cause:o.querySelector("#qf-cause").value.trim(), riskId:o.querySelector("#qf-risk").value||null, gravite:(typeSel.value==="ecart"||typeSel.value==="nc_majeure")?o.querySelector("#qf-gravite").value:null };
+        if(existing){ Object.assign(existing, payload); }
+        else{ audit.findings.push({ id:"C-"+String(Date.now()).slice(-6), ...payload, processId:audit.processId, questionId:null, ncEventId:null, actionId:null }); }
+        saveDB(); closeModal(); toast(existing?"Constat mis à jour":"Constat ajouté"); render();
+      });
+    }
+  });
+}
+
+function openQuestionAddForm(auditId){
+  const audit = getAudit(auditId);
+  openModal({title:"Ajouter une question", wide:true,
+    bodyHtml:`
+      <div class="field"><label>Question <span class="req">*</span></label><textarea id="qf-question" placeholder="Ex : Comment la traçabilité est-elle assurée ?"></textarea></div>
+      <div class="field-row">
+        <div class="field"><label>Processus</label><select id="qf-process">${(audit.processIds&&audit.processIds.length?audit.processIds:[audit.processId]).map(id=>{const p=getProcess(id); return p?`<option value="${id}">${esc(p.name)}</option>`:"";}).join("")}</select></div>
+        <div class="field"><label>Responsable interrogé</label><input type="text" id="qf-resp"></div>
+      </div>
+      <div class="field"><label>Critère / référence</label><input type="text" id="qf-critere" placeholder="Ex : PR-005"></div>
+      <div class="field"><label>Preuve attendue</label><input type="text" id="qf-preuve-attendue"></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">Ajouter</button>`,
+    onMount:(o)=>{ o.querySelector("#qf-submit").addEventListener("click", ()=>{
+      const question = o.querySelector("#qf-question").value.trim();
+      if(!question){ toast("Merci de saisir la question","⚠️"); return; }
+      audit.questions.push({ id:"Q-"+Math.random().toString(36).slice(2,8), question, requirementId:null, processId:o.querySelector("#qf-process").value||audit.processId,
+        critere:o.querySelector("#qf-critere").value.trim(), preuveAttendue:o.querySelector("#qf-preuve-attendue").value.trim(), responsableInterroge:o.querySelector("#qf-resp").value.trim(),
+        statut:"non_evalue", commentaire:"", preuveIds:[] });
+      saveDB(); closeModal(); toast("Question ajoutée"); navigate(`audits/${auditId}/grille/${audit.questions.length-1}`);
+    });}
+  });
+}
+
+function openPartyAddForm(auditId){
+  const audit = getAudit(auditId);
+  openModal({title:"Ajouter une partie prenante",
+    bodyHtml:`
+      <div class="field"><label>Nom <span class="req">*</span></label><input type="text" id="qf-name"></div>
+      <div class="field"><label>Rôle</label><input type="text" id="qf-role" value="Audité"></div>
+      <div class="field"><label>Questions à compléter</label>
+        <div style="max-height:150px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
+          ${audit.questions.length?audit.questions.map(q=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="qf-q-cb" value="${q.id}" style="width:auto;"> ${esc(q.question.slice(0,60))}</label>`).join(""):"<p class='text-sm'>Aucune question disponible.</p>"}
+        </div>
+      </div>
+      <div class="field"><label>Échéance</label><input type="date" id="qf-echeance"></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">Ajouter</button>`,
+    onMount:(o)=>{ o.querySelector("#qf-submit").addEventListener("click", ()=>{
+      const name = o.querySelector("#qf-name").value.trim();
+      if(!name){ toast("Merci de saisir un nom","⚠️"); return; }
+      const questionIds = [...o.querySelectorAll(".qf-q-cb:checked")].map(c=>c.value);
+      audit.parties.push({ name, role:o.querySelector("#qf-role").value.trim()||"Audité", questionIds, echeance:o.querySelector("#qf-echeance").value||"—", status:"en_attente" });
+      saveDB(); closeModal(); toast("Partie prenante ajoutée — "+questionIds.length+" question(s) assignée(s)"); render();
+    });}
+  });
+}
+
+function openPerimeterEditForm(auditId){
+  const audit = getAudit(auditId);
+  const pr = audit.perimeter||{};
+  openModal({title:"Modifier le périmètre", wide:true,
+    bodyHtml:`
+      <div class="field"><label>Activités</label><input type="text" id="qf-activites" value="${esc(pr.activites||"")}"></div>
+      <div class="field"><label>Produits / services</label><input type="text" id="qf-produits" value="${esc(pr.produits||"")}"></div>
+      <div class="field-row">
+        <div class="field"><label>Période — début</label><input type="date" id="qf-debut" value="${pr.periodeDebut||""}"></div>
+        <div class="field"><label>Période — fin</label><input type="date" id="qf-fin" value="${pr.periodeFin||""}"></div>
+      </div>
+      <div class="field"><label>Exclusions</label><textarea id="qf-exclusions">${esc(pr.exclusions||"")}</textarea></div>
+      <div class="field"><label>Site</label><input type="text" id="qf-site" value="${esc(audit.site||"")}"></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">Enregistrer</button>`,
+    onMount:(o)=>{ o.querySelector("#qf-submit").addEventListener("click", ()=>{
+      audit.perimeter = { processIds:audit.processIds, activites:o.querySelector("#qf-activites").value.trim(), produits:o.querySelector("#qf-produits").value.trim(),
+        periodeDebut:o.querySelector("#qf-debut").value, periodeFin:o.querySelector("#qf-fin").value, exclusions:o.querySelector("#qf-exclusions").value.trim() };
+      audit.site = o.querySelector("#qf-site").value.trim();
+      audit.scope = audit.perimeter.activites;
+      saveDB(); closeModal(); toast("Périmètre mis à jour"); render();
+    });}
+  });
+}
+
+function generateAuditReportText(a){
+  const p = getProcess(a.processId);
+  const lines = [];
+  lines.push("Rapport d'audit — "+a.title);
+  lines.push("Référence : "+(a.ref||a.id)+" · Type : "+(LABELS.auditType[a.type]||a.type));
+  lines.push("Processus : "+(p?p.name:"—")+" · Date : "+fmtDate(a.date)+" · Responsable : "+(a.responsable||a.auditor));
+  lines.push("");
+  lines.push("Objectifs :");
+  (a.objectifs&&a.objectifs.length?a.objectifs:[a.objective]).filter(Boolean).forEach(o=>lines.push("- "+o));
+  lines.push("");
+  lines.push("Périmètre : "+((a.perimeter&&a.perimeter.activites)||a.scope||"—"));
+  lines.push("Référentiel(s) : "+(a.referentielIds||[]).map(id=>{const r=getReferentiel(id);return r?r.name:id;}).join(", "));
+  lines.push("");
+  const rate = auditConformityRate(a);
+  lines.push("Résultat : "+(rate!==null?rate+"% des critères vérifiés sont conformes.":"Résultat non encore calculable."));
+  lines.push("");
+  lines.push("Constats :");
+  a.findings.forEach(f=> lines.push("- ["+(LABELS.constatType[f.type]?LABELS.constatType[f.type].l:f.type)+"] "+f.text));
+  lines.push("");
+  lines.push("Conclusion : audit "+((LABELS.auditStatus[a.status]?LABELS.auditStatus[a.status].l:a.status)).toLowerCase()+".");
+  return lines.join("\n");
+}
+
+/* ============================================================
+   19bis-comp. FORMULAIRES — COMPÉTENCES & HABILITATIONS
+   ============================================================ */
+function openCompetenceForm(id){
+  const existing = id ? getCompetence(id) : null;
+  openModal({title: existing?"Modifier la compétence":"Nouvelle compétence", wide:true,
+    bodyHtml:`
+      <div class="field-row">
+        <div class="field"><label>Nom <span class="req">*</span></label><input type="text" id="cf-nom" value="${esc(existing?existing.nom:"")}"></div>
+        <div class="field"><label>Code</label><input type="text" id="cf-code" value="${esc(existing?existing.code:"")}"></div>
+      </div>
+      <div class="field"><label>Description</label><textarea id="cf-desc">${esc(existing?existing.description:"")}</textarea></div>
+      <div class="field-row">
+        <div class="field"><label>Domaine</label><input type="text" id="cf-domaine" value="${esc(existing?existing.domaine:"")}"></div>
+        <div class="field"><label>Type</label><select id="cf-type"><option value="métier" ${existing&&existing.type==="métier"?"selected":""}>Métier</option><option value="transversale" ${existing&&existing.type==="transversale"?"selected":""}>Transversale</option><option value="réglementaire" ${existing&&existing.type==="réglementaire"?"selected":""}>Réglementaire</option></select></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Criticité</label><select id="cf-crit">${Object.entries(LABELS.competenceCriticite).map(([v,l])=>`<option value="${v}" ${existing&&existing.criticite===v?"selected":""}>${l.l}</option>`).join("")}</select></div>
+        <div class="field"><label><input type="checkbox" id="cf-reglem" style="width:auto;margin-right:6px;" ${existing&&existing.reglementaire?"checked":""}> Compétence réglementaire / obligatoire</label></div>
+      </div>
+      ${existing?`<div class="field"><label><input type="checkbox" id="cf-actif" style="width:auto;margin-right:6px;" ${existing.actif?"checked":""}> Active</label></div>`:""}`,
+    footHtml:`${existing?`<button class="btn btn-danger" id="cf-delete" style="margin-right:auto;">Supprimer</button>`:""}<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="cf-submit">${existing?"Enregistrer":"Créer"}</button>`,
+    onMount:(o)=>{
+      o.querySelector("#cf-submit").addEventListener("click", ()=>{
+        const nom = o.querySelector("#cf-nom").value.trim();
+        if(!nom){ toast("Merci de saisir un nom","⚠️"); return; }
+        const payload = { nom, code:o.querySelector("#cf-code").value.trim()||("C-"+Date.now().toString().slice(-5)), description:o.querySelector("#cf-desc").value.trim(),
+          domaine:o.querySelector("#cf-domaine").value.trim(), type:o.querySelector("#cf-type").value, criticite:o.querySelector("#cf-crit").value, reglementaire:o.querySelector("#cf-reglem").checked };
+        if(existing){ Object.assign(existing, payload); existing.actif = o.querySelector("#cf-actif").checked; }
+        else{ DB.competences.push({ id:nextId("COMP", DB.competences), ...payload, actif:true, niveauRequisPossible:4, documentIds:[], habilitationIds:[] }); }
+        saveDB(); closeModal(); toast(existing?"Compétence mise à jour":"Compétence créée"); navigate("competences/referentiel");
+      });
+      const delBtn = o.querySelector("#cf-delete");
+      if(delBtn) delBtn.addEventListener("click", ()=>{
+        confirmDialog("Supprimer définitivement cette compétence ?", ()=>{
+          DB.competences = DB.competences.filter(c=>c.id!==existing.id);
+          saveDB(); closeModal(); toast("Compétence supprimée"); navigate("competences/referentiel");
+        });
+      });
+    }
+  });
+}
+
+function openPosteForm(id){
+  const existing = id ? getPoste(id) : null;
+  openModal({title: existing?"Modifier le poste":"Nouveau poste", wide:true,
+    bodyHtml:`
+      <div class="field-row">
+        <div class="field"><label>Intitulé <span class="req">*</span></label><input type="text" id="pf-intitule" value="${esc(existing?existing.intitule:"")}"></div>
+        <div class="field"><label>Code</label><input type="text" id="pf-code" value="${esc(existing?existing.code:"")}"></div>
+      </div>
+      <div class="field"><label>Description</label><textarea id="pf-desc">${esc(existing?existing.description:"")}</textarea></div>
+      <div class="field-row">
+        <div class="field"><label>Département / service</label><input type="text" id="pf-dept" value="${esc(existing?existing.departement:"")}"></div>
+        <div class="field"><label>Responsable / manager</label><input type="text" id="pf-resp" value="${esc(existing?existing.responsable:"")}"></div>
+      </div>
+      <div class="field"><label>Criticité du poste</label><select id="pf-crit">${Object.entries(LABELS.competenceCriticite).map(([v,l])=>`<option value="${v}" ${existing&&existing.criticite===v?"selected":""}>${l.l}</option>`).join("")}</select></div>
+      <div class="field"><label>Habilitations obligatoires</label>
+        <div style="max-height:120px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
+          ${DB.habilitations.map(h=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="pf-hab-cb" value="${h.id}" ${existing&&(existing.habilitationsObligatoires||[]).includes(h.id)?"checked":""} style="width:auto;"> ${esc(h.nom)}</label>`).join("")}
+        </div>
+      </div>`,
+    footHtml:`${existing?`<button class="btn btn-danger" id="pf-delete" style="margin-right:auto;">Supprimer</button>`:""}<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="pf-submit">${existing?"Enregistrer":"Créer"}</button>`,
+    onMount:(o)=>{
+      o.querySelector("#pf-submit").addEventListener("click", ()=>{
+        const intitule = o.querySelector("#pf-intitule").value.trim();
+        if(!intitule){ toast("Merci de saisir un intitulé","⚠️"); return; }
+        const habilitationsObligatoires = [...o.querySelectorAll(".pf-hab-cb:checked")].map(c=>c.value);
+        const payload = { intitule, code:o.querySelector("#pf-code").value.trim()||("P-"+Date.now().toString().slice(-5)), description:o.querySelector("#pf-desc").value.trim(),
+          departement:o.querySelector("#pf-dept").value.trim(), responsable:o.querySelector("#pf-resp").value.trim(), criticite:o.querySelector("#pf-crit").value, habilitationsObligatoires };
+        if(existing){ Object.assign(existing, payload); }
+        else{ DB.postes.push({ id:nextId("POSTE", DB.postes), ...payload, actif:true, competencesRequises:[] }); }
+        saveDB(); closeModal(); toast(existing?"Poste mis à jour":"Poste créé"); navigate("competences/postes");
+      });
+      const delBtn = o.querySelector("#pf-delete");
+      if(delBtn) delBtn.addEventListener("click", ()=>{
+        confirmDialog("Supprimer définitivement ce poste ?", ()=>{
+          DB.postes = DB.postes.filter(p=>p.id!==existing.id);
+          saveDB(); closeModal(); toast("Poste supprimé"); navigate("competences/postes");
+        });
+      });
+    }
+  });
+}
+
+function openAddPosteCompetenceForm(posteId){
+  const poste = getPoste(posteId);
+  openModal({title:"Ajouter une compétence requise",
+    bodyHtml:`
+      <div class="field"><label>Compétence</label><select id="apf-comp">${DB.competences.filter(c=>c.actif && !poste.competencesRequises.some(r=>r.competenceId===c.id)).map(c=>`<option value="${c.id}">${esc(c.nom)}</option>`).join("")}</select></div>
+      <div class="field"><label>Niveau requis</label><select id="apf-niveau">${Object.entries(LABELS.niveauCompetence).map(([v,l])=>`<option value="${v}" ${v==="2"?"selected":""}>${v} — ${l}</option>`).join("")}</select></div>
+      <div class="field"><label><input type="checkbox" id="apf-obligatoire" style="width:auto;margin-right:6px;" checked> Obligatoire</label></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="apf-submit">Ajouter</button>`,
+    onMount:(o)=>{ o.querySelector("#apf-submit").addEventListener("click", ()=>{
+      const compId = o.querySelector("#apf-comp").value;
+      if(!compId){ toast("Aucune compétence disponible à ajouter","⚠️"); return; }
+      poste.competencesRequises.push({ competenceId:compId, niveauRequis:parseInt(o.querySelector("#apf-niveau").value,10), obligatoire:o.querySelector("#apf-obligatoire").checked });
+      saveDB(); closeModal(); toast("Compétence ajoutée au poste"); render();
+    });}
+  });
+}
+
+function openHabilitationForm(id){
+  const existing = id ? getHabilitation(id) : null;
+  openModal({title: existing?"Modifier l'habilitation":"Nouvelle habilitation", wide:true,
+    bodyHtml:`
+      <div class="field-row">
+        <div class="field"><label>Nom <span class="req">*</span></label><input type="text" id="hf-nom" value="${esc(existing?existing.nom:"")}"></div>
+        <div class="field"><label>Code</label><input type="text" id="hf-code" value="${esc(existing?existing.code:"")}"></div>
+      </div>
+      <div class="field"><label>Description</label><textarea id="hf-desc">${esc(existing?existing.description:"")}</textarea></div>
+      <div class="field"><label>Activité concernée</label><input type="text" id="hf-activite" value="${esc(existing?existing.activite:"")}"></div>
+      <div class="field-row">
+        <div class="field"><label>Autorité pouvant attribuer</label><input type="text" id="hf-autorite" value="${esc(existing?existing.autorite:"")}"></div>
+        <div class="field"><label>Durée de validité (mois)</label><input type="number" id="hf-duree" value="${existing?existing.dureeValiditeMois:12}"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label><input type="checkbox" id="hf-formation" style="width:auto;margin-right:6px;" ${existing&&existing.formationObligatoire?"checked":""}> Formation obligatoire</label></div>
+        <div class="field"><label><input type="checkbox" id="hf-evaluation" style="width:auto;margin-right:6px;" ${existing&&existing.evaluationObligatoire?"checked":""}> Évaluation obligatoire</label></div>
+      </div>`,
+    footHtml:`${existing?`<button class="btn btn-danger" id="hf-delete" style="margin-right:auto;">Supprimer</button>`:""}<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="hf-submit">${existing?"Enregistrer":"Créer"}</button>`,
+    onMount:(o)=>{
+      o.querySelector("#hf-submit").addEventListener("click", ()=>{
+        const nom = o.querySelector("#hf-nom").value.trim();
+        if(!nom){ toast("Merci de saisir un nom","⚠️"); return; }
+        const payload = { nom, code:o.querySelector("#hf-code").value.trim()||("H-"+Date.now().toString().slice(-5)), description:o.querySelector("#hf-desc").value.trim(),
+          activite:o.querySelector("#hf-activite").value.trim(), autorite:o.querySelector("#hf-autorite").value.trim(), dureeValiditeMois:parseInt(o.querySelector("#hf-duree").value,10)||12,
+          formationObligatoire:o.querySelector("#hf-formation").checked, evaluationObligatoire:o.querySelector("#hf-evaluation").checked };
+        if(existing){ Object.assign(existing, payload); }
+        else{ DB.habilitations.push({ id:nextId("HAB", DB.habilitations), ...payload, niveau:"Standard", prerequis:"", competencesNecessaires:[], renouvellement:true, documentsNecessaires:[], actif:true }); }
+        saveDB(); closeModal(); toast(existing?"Habilitation mise à jour":"Habilitation créée"); navigate("competences/habilitations");
+      });
+      const delBtn = o.querySelector("#hf-delete");
+      if(delBtn) delBtn.addEventListener("click", ()=>{
+        confirmDialog("Supprimer définitivement cette habilitation ?", ()=>{
+          DB.habilitations = DB.habilitations.filter(h=>h.id!==existing.id);
+          DB.personHabilitations = DB.personHabilitations.filter(ph=>ph.habilitationId!==existing.id);
+          saveDB(); closeModal(); toast("Habilitation supprimée"); navigate("competences/habilitations");
+        });
+      });
+    }
+  });
+}
+
+function openPersonForm(id){
+  const existing = id ? getPerson(id) : null;
+  openModal({title: existing?"Modifier le collaborateur":"Nouveau collaborateur", wide:true,
+    bodyHtml:`
+      <div class="field-row">
+        <div class="field"><label>Nom <span class="req">*</span></label><input type="text" id="prf-nom" value="${esc(existing?existing.name:"")}"></div>
+        <div class="field"><label>Poste</label><select id="prf-poste"><option value="">—</option>${DB.postes.map(p=>`<option value="${p.id}" ${existing&&existing.posteId===p.id?"selected":""}>${esc(p.intitule)}</option>`).join("")}</select></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Service</label><input type="text" id="prf-service" value="${esc(existing?existing.service:"")}"></div>
+        <div class="field"><label>Manager</label><input type="text" id="prf-manager" value="${esc(existing?existing.manager||"":"")}"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Date d'entrée</label><input type="date" id="prf-entree" value="${existing?existing.dateEntree:""}"></div>
+        <div class="field"><label>Prochaine revue de compétences</label><input type="date" id="prf-prochaine" value="${existing?existing.prochaineRevue:""}"></div>
+      </div>`,
+    footHtml:`${existing?`<button class="btn btn-danger" id="prf-delete" style="margin-right:auto;">Supprimer</button>`:""}<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="prf-submit">${existing?"Enregistrer":"Créer"}</button>`,
+    onMount:(o)=>{
+      o.querySelector("#prf-submit").addEventListener("click", ()=>{
+        const name = o.querySelector("#prf-nom").value.trim();
+        if(!name){ toast("Merci de saisir un nom","⚠️"); return; }
+        const posteId = o.querySelector("#prf-poste").value||null;
+        const poste = posteId ? getPoste(posteId) : null;
+        const payload = { name, posteId, service:o.querySelector("#prf-service").value.trim(), manager:o.querySelector("#prf-manager").value.trim()||null,
+          processId: existing?existing.processId:null, dateEntree:o.querySelector("#prf-entree").value||new Date().toISOString().slice(0,10), prochaineRevue:o.querySelector("#prf-prochaine").value||"—" };
+        if(existing){ Object.assign(existing, payload); }
+        else{ DB.people.push({ id:nextId("P", DB.people), ...payload, derniereRevue:null }); }
+        saveDB(); closeModal(); toast(existing?"Collaborateur mis à jour":"Collaborateur créé"); navigate("competences/personnes");
+      });
+      const delBtn = o.querySelector("#prf-delete");
+      if(delBtn) delBtn.addEventListener("click", ()=>{
+        confirmDialog("Supprimer définitivement ce collaborateur ?", ()=>{
+          DB.people = DB.people.filter(p=>p.id!==existing.id);
+          saveDB(); closeModal(); toast("Collaborateur supprimé"); navigate("competences/personnes");
+        });
+      });
+    }
+  });
+}
+
+function openEvaluationForm(personId, competenceId){
+  const person = getPerson(personId), comp = getCompetence(competenceId);
+  const poste = person ? getPoste(person.posteId) : null;
+  const req = poste ? poste.competencesRequises.find(r=>r.competenceId===competenceId) : null;
+  openModal({title:"Évaluer une compétence", wide:true,
+    bodyHtml:`
+      <p class="text-sm mb-2"><strong>${esc(person.name)}</strong> — ${esc(comp.nom)} ${req?`(niveau requis : ${req.niveauRequis})`:""}</p>
+      <div class="field-row">
+        <div class="field"><label>Niveau évalué <span class="req">*</span></label><select id="evf-niveau">${Object.entries(LABELS.niveauCompetence).map(([v,l])=>`<option value="${v}">${v} — ${l}</option>`).join("")}</select></div>
+        <div class="field"><label>Date</label><input type="date" id="evf-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Évaluateur</label><input type="text" id="evf-evaluateur" value="${esc(person.manager||"")}"></div>
+        <div class="field"><label>Méthode</label><select id="evf-methode"><option>Entretien</option><option>Entretien annuel</option><option>Observation</option><option>Test</option><option>Mise en situation</option><option>Évaluation interne</option></select></div>
+      </div>
+      <div class="field"><label>Commentaire</label><textarea id="evf-comment"></textarea></div>
+      <div class="field"><label>Résultat</label><select id="evf-resultat"><option value="Conforme">Conforme</option><option value="À renforcer">À renforcer</option></select></div>
+      <div class="field"><label>Date de prochaine évaluation</label><input type="date" id="evf-prochaine"></div>
+      <p class="text-xs">L'historique des évaluations précédentes n'est jamais écrasé — chaque évaluation s'ajoute à l'historique.</p>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="evf-submit">Enregistrer l'évaluation</button>`,
+    onMount:(o)=>{ o.querySelector("#evf-submit").addEventListener("click", ()=>{
+      DB.competenceEvaluations.push({ id:"EVAL-"+String(Date.now()).slice(-6), personId, competenceId, niveauEvalue:parseInt(o.querySelector("#evf-niveau").value,10),
+        date:o.querySelector("#evf-date").value||new Date().toISOString().slice(0,10), evaluateur:o.querySelector("#evf-evaluateur").value.trim()||"Non renseigné",
+        methode:o.querySelector("#evf-methode").value, commentaire:o.querySelector("#evf-comment").value.trim(), preuveIds:[],
+        resultat:o.querySelector("#evf-resultat").value, prochaineEvaluation:o.querySelector("#evf-prochaine").value||"—" });
+      saveDB(); closeModal(); toast("Évaluation enregistrée"); render();
+    });}
+  });
+}
+
+function openPreuveForm(personId, competenceId){
+  const person = getPerson(personId);
+  openModal({title:"Ajouter une preuve de compétence", wide:true,
+    bodyHtml:`
+      <div class="field-row">
+        <div class="field"><label>Compétence</label><select id="prv-comp">${DB.competences.filter(c=>c.actif).map(c=>`<option value="${c.id}" ${competenceId===c.id?"selected":""}>${esc(c.nom)}</option>`).join("")}</select></div>
+        <div class="field"><label>Type de preuve</label><select id="prv-type">${Object.entries(LABELS.preuveCompetenceType).map(([v,l])=>`<option value="${v}">${esc(l)}</option>`).join("")}</select></div>
+      </div>
+      <div class="field"><label>Libellé <span class="req">*</span></label><input type="text" id="prv-label" placeholder="Ex : Certificat ISO 9001"></div>
+      <div class="field-row">
+        <div class="field"><label>Date</label><input type="date" id="prv-date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field"><label>Évaluateur</label><input type="text" id="prv-eval" value="${esc(person.manager||"")}"></div>
+      </div>
+      <div class="field"><label>Document Qonnect existant (optionnel — ne pas reverser un document déjà présent)</label>
+        <select id="prv-doc"><option value="">—</option>${DB.documents.filter(d=>d.status!=="obsolete").map(d=>`<option value="${d.id}">${esc(d.title)}</option>`).join("")}</select></div>
+      <div class="field"><label>Résultat</label><input type="text" id="prv-resultat" value="Validé"></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="prv-submit">Ajouter la preuve</button>`,
+    onMount:(o)=>{ o.querySelector("#prv-submit").addEventListener("click", ()=>{
+      const label = o.querySelector("#prv-label").value.trim();
+      if(!label){ toast("Merci de saisir un libellé","⚠️"); return; }
+      DB.competencePreuves.push({ id:"PRV-"+String(Date.now()).slice(-6), personId, competenceId:o.querySelector("#prv-comp").value, type:o.querySelector("#prv-type").value,
+        label, date:o.querySelector("#prv-date").value, evaluateur:o.querySelector("#prv-eval").value.trim()||"Non renseigné", resultat:o.querySelector("#prv-resultat").value.trim(),
+        documentId:o.querySelector("#prv-doc").value||null });
+      saveDB(); closeModal(); toast("Preuve ajoutée"); render();
+    });}
+  });
+}
+
+function openAttributeHabilitationForm(habilitationId, personId){
+  const hab = habilitationId ? getHabilitation(habilitationId) : null;
+  openModal({title:"Attribuer une habilitation", wide:true,
+    bodyHtml:`
+      <div class="field-row">
+        <div class="field"><label>Collaborateur</label><select id="ahf-person" ${personId?"disabled":""}>${DB.people.map(p=>`<option value="${p.id}" ${personId===p.id?"selected":""}>${esc(p.name)}</option>`).join("")}</select></div>
+        <div class="field"><label>Habilitation</label><select id="ahf-hab" ${habilitationId?"disabled":""}>${DB.habilitations.filter(h=>h.actif).map(h=>`<option value="${h.id}" ${habilitationId===h.id?"selected":""}>${esc(h.nom)}</option>`).join("")}</select></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Date d'attribution</label><input type="date" id="ahf-date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field"><label>Durée de validité (mois)</label><input type="number" id="ahf-duree" value="${hab?hab.dureeValiditeMois:12}"></div>
+      </div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="ahf-submit">Attribuer</button>`,
+    onMount:(o)=>{ o.querySelector("#ahf-submit").addEventListener("click", ()=>{
+      const pid = personId || o.querySelector("#ahf-person").value;
+      const hid = habilitationId || o.querySelector("#ahf-hab").value;
+      const dateAttribution = o.querySelector("#ahf-date").value || new Date().toISOString().slice(0,10);
+      const dureeMois = parseInt(o.querySelector("#ahf-duree").value,10) || 12;
+      const dExp = new Date(dateAttribution+"T00:00:00"); dExp.setMonth(dExp.getMonth()+dureeMois);
+      DB.personHabilitations.push({ id:"PH-"+String(Date.now()).slice(-6), personId:pid, habilitationId:hid, dateAttribution, dateExpiration:dExp.toISOString().slice(0,10), statut:"active",
+        historique:[{date:dateAttribution, action:"Attribution", ancienneValeur:null, nouvelleValeur:"active", commentaire:""}] });
+      saveDB(); closeModal(); toast("Habilitation attribuée"); render();
+    });}
+  });
+}
+
+function renewHabilitation(phId){
+  const ph = findBy(DB.personHabilitations, phId);
+  if(!ph) return;
+  const hab = getHabilitation(ph.habilitationId);
+  const today = new Date().toISOString().slice(0,10);
+  const dExp = new Date(); dExp.setMonth(dExp.getMonth()+(hab?hab.dureeValiditeMois:12));
+  const ancienneExp = ph.dateExpiration;
+  ph.dateAttribution = today; ph.dateExpiration = dExp.toISOString().slice(0,10); ph.statut = "active";
+  ph.historique.push({date:today, action:"Renouvellement", ancienneValeur:ancienneExp, nouvelleValeur:ph.dateExpiration, commentaire:""});
+  saveDB(); toast("Habilitation renouvelée jusqu'au "+fmtDate(ph.dateExpiration)); render();
+}
+
+function openCompetenceReviewForm(personId){
+  const person = getPerson(personId);
+  const rows = personMatrix(personId);
+  openModal({title:"Nouvelle revue de compétences", wide:true,
+    bodyHtml:`
+      <p class="text-sm mb-2"><strong>${esc(person.name)}</strong></p>
+      <div class="field-row">
+        <div class="field"><label>Date</label><input type="date" id="rvf-date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field"><label>Évaluateur</label><input type="text" id="rvf-evaluateur" value="${esc(person.manager||"")}"></div>
+      </div>
+      <div class="field"><label>Compétences maîtrisées</label><textarea id="rvf-maitrisees" placeholder="Une par ligne">${rows.filter(r=>r.statut==="conforme").map(r=>r.competence.nom).join("\n")}</textarea></div>
+      <div class="field"><label>Compétences à renforcer</label><textarea id="rvf-renforcer" placeholder="Une par ligne">${rows.filter(r=>r.statut==="a_renforcer").map(r=>r.competence.nom).join("\n")}</textarea></div>
+      <div class="field"><label>Nouvelles compétences nécessaires</label><textarea id="rvf-nouvelles"></textarea></div>
+      <div class="field-row">
+        <div class="field"><label>Formations réalisées</label><input type="text" id="rvf-formations-real"></div>
+        <div class="field"><label>Formations à prévoir</label><input type="text" id="rvf-formations-prevoir"></div>
+      </div>
+      <div class="field"><label>Habilitations à renouveler</label><input type="text" id="rvf-hab-renouveler"></div>
+      <div class="field"><label>Évolution du poste envisagée</label><input type="text" id="rvf-evolution"></div>
+      <div class="field"><label>Conclusion du manager</label><textarea id="rvf-conclusion"></textarea></div>
+      <div class="field"><label>Prochaine date de revue</label><input type="date" id="rvf-prochaine"></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="rvf-submit">Enregistrer la revue</button>`,
+    onMount:(o)=>{ o.querySelector("#rvf-submit").addEventListener("click", ()=>{
+      const date = o.querySelector("#rvf-date").value || new Date().toISOString().slice(0,10);
+      DB.competenceReviews.push({ id:"CREV-"+String(Date.now()).slice(-6), personId, date, evaluateur:o.querySelector("#rvf-evaluateur").value.trim()||"Non renseigné",
+        competencesMaitrisees:o.querySelector("#rvf-maitrisees").value.split("\n").map(s=>s.trim()).filter(Boolean),
+        competencesARenforcer:o.querySelector("#rvf-renforcer").value.split("\n").map(s=>s.trim()).filter(Boolean),
+        nouvellesCompetencesNecessaires:o.querySelector("#rvf-nouvelles").value.trim(), formationsRealisees:o.querySelector("#rvf-formations-real").value.trim(),
+        formationsAPrevoir:o.querySelector("#rvf-formations-prevoir").value.trim(), habilitationsARenouveler:o.querySelector("#rvf-hab-renouveler").value.trim(),
+        evolutionPoste:o.querySelector("#rvf-evolution").value.trim(), conclusion:o.querySelector("#rvf-conclusion").value.trim(), prochaineDateRevue:o.querySelector("#rvf-prochaine").value||"—" });
+      person.derniereRevue = date;
+      if(o.querySelector("#rvf-prochaine").value) person.prochaineRevue = o.querySelector("#rvf-prochaine").value;
+      saveDB(); closeModal(); toast("Revue de compétences enregistrée"); render();
+    });}
+  });
+}
+
+/* ============================================================
+   19bis-frn. FORMULAIRES — FOURNISSEURS
+   ============================================================ */
+function openFournisseurForm(id){
+  const existing = id ? getFournisseur(id) : null;
+  openModal({title: existing?"Modifier le fournisseur":"Nouveau fournisseur", wide:true,
+    bodyHtml:`
+      <div class="field-row">
+        <div class="field"><label>Raison sociale <span class="req">*</span></label><input type="text" id="ff-raison" value="${esc(existing?existing.raisonSociale:"")}"></div>
+        <div class="field"><label>Nom commercial</label><input type="text" id="ff-nom" value="${esc(existing?existing.nomCommercial:"")}"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Pays</label><input type="text" id="ff-pays" value="${esc(existing?existing.pays:"France")}"></div>
+        <div class="field"><label>Référent interne</label><input type="text" id="ff-referent" value="${esc(existing?existing.referentInterne:"")}"></div>
+      </div>
+      <div class="field"><label>Catégories</label>
+        <div style="max-height:120px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
+          ${LABELS.fournisseurCategorieOptions.map(cat=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="ff-cat-cb" value="${esc(cat)}" ${existing&&(existing.categories||[]).includes(cat)?"checked":""} style="width:auto;"> ${esc(cat)}</label>`).join("")}
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Criticité <span class="req">*</span></label><select id="ff-crit">${Object.entries(LABELS.fournisseurCriticite).map(([v,l])=>`<option value="${v}" ${existing&&existing.criticite===v?"selected":""}>${l.l}</option>`).join("")}</select></div>
+        <div class="field"><label>Statut</label><select id="ff-statut">${Object.entries(LABELS.fournisseurStatut).map(([v,l])=>`<option value="${v}" ${existing&&existing.statut===v?"selected":""}>${l.l}</option>`).join("")}</select></div>
+      </div>
+      <div class="field"><label>Justification de la criticité</label><textarea id="ff-justif">${esc(existing?existing.criticiteJustification:"")}</textarea></div>
+      <div class="field"><label>Processus concernés</label>
+        <div style="max-height:110px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
+          ${DB.processes.map(p=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="ff-proc-cb" value="${p.id}" ${existing&&(existing.processIds||[]).includes(p.id)?"checked":""} style="width:auto;"> ${esc(p.name)}</label>`).join("")}
+        </div>
+      </div>`,
+    footHtml:`${existing?`<button class="btn btn-danger" id="ff-delete" style="margin-right:auto;">Supprimer</button>`:""}<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="ff-submit">${existing?"Enregistrer":"Créer"}</button>`,
+    onMount:(o)=>{
+      o.querySelector("#ff-submit").addEventListener("click", ()=>{
+        const raison = o.querySelector("#ff-raison").value.trim();
+        if(!raison){ toast("Merci de saisir une raison sociale","⚠️"); return; }
+        const payload = { raisonSociale:raison, nomCommercial:o.querySelector("#ff-nom").value.trim()||raison, pays:o.querySelector("#ff-pays").value.trim(),
+          referentInterne:o.querySelector("#ff-referent").value.trim(), categories:[...o.querySelectorAll(".ff-cat-cb:checked")].map(c=>c.value),
+          criticite:o.querySelector("#ff-crit").value, statut:o.querySelector("#ff-statut").value, criticiteJustification:o.querySelector("#ff-justif").value.trim(),
+          processIds:[...o.querySelectorAll(".ff-proc-cb:checked")].map(c=>c.value) };
+        if(existing){ Object.assign(existing, payload); }
+        else{ DB.fournisseurs.push({ id:nextId("FRN", DB.fournisseurs), ...payload, siret:"—", tva:"—", siteWeb:"", adresse:"", contacts:[], dateEntree:new Date().toISOString().slice(0,10), produitsServices:[] }); }
+        saveDB(); closeModal(); toast(existing?"Fournisseur mis à jour":"Fournisseur créé"); navigate(existing?`fournisseurs/liste/${existing.id}`:"fournisseurs/liste");
+      });
+      const delBtn = o.querySelector("#ff-delete");
+      if(delBtn) delBtn.addEventListener("click", ()=>{
+        confirmDialog("Supprimer définitivement ce fournisseur ?", ()=>{
+          DB.fournisseurs = DB.fournisseurs.filter(f=>f.id!==existing.id);
+          saveDB(); closeModal(); toast("Fournisseur supprimé"); navigate("fournisseurs/liste");
+        });
+      });
+    }
+  });
+}
+
+function openFournisseurDocForm(fournisseurId){
+  openModal({title:"Ajouter un document fournisseur", wide:true,
+    bodyHtml:`
+      <div class="field-row">
+        <div class="field"><label>Type</label><select id="fdf-type">${Object.entries(LABELS.fournisseurDocType).map(([v,l])=>`<option value="${v}">${esc(l)}</option>`).join("")}</select></div>
+        <div class="field"><label>Titre <span class="req">*</span></label><input type="text" id="fdf-titre"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Date</label><input type="date" id="fdf-date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field"><label>Échéance</label><input type="date" id="fdf-echeance"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Version</label><input type="text" id="fdf-version" value="1.0"></div>
+        <div class="field"><label>Responsable</label><input type="text" id="fdf-resp"></div>
+      </div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="fdf-submit">Ajouter</button>`,
+    onMount:(o)=>{ o.querySelector("#fdf-submit").addEventListener("click", ()=>{
+      const titre = o.querySelector("#fdf-titre").value.trim();
+      if(!titre){ toast("Merci de saisir un titre","⚠️"); return; }
+      DB.fournisseurDocuments.push({ id:"FDOC-"+String(Date.now()).slice(-6), fournisseurId, type:o.querySelector("#fdf-type").value, titre,
+        date:o.querySelector("#fdf-date").value, version:o.querySelector("#fdf-version").value.trim()||"1.0", echeance:o.querySelector("#fdf-echeance").value||"—",
+        responsable:o.querySelector("#fdf-resp").value.trim()||"Non assigné" });
+      saveDB(); closeModal(); toast("Document ajouté"); render();
+    });}
+  });
+}
+
+function openFournisseurEvalForm(fournisseurId){
+  const f = getFournisseur(fournisseurId);
+  openModal({title:"Nouvelle évaluation — "+f.nomCommercial, wide:true,
+    bodyHtml:`
+      <div class="field-row">
+        <div class="field"><label>Modèle de questionnaire</label><select id="fef-quest"><option value="">Critères libres</option>${DB.fournisseurQuestionnaires.map(q=>`<option value="${q.id}">${esc(q.nom)}</option>`).join("")}</select></div>
+        <div class="field"><label>Périodicité</label><select id="fef-periode"><option value="annuelle">Annuelle</option><option value="semestrielle">Semestrielle</option><option value="trimestrielle">Trimestrielle</option><option value="personnalisee">Personnalisée</option></select></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Date</label><input type="date" id="fef-date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field"><label>Évaluateur</label><input type="text" id="fef-eval" value="${esc(f.referentInterne)}"></div>
+      </div>
+      <div id="fef-criteres"></div>
+      <button class="btn btn-secondary btn-sm mt-2" id="fef-add-critere">+ Ajouter un critère</button>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="fef-submit">Enregistrer l'évaluation</button>`,
+    onMount:(o)=>{
+      const critereRow = (nom,ponderation)=>`<div class="field-row fef-crit-row">
+        <div class="field"><input type="text" class="fef-c-nom" placeholder="Critère" value="${esc(nom||"")}"></div>
+        <div class="field" style="max-width:100px;"><input type="number" class="fef-c-pond" placeholder="Poids %" value="${ponderation||20}"></div>
+        <div class="field" style="max-width:100px;"><input type="number" class="fef-c-note" placeholder="Note /10" min="0" max="10" value="7"></div>
+        <button type="button" class="btn btn-ghost btn-sm fef-remove-crit">✕</button>
+      </div>`;
+      function renderCriteres(list){ o.querySelector("#fef-criteres").innerHTML = list.map(c=>critereRow(c.nom, c.ponderation)).join(""); bindRemove(); }
+      function bindRemove(){ o.querySelectorAll(".fef-remove-crit").forEach(b=>b.addEventListener("click", ()=>{ b.closest(".fef-crit-row").remove(); })); }
+      renderCriteres([{nom:"Qualité",ponderation:25},{nom:"Respect des délais",ponderation:25},{nom:"Support",ponderation:25},{nom:"Conformité réglementaire",ponderation:25}]);
+      o.querySelector("#fef-quest").addEventListener("change", (e)=>{
+        const q = DB.fournisseurQuestionnaires.find(x=>x.id===e.target.value);
+        renderCriteres(q ? q.criteres : [{nom:"Qualité",ponderation:25},{nom:"Respect des délais",ponderation:25},{nom:"Support",ponderation:25},{nom:"Conformité réglementaire",ponderation:25}]);
+      });
+      o.querySelector("#fef-add-critere").addEventListener("click", ()=>{
+        o.querySelector("#fef-criteres").insertAdjacentHTML("beforeend", critereRow("",20)); bindRemove();
+      });
+      o.querySelector("#fef-submit").addEventListener("click", ()=>{
+        const rows = [...o.querySelectorAll(".fef-crit-row")];
+        const criteres = rows.map(r=>({ nom:r.querySelector(".fef-c-nom").value.trim()||"Critère", ponderation:parseFloat(r.querySelector(".fef-c-pond").value)||0, note:parseFloat(r.querySelector(".fef-c-note").value)||0, commentaire:"", preuve:"" })).filter(c=>c.nom);
+        if(!criteres.length){ toast("Ajoutez au moins un critère","⚠️"); return; }
+        DB.fournisseurEvaluations.push({ id:"FEVAL-"+String(Date.now()).slice(-6), fournisseurId, date:o.querySelector("#fef-date").value||new Date().toISOString().slice(0,10),
+          periode:o.querySelector("#fef-periode").value, evaluateur:o.querySelector("#fef-eval").value.trim()||"Non renseigné", questionnaireId:o.querySelector("#fef-quest").value||null, criteres });
+        saveDB(); closeModal(); toast("Évaluation enregistrée"); render();
+      });
+    }
+  });
+}
+
+function openFournisseurIncidentForm(fournisseurId){
+  openModal({title:"Déclarer un incident fournisseur", wide:true,
+    bodyHtml:`
+      <div class="field-row">
+        <div class="field"><label>Type</label><select id="fif-type">${Object.entries(LABELS.incidentType).map(([v,l])=>`<option value="${v}">${esc(l)}</option>`).join("")}</select></div>
+        <div class="field"><label>Gravité</label><select id="fif-gravite"><option value="mineure">Mineure</option><option value="majeure">Majeure</option><option value="critique">Critique</option></select></div>
+      </div>
+      <div class="field"><label>Description <span class="req">*</span></label><textarea id="fif-desc"></textarea></div>
+      <div class="field"><label>Impact</label><input type="text" id="fif-impact"></div>
+      <div class="field-row">
+        <div class="field"><label>Date</label><input type="date" id="fif-date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field"><label>Processus impacté</label><select id="fif-process"><option value="">—</option>${DB.processes.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("")}</select></div>
+      </div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="fif-submit">Déclarer</button>`,
+    onMount:(o)=>{ o.querySelector("#fif-submit").addEventListener("click", ()=>{
+      const desc = o.querySelector("#fif-desc").value.trim();
+      if(!desc){ toast("Merci de décrire l'incident","⚠️"); return; }
+      DB.fournisseurIncidents.push({ id:"FINC-"+String(Date.now()).slice(-6), fournisseurId, date:o.querySelector("#fif-date").value||new Date().toISOString().slice(0,10),
+        type:o.querySelector("#fif-type").value, description:desc, impact:o.querySelector("#fif-impact").value.trim(), gravite:o.querySelector("#fif-gravite").value,
+        processId:o.querySelector("#fif-process").value||null, riskId:null, actionId:null, ncEventId:null });
+      saveDB(); closeModal(); toast("Incident déclaré"); render();
     });}
   });
 }
@@ -3665,6 +5815,190 @@ function initGlobalEvents(){
       if(remaining.length){ t.completedBy.push(remaining[0]); saveDB(); toast(remaining[0]+" a validé sa lecture"); render(); }
       return;
     }
+
+    /* ---- Audits ---- */
+    const auditWizEl = e.target.closest("[data-open-audit-wizard]");
+    if(auditWizEl){ openAuditWizard({ processId: auditWizEl.getAttribute("data-preset-process")||null }); return; }
+    const advAuditEl = e.target.closest("[data-advance-audit]");
+    if(advAuditEl){
+      const a = getAudit(advAuditEl.getAttribute("data-advance-audit"));
+      const idx = AUDIT_WORKFLOW_STEPS.indexOf(a.status);
+      if(idx < AUDIT_WORKFLOW_STEPS.length-1){
+        a.status = AUDIT_WORKFLOW_STEPS[idx+1];
+        saveDB(); toast("Audit passé à l'étape : "+AUDIT_WORKFLOW_LABELS[idx+1]); render();
+      }
+      return;
+    }
+    const saveQEl = e.target.closest("[data-save-question]");
+    if(saveQEl){
+      const payload = JSON.parse(saveQEl.getAttribute("data-save-question"));
+      const a = getAudit(payload.auditId);
+      const q = findBy(a.questions, payload.questionId);
+      q.statut = document.getElementById("q-statut").value;
+      q.commentaire = document.getElementById("q-comment").value.trim();
+      q.preuveIds = [...document.querySelectorAll(".q-preuve-cb:checked")].map(c=>c.value);
+      saveDB(); toast("Réponse enregistrée"); navigate(`audits/${payload.auditId}/grille/${payload.qIdx}`);
+      return;
+    }
+    const genQEl = e.target.closest("[data-generate-questions]");
+    if(genQEl){
+      const a = getAudit(genQEl.getAttribute("data-generate-questions"));
+      const existingTexts = new Set(a.questions.map(q=>q.question));
+      const fresh = generateAuditQuestions(a.processIds&&a.processIds.length?a.processIds:[a.processId], a.referentielIds).filter(q=>!existingTexts.has(q.question));
+      a.questions.push(...fresh);
+      saveDB(); toast(fresh.length+" question(s) générée(s)"); render();
+      return;
+    }
+    const addQEl = e.target.closest("[data-add-question]");
+    if(addQEl){ openQuestionAddForm(addQEl.getAttribute("data-add-question")); return; }
+    const addPartyEl = e.target.closest("[data-add-party]");
+    if(addPartyEl){ openPartyAddForm(addPartyEl.getAttribute("data-add-party")); return; }
+    const relaunchEl = e.target.closest("[data-relaunch-party]");
+    if(relaunchEl){
+      const payload = JSON.parse(relaunchEl.getAttribute("data-relaunch-party"));
+      const a = getAudit(payload.auditId);
+      const pt = a.parties.find(p=>p.name===payload.partyName);
+      if(pt && pt.status==="en_attente") pt.status = "en_cours";
+      saveDB(); toast("Relance envoyée à "+payload.partyName+" (simulée)"); render();
+      return;
+    }
+    const editPerimEl = e.target.closest("[data-edit-audit-perimeter]");
+    if(editPerimEl){ openPerimeterEditForm(editPerimEl.getAttribute("data-edit-audit-perimeter")); return; }
+    const createNcEl = e.target.closest("[data-create-nc-from-constat]");
+    if(createNcEl){
+      const payload = JSON.parse(createNcEl.getAttribute("data-create-nc-from-constat"));
+      const a = getAudit(payload.auditId);
+      const f = findBy(a.findings, payload.constatId);
+      const id = nextId("EVT", DB.events);
+      const graviteToPriority = {critique:"critique", majeure:"haute", mineure:"moyenne"};
+      DB.events.push({ id, ref:"NC-"+new Date().getFullYear()+"-"+String(DB.events.length+20).padStart(3,"0"), type:"non_conformite",
+        title: f.text.slice(0,80), processId: f.processId||a.processId, priority: graviteToPriority[f.gravite]||"moyenne", status:"ouvert",
+        declaredBy: a.responsable||a.auditor||"Audit", date: new Date().toISOString().slice(0,10), step:0, description: f.text, relatedRiskId: f.riskId||null });
+      f.ncEventId = id;
+      saveDB(); toast("Non-conformité créée dans le module Événements"); render();
+      return;
+    }
+    const createAuditActEl = e.target.closest("[data-create-action-from-constat]");
+    if(createAuditActEl){
+      const payload = JSON.parse(createAuditActEl.getAttribute("data-create-action-from-constat"));
+      const a = getAudit(payload.auditId);
+      const f = findBy(a.findings, payload.constatId);
+      const id = nextId("ACT", DB.actions);
+      DB.actions.push({ id, title:"Traiter le constat : "+f.text.slice(0,60), owner:a.responsable||a.auditor||"Non assigné",
+        due:new Date(Date.now()+14*86400000).toISOString().slice(0,10), priority: f.gravite==="critique"?"critique":f.gravite==="majeure"?"haute":"moyenne",
+        status:"a_faire", origin:"audit", originId:a.id, processId:f.processId||a.processId });
+      f.actionId = id;
+      saveDB(); toast("Action créée dans le module Actions"); render();
+      return;
+    }
+    const genAuditReportEl = e.target.closest("[data-generate-audit-report]");
+    if(genAuditReportEl){
+      const a = getAudit(genAuditReportEl.getAttribute("data-generate-audit-report"));
+      const id = nextId("DOC", DB.documents);
+      DB.documents.push({ id, ref:"RAP-"+(a.ref||a.id), title:"Rapport d'audit — "+a.title, type:"enregistrement", version:"1.0",
+        status:"en_vigueur", processId:a.processId, author:a.responsable||a.auditor||"Audit", approver:a.responsable||"—",
+        date:new Date().toISOString().slice(0,10), nextReview:"—", body:generateAuditReportText(a),
+        requirementIds:[], riskIds:[], auditIds:[a.id], indicatorIds:[], actionIds:[], crossDocIds:[], flowSteps:[], referentiels:(a.referentielIds||[]).map(rid=>{const r=getReferentiel(rid);return r?r.name:rid;}) });
+      saveDB(); toast("Rapport d'audit généré"); navigate(`documents/enregistrement/${id}`);
+      return;
+    }
+
+    /* ---- Compétences & Habilitations ---- */
+    const compFormEl = e.target.closest("[data-open-competence-form]");
+    if(compFormEl){ openCompetenceForm(compFormEl.getAttribute("data-open-competence-form")||null); return; }
+    const posteFormEl = e.target.closest("[data-open-poste-form]");
+    if(posteFormEl){ openPosteForm(posteFormEl.getAttribute("data-open-poste-form")||null); return; }
+    const addPosteCompEl = e.target.closest("[data-add-poste-competence]");
+    if(addPosteCompEl){ openAddPosteCompetenceForm(addPosteCompEl.getAttribute("data-add-poste-competence")); return; }
+    const removePosteCompEl = e.target.closest("[data-remove-poste-competence]");
+    if(removePosteCompEl){
+      const payload = JSON.parse(removePosteCompEl.getAttribute("data-remove-poste-competence"));
+      const poste = getPoste(payload.posteId);
+      poste.competencesRequises = poste.competencesRequises.filter(r=>r.competenceId!==payload.competenceId);
+      saveDB(); toast("Compétence retirée du poste"); render();
+      return;
+    }
+    const habFormEl = e.target.closest("[data-open-habilitation-form]");
+    if(habFormEl){ openHabilitationForm(habFormEl.getAttribute("data-open-habilitation-form")||null); return; }
+    const personFormEl = e.target.closest("[data-open-person-form]");
+    if(personFormEl){ openPersonForm(personFormEl.getAttribute("data-open-person-form")||null); return; }
+    const evalFormEl = e.target.closest("[data-open-evaluation-form]");
+    if(evalFormEl){ const payload = JSON.parse(evalFormEl.getAttribute("data-open-evaluation-form")); openEvaluationForm(payload.personId, payload.competenceId); return; }
+    const preuveFormEl = e.target.closest("[data-open-preuve-form]");
+    if(preuveFormEl){ openPreuveForm(preuveFormEl.getAttribute("data-open-preuve-form"), null); return; }
+    const attribHabEl = e.target.closest("[data-attribute-habilitation]");
+    if(attribHabEl){ openAttributeHabilitationForm(attribHabEl.getAttribute("data-attribute-habilitation"), null); return; }
+    const attribHabForEl = e.target.closest("[data-attribute-habilitation-for]");
+    if(attribHabForEl){ openAttributeHabilitationForm(null, attribHabForEl.getAttribute("data-attribute-habilitation-for")); return; }
+    const renewHabEl = e.target.closest("[data-renew-habilitation]");
+    if(renewHabEl){ renewHabilitation(renewHabEl.getAttribute("data-renew-habilitation")); return; }
+    const suspendHabEl = e.target.closest("[data-suspend-habilitation]");
+    if(suspendHabEl){
+      const ph = findBy(DB.personHabilitations, suspendHabEl.getAttribute("data-suspend-habilitation"));
+      const wasActive = ph.statut !== "suspendue";
+      const today = new Date().toISOString().slice(0,10);
+      ph.historique.push({date:today, action: wasActive?"Suspension":"Réactivation", ancienneValeur:ph.statut, nouvelleValeur: wasActive?"suspendue":"active", commentaire:""});
+      ph.statut = wasActive ? "suspendue" : "active";
+      saveDB(); toast(wasActive?"Habilitation suspendue":"Habilitation réactivée"); render();
+      return;
+    }
+    const reviewFormEl = e.target.closest("[data-open-review-form]");
+    if(reviewFormEl){ openCompetenceReviewForm(reviewFormEl.getAttribute("data-open-review-form")); return; }
+    const devActionEl = e.target.closest("[data-create-dev-action]");
+    if(devActionEl){
+      const payload = JSON.parse(devActionEl.getAttribute("data-create-dev-action"));
+      const person = getPerson(payload.personId), comp = getCompetence(payload.competenceId);
+      const id = nextId("ACT", DB.actions);
+      DB.actions.push({ id, title:"Développer la compétence "+comp.nom+" — "+person.name, owner:person.manager||person.name, due:new Date(Date.now()+30*86400000).toISOString().slice(0,10),
+        priority: comp.criticite==="haute"?"haute":"moyenne", status:"a_faire", origin:"competence", originId:null, processId:person.processId,
+        personId:person.id, competenceId:comp.id });
+      saveDB(); toast("Action de développement créée"); render();
+      return;
+    }
+
+    /* ---- Fournisseurs ---- */
+    /* ---- Groupe / Établissements / Services ---- */
+    if(e.target.closest("#scope-pill") || e.target.closest("[data-open-scope-selector]")){ openScopeSelector(); return; }
+    const setScopeEl = e.target.closest("[data-set-scope]");
+    if(setScopeEl){
+      CURRENT_SCOPE = JSON.parse(setScopeEl.getAttribute("data-set-scope"));
+      saveScope(); closeModal(); updateScopePill(); toast("Périmètre changé : "+scopeLabel()); render();
+      return;
+    }
+
+    const frnFormEl = e.target.closest("[data-open-fournisseur-form]");
+    if(frnFormEl){ openFournisseurForm(frnFormEl.getAttribute("data-open-fournisseur-form")||null); return; }
+    const frnDocFormEl = e.target.closest("[data-open-fournisseur-doc-form]");
+    if(frnDocFormEl){ openFournisseurDocForm(frnDocFormEl.getAttribute("data-open-fournisseur-doc-form")); return; }
+    const frnEvalFormEl = e.target.closest("[data-open-fournisseur-eval-form]");
+    if(frnEvalFormEl){ openFournisseurEvalForm(frnEvalFormEl.getAttribute("data-open-fournisseur-eval-form")); return; }
+    const frnIncFormEl = e.target.closest("[data-open-fournisseur-incident-form]");
+    if(frnIncFormEl){ openFournisseurIncidentForm(frnIncFormEl.getAttribute("data-open-fournisseur-incident-form")); return; }
+    const createNcFromIncEl = e.target.closest("[data-create-nc-from-incident]");
+    if(createNcFromIncEl){
+      const inc = getFournisseurIncident(createNcFromIncEl.getAttribute("data-create-nc-from-incident"));
+      const f = getFournisseur(inc.fournisseurId);
+      const graviteToPriority = {critique:"critique", majeure:"haute", mineure:"moyenne"};
+      const id = nextId("EVT", DB.events);
+      DB.events.push({ id, ref:"NC-"+new Date().getFullYear()+"-"+String(DB.events.length+30).padStart(3,"0"), type:"non_conformite",
+        title:"[Fournisseur "+f.nomCommercial+"] "+inc.description.slice(0,70), processId:inc.processId, priority:graviteToPriority[inc.gravite]||"moyenne", status:"ouvert",
+        declaredBy:f.referentInterne||"Fournisseurs", date:new Date().toISOString().slice(0,10), step:0, description:inc.description, relatedRiskId:inc.riskId||null, fournisseurId:f.id });
+      inc.ncEventId = id;
+      saveDB(); toast("Non-conformité créée dans le module Événements"); render();
+      return;
+    }
+    const createActFromIncEl = e.target.closest("[data-create-action-from-incident]");
+    if(createActFromIncEl){
+      const inc = getFournisseurIncident(createActFromIncEl.getAttribute("data-create-action-from-incident"));
+      const f = getFournisseur(inc.fournisseurId);
+      const id = nextId("ACT", DB.actions);
+      DB.actions.push({ id, title:"Traiter l'incident fournisseur — "+f.nomCommercial+" : "+inc.description.slice(0,50), owner:f.referentInterne||"Non assigné",
+        due:new Date(Date.now()+14*86400000).toISOString().slice(0,10), priority: inc.gravite==="critique"?"critique":inc.gravite==="majeure"?"haute":"moyenne",
+        status:"a_faire", origin:"fournisseur", originId:inc.id, processId:inc.processId, fournisseurId:f.id });
+      inc.actionId = id;
+      saveDB(); toast("Action créée dans le module Actions"); render();
+      return;
+    }
     if(e.target.closest("[data-print]")){
       toast("Export PDF simulé pour cette démonstration", "🖨");
       return;
@@ -3826,18 +6160,22 @@ function initGlobalEvents(){
   document.addEventListener("input", (e)=>{
     if(e.target.id==="global-search"){ renderSearchResults(e.target.value); }
     if(e.target.matches("[data-filter]")){
-      const zone = e.target.id.startsWith("f-risk") ? "risk" : e.target.id.startsWith("f-evt") ? "evt" : e.target.id.startsWith("f-act") ? "act" : null;
+      const zone = e.target.id.startsWith("f-risk") ? "risk" : e.target.id.startsWith("f-evt") ? "evt" : e.target.id.startsWith("f-act") ? "act" : e.target.id.startsWith("f-comp") ? "comp" : e.target.id.startsWith("f-frn") ? "frn" : null;
       if(zone==="risk") applyRiskFilters();
       if(zone==="evt") applyEventFilters();
       if(zone==="act") applyActionFilters();
+      if(zone==="comp") applyCompetenceMatrixFilters();
+      if(zone==="frn") applyFournisseurFilters();
     }
   });
   document.addEventListener("change", (e)=>{
     if(e.target.matches("[data-filter]")){
-      const zone = e.target.id.startsWith("f-risk") ? "risk" : e.target.id.startsWith("f-evt") ? "evt" : e.target.id.startsWith("f-act") ? "act" : null;
+      const zone = e.target.id.startsWith("f-risk") ? "risk" : e.target.id.startsWith("f-evt") ? "evt" : e.target.id.startsWith("f-act") ? "act" : e.target.id.startsWith("f-comp") ? "comp" : e.target.id.startsWith("f-frn") ? "frn" : null;
       if(zone==="risk") applyRiskFilters();
       if(zone==="evt") applyEventFilters();
       if(zone==="act") applyActionFilters();
+      if(zone==="comp") applyCompetenceMatrixFilters();
+      if(zone==="frn") applyFournisseurFilters();
     }
     if(e.target.id==="review-picker"){ navigate("revue-direction/"+e.target.value); }
   });

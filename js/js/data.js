@@ -121,7 +121,7 @@ const QONNECT_SEED = {
   risks: [
     { id:"RISK-001", name:"Dépendance à un fournisseur unique", level:"critique", processId:"PROC-007", owner:"Sophie Martin", status:"ouvert", type:"risque",
       description:"Un composant stratégique n'est disponible que chez un seul fournisseur, exposant l'organisation à une rupture d'approvisionnement.",
-      probability:4, impact:5 },
+      probability:4, impact:5, fournisseurId:"FRN-008" },
     { id:"RISK-002", name:"Perte de compétence clé", level:"eleve", processId:"PROC-006", owner:"Paul Rousseau", status:"ouvert", type:"risque",
       description:"Le départ d'un expert technique pourrait fragiliser la continuité d'activité sur un procédé critique.",
       probability:3, impact:4 },
@@ -133,13 +133,19 @@ const QONNECT_SEED = {
       probability:3, impact:4 },
     { id:"RISK-005", name:"Cyberattaque sur le système d'information", level:"critique", processId:"PROC-008", owner:"Karim Belkacem", status:"ouvert", type:"risque",
       description:"Une intrusion informatique pourrait compromettre la disponibilité des données et des applications critiques.",
-      probability:3, impact:5 },
+      probability:3, impact:5, etablissementId:"GROUPE" },
     { id:"RISK-006", name:"Erreur de saisie comptable", level:"faible", processId:"PROC-009", owner:"Elise Vasseur", status:"maitrise", type:"risque",
       description:"Risque d'erreur lors de la saisie manuelle des écritures comptables.",
       probability:2, impact:2 },
+    { id:"RISK-007", name:"Défaillance récurrente du transporteur", level:"eleve", processId:"PROC-004", owner:"Thomas Petit", status:"ouvert", type:"risque",
+      description:"Le transporteur Transport Express connaît des retards répétés pouvant affecter la satisfaction client.",
+      probability:4, impact:3, fournisseurId:"FRN-006" },
     { id:"OPP-001", name:"Digitalisation du contrôle qualité", level:"opportunite", processId:"PROC-004", owner:"Thomas Petit", status:"ouvert", type:"opportunite",
       description:"L'automatisation des contrôles pourrait réduire les non-conformités et le temps de traitement.",
       probability:3, impact:3 },
+    { id:"RISK-008", name:"Sous-effectif chronique sur le site Sud", level:"eleve", processId:"PROC-004", owner:"Thomas Petit", status:"ouvert", type:"risque",
+      description:"Le site Sud fonctionne en sous-effectif depuis plusieurs mois, augmentant le risque d'erreur en production.",
+      probability:3, impact:3, etablissementId:"ETB-002", serviceId:"SVC-002" },
   ],
 
   events: [
@@ -185,6 +191,13 @@ const QONNECT_SEED = {
     { id:"ACT-011", title:"Qualifier un second fournisseur pour le composant stratégique", owner:"Sophie Martin", due:"2026-03-31", priority:"haute", status:"termine", origin:"revue_direction", originId:"RDDEC-001", processId:"PROC-007" },
     { id:"ACT-012", title:"Réaliser un audit de sécurité du système d'information", owner:"Karim Belkacem", due:"2026-05-31", priority:"critique", status:"retard", origin:"revue_direction", originId:"RDDEC-002", processId:"PROC-008" },
     { id:"ACT-013", title:"Renforcer le contrôle qualité en production", owner:"Thomas Petit", due:"2026-04-30", priority:"moyenne", status:"termine", origin:"revue_direction", originId:"RDDEC-003", processId:"PROC-004" },
+    { id:"ACT-014", title:"Renforcer la compétence Audit interne de Marc Lenoir", owner:"Marc Lenoir", due:"2026-10-31", priority:"haute", status:"en_cours", origin:"competence", originId:"EVAL-004", processId:"PROC-002", personId:"P-002", competenceId:"COMP-004" },
+    { id:"ACT-015", title:"Formaliser la cartographie des compétences critiques RH", owner:"Paul Rousseau", due:"2026-09-30", priority:"haute", status:"a_faire", origin:"competence", originId:"EVAL-006", processId:"PROC-006", personId:"P-006", competenceId:"COMP-010" },
+    { id:"ACT-016", title:"Réaliser un renforcement cybersécurité pour Karim Belkacem", owner:"Karim Belkacem", due:"2026-10-15", priority:"critique", status:"a_faire", origin:"competence", originId:"EVAL-010", processId:"PROC-008", personId:"P-008", competenceId:"COMP-012" },
+    { id:"ACT-017", title:"Rappel des consignes de sécurité au poste — Amina Cherif", owner:"Thomas Petit", due:"2026-06-15", priority:"haute", status:"termine", origin:"competence", originId:"EVAL-018", processId:"PROC-004", personId:"P-011", competenceId:"COMP-019", efficaciteVerifiee:true },
+    { id:"ACT-018", title:"Exiger un plan de continuité formalisé de Composants Précis SARL", owner:"Sophie Martin", due:"2026-11-30", priority:"haute", status:"a_faire", origin:"fournisseur", originId:"AUD-006", processId:"PROC-007", fournisseurId:"FRN-008" },
+    { id:"ACT-019", title:"Notifier Transport Express des pénalités de retard et exiger un plan d'action", owner:"Thomas Petit", due:"2026-09-30", priority:"haute", status:"en_cours", origin:"fournisseur", originId:"AUD-007", processId:"PROC-004", fournisseurId:"FRN-006" },
+    { id:"ACT-020", title:"Renforcer les effectifs de la ligne Sud", owner:"Thomas Petit", due:"2026-11-30", priority:"moyenne", status:"a_faire", origin:"audit", originId:"AUD-008", processId:"PROC-004", etablissementId:"ETB-002", serviceId:"SVC-002" },
   ],
 
   objectives: [
@@ -205,20 +218,127 @@ const QONNECT_SEED = {
   ],
 
   audits: [
-    { id:"AUD-001", title:"Audit interne Achats", processId:"PROC-007", objective:"Vérifier l'application de la procédure PR-005 et l'évaluation des fournisseurs.", scope:"Processus Achats — sélection et évaluation fournisseurs", auditor:"Marc Lenoir", date:"2026-09-02", status:"planifie",
+    { id:"AUD-001", ref:"AUD-2026-001", title:"Audit interne Achats", type:"interne", referentielIds:["ISO9001"],
+      processId:"PROC-007", processIds:["PROC-007"], date:"2026-09-02", duration:"1 jour", responsable:"Marc Lenoir", auditeurs:["Marc Lenoir"], site:"Siège",
+      objective:"Vérifier l'application de la procédure PR-005 et l'évaluation des fournisseurs.", scope:"Processus Achats — sélection et évaluation fournisseurs",
+      auditor:"Marc Lenoir", status:"planifie",
+      motifs:["programme_annuel","risque_identifie"],
+      perimeter:{ processIds:["PROC-007"], activites:"Sélection et évaluation des fournisseurs", produits:"", periodeDebut:"2026-01-01", periodeFin:"2026-08-31", exclusions:"Achats hors production" },
+      objectifs:["Vérifier l'application de la procédure PR-005", "Évaluer la maîtrise du risque fournisseur unique (RISK-001)"],
+      criteres:{ referentielIds:["ISO9001"], requirementIds:["REQ-011","REQ-018"], documentIds:["DOC-005"] },
+      questions:[
+        { id:"AUD-001-Q1", question:"Comment les fournisseurs sont-ils sélectionnés et qualifiés ?", requirementId:"REQ-011", processId:"PROC-007", critere:"PR-005", preuveAttendue:"Grille de qualification fournisseurs", responsableInterroge:"Sophie Martin", statut:"non_evalue", commentaire:"", preuveIds:[] },
+        { id:"AUD-001-Q2", question:"Comment la dépendance à un fournisseur unique est-elle maîtrisée ?", requirementId:"REQ-018", processId:"PROC-007", critere:"RISK-001", preuveAttendue:"Plan d'action de diversification", responsableInterroge:"Sophie Martin", statut:"non_evalue", commentaire:"", preuveIds:[] },
+      ],
+      parties:[ {name:"Sophie Martin", role:"Audité", questionIds:["AUD-001-Q1","AUD-001-Q2"], echeance:"2026-08-28", status:"en_attente"} ],
       findings:[] },
-    { id:"AUD-002", title:"Audit interne Système documentaire", processId:"PROC-002", objective:"Vérifier la maîtrise documentaire et la mise à jour des procédures.", scope:"Gestion documentaire", auditor:"Claire Dubreuil", date:"2026-06-10", status:"realise",
+    { id:"AUD-002", ref:"AUD-2026-002", title:"Audit interne Système documentaire", type:"interne", referentielIds:["ISO9001"],
+      processId:"PROC-002", processIds:["PROC-002"], date:"2026-06-10", duration:"0,5 jour", responsable:"Claire Dubreuil", auditeurs:["Claire Dubreuil"], site:"Siège",
+      objective:"Vérifier la maîtrise documentaire et la mise à jour des procédures.", scope:"Gestion documentaire",
+      auditor:"Claire Dubreuil", status:"valide",
+      motifs:["programme_annuel"],
+      perimeter:{ processIds:["PROC-002"], activites:"Gestion documentaire", produits:"", periodeDebut:"2025-12-01", periodeFin:"2026-06-01", exclusions:"" },
+      objectifs:["Vérifier la maîtrise documentaire et la mise à jour des procédures"],
+      criteres:{ referentielIds:["ISO9001"], requirementIds:["REQ-009"], documentIds:["DOC-006"] },
+      questions:[
+        { id:"AUD-002-Q1", question:"Les procédures sont-elles révisées dans les délais prévus ?", requirementId:"REQ-009", processId:"PROC-002", critere:"PR-006", preuveAttendue:"Registre de suivi des révisions", responsableInterroge:"Marc Lenoir", statut:"non_conforme", commentaire:"PR-006 est en retard de révision.", preuveIds:["DOC-006"] },
+      ],
+      parties:[ {name:"Marc Lenoir", role:"Audité", questionIds:["AUD-002-Q1"], echeance:"2026-06-08", status:"complete"} ],
       findings:[
-        {id:"C-001", type:"ecart", text:"La procédure PR-006 n'a pas été révisée dans les délais prévus.", actionId:"ACT-007"},
-        {id:"C-002", type:"point_fort", text:"Bonne appropriation des règles de nommage documentaire par les équipes."},
+        {id:"C-001", type:"ecart", text:"La procédure PR-006 n'a pas été révisée dans les délais prévus.", requirementId:"REQ-009", processId:"PROC-002", questionId:"AUD-002-Q1", gravite:"mineure", cause:"", riskId:null, ncEventId:null, actionId:"ACT-007"},
+        {id:"C-002", type:"point_fort", text:"Bonne appropriation des règles de nommage documentaire par les équipes.", requirementId:null, processId:"PROC-002", questionId:null, gravite:null, cause:"", riskId:null, ncEventId:null, actionId:null},
       ] },
-    { id:"AUD-003", title:"Audit interne Production", processId:"PROC-004", objective:"Vérifier la maîtrise des paramètres critiques de production.", scope:"Ligne de production A", auditor:"Marc Lenoir", date:"2026-04-14", status:"realise",
+    { id:"AUD-003", ref:"AUD-2025-014", title:"Audit interne Production", type:"interne", referentielIds:["ISO9001"],
+      processId:"PROC-004", processIds:["PROC-004"], date:"2026-04-14", duration:"1 jour", responsable:"Marc Lenoir", auditeurs:["Marc Lenoir"], site:"Site de production",
+      objective:"Vérifier la maîtrise des paramètres critiques de production.", scope:"Ligne de production A",
+      auditor:"Marc Lenoir", status:"valide",
+      motifs:["programme_annuel","non_conformite"],
+      perimeter:{ processIds:["PROC-004"], activites:"Réglage et suivi de la ligne A", produits:"Ligne A", periodeDebut:"2025-10-01", periodeFin:"2026-04-01", exclusions:"Ligne B" },
+      objectifs:["Vérifier la maîtrise des paramètres critiques de production", "Vérifier l'efficacité de l'action corrective sur l'étalonnage"],
+      criteres:{ referentielIds:["ISO9001"], requirementIds:["REQ-019"], documentIds:["DOC-011"] },
+      questions:[
+        { id:"AUD-003-Q1", question:"La sonde de température est-elle étalonnée et sa traçabilité assurée ?", requirementId:"REQ-019", processId:"PROC-004", critere:"MO-011", preuveAttendue:"Certificat d'étalonnage", responsableInterroge:"Thomas Petit", statut:"non_conforme", commentaire:"Absence de certificat sur une période.", preuveIds:[] },
+      ],
+      parties:[ {name:"Thomas Petit", role:"Audité", questionIds:["AUD-003-Q1"], echeance:"2026-04-12", status:"complete"} ],
       findings:[
-        {id:"C-003", type:"ecart", text:"Absence de traçabilité de l'étalonnage de la sonde de température sur une période.", actionId:"ACT-003"},
+        {id:"C-003", type:"ecart", text:"Absence de traçabilité de l'étalonnage de la sonde de température sur une période.", requirementId:"REQ-019", processId:"PROC-004", questionId:"AUD-003-Q1", gravite:"majeure", cause:"", riskId:"RISK-003", ncEventId:null, actionId:"ACT-003"},
       ] },
-    { id:"AUD-004", title:"Audit interne Informatique / sécurité", processId:"PROC-008", objective:"Évaluer la maîtrise des accès et la sécurité applicative.", scope:"Système d'information", auditor:"Sophie Martin", date:"2025-11-05", status:"cloture",
+    { id:"AUD-004", ref:"AUD-2025-009", title:"Audit interne Informatique / sécurité", type:"interne", referentielIds:["ISO27001"],
+      processId:"PROC-008", processIds:["PROC-008"], date:"2025-11-05", duration:"1 jour", responsable:"Sophie Martin", auditeurs:["Sophie Martin"], site:"Siège",
+      objective:"Évaluer la maîtrise des accès et la sécurité applicative.", scope:"Système d'information",
+      auditor:"Sophie Martin", status:"cloture",
+      motifs:["programme_annuel"],
+      perimeter:{ processIds:["PROC-008"], activites:"Sécurité du système d'information", produits:"", periodeDebut:"2025-06-01", periodeFin:"2025-11-01", exclusions:"" },
+      objectifs:["Évaluer la maîtrise des accès et la sécurité applicative"],
+      criteres:{ referentielIds:["ISO27001"], requirementIds:[], documentIds:[] },
+      questions:[
+        { id:"AUD-004-Q1", question:"La politique de sauvegarde est-elle appliquée et testée ?", requirementId:null, processId:"PROC-008", critere:"Politique de sauvegarde", preuveAttendue:"Rapport de test de restauration", responsableInterroge:"Karim Belkacem", statut:"conforme", commentaire:"Sauvegardes testées trimestriellement.", preuveIds:[] },
+      ],
+      parties:[ {name:"Karim Belkacem", role:"Audité", questionIds:["AUD-004-Q1"], echeance:"2025-11-03", status:"complete"} ],
       findings:[
-        {id:"C-004", type:"point_fort", text:"Politique de sauvegarde conforme et testée régulièrement."},
+        {id:"C-004", type:"point_fort", text:"Politique de sauvegarde conforme et testée régulièrement.", requirementId:null, processId:"PROC-008", questionId:"AUD-004-Q1", gravite:null, cause:"", riskId:null, ncEventId:null, actionId:null},
+      ] },
+    { id:"AUD-005", ref:"AUD-2026-005", title:"Audit interne RH", type:"interne", referentielIds:["ISO9001"],
+      processId:"PROC-006", processIds:["PROC-006"], date:"2026-08-20", duration:"1 jour", responsable:"Marc Lenoir", auditeurs:["Marc Lenoir","Claire Dubreuil"], site:"Siège",
+      objective:"Vérifier la gestion des compétences et l'efficacité du plan de formation.", scope:"Processus RH — gestion des compétences",
+      auditor:"Marc Lenoir", status:"en_cours",
+      motifs:["programme_annuel","risque_identifie"],
+      perimeter:{ processIds:["PROC-006"], activites:"Gestion des compétences et des formations", produits:"", periodeDebut:"2026-01-01", periodeFin:"2026-08-01", exclusions:"Recrutement" },
+      objectifs:["Vérifier l'identification des besoins de compétences", "Vérifier l'efficacité du plan de formation", "Évaluer la maîtrise du risque de perte de compétence clé (RISK-002)"],
+      criteres:{ referentielIds:["ISO9001"], requirementIds:["REQ-008"], documentIds:["DOC-008"] },
+      questions:[
+        { id:"AUD-005-Q1", question:"Comment les besoins de formation sont-ils identifiés ?", requirementId:"REQ-008", processId:"PROC-006", critere:"PR-008", preuveAttendue:"Plan de formation annuel", responsableInterroge:"Paul Rousseau", statut:"conforme", commentaire:"Plan de formation formalisé et suivi.", preuveIds:["DOC-008"] },
+        { id:"AUD-005-Q2", question:"Comment les compétences critiques sont-elles cartographiées ?", requirementId:"REQ-008", processId:"PROC-006", critere:"RISK-002", preuveAttendue:"Cartographie des compétences", responsableInterroge:"Paul Rousseau", statut:"non_conforme", commentaire:"Aucune cartographie formalisée des compétences critiques.", preuveIds:[] },
+        { id:"AUD-005-Q3", question:"Comment l'efficacité des formations est-elle évaluée ?", requirementId:"REQ-008", processId:"PROC-006", critere:"PR-008", preuveAttendue:"Évaluations à chaud/à froid", responsableInterroge:"Paul Rousseau", statut:"a_verifier", commentaire:"", preuveIds:[] },
+        { id:"AUD-005-Q4", question:"Les habilitations sont-elles suivies et à jour ?", requirementId:"REQ-008", processId:"PROC-006", critere:"PR-008", preuveAttendue:"Registre des habilitations", responsableInterroge:"Paul Rousseau", statut:"non_evalue", commentaire:"", preuveIds:[] },
+      ],
+      parties:[ {name:"Paul Rousseau", role:"Audité", questionIds:["AUD-005-Q1","AUD-005-Q2","AUD-005-Q3","AUD-005-Q4"], echeance:"2026-08-18", status:"en_cours"} ],
+      findings:[
+        {id:"C-005", type:"ecart", text:"Aucune cartographie formalisée des compétences critiques n'est disponible.", requirementId:"REQ-008", processId:"PROC-006", questionId:"AUD-005-Q2", gravite:"majeure", cause:"", riskId:"RISK-002", ncEventId:null, actionId:null},
+      ] },
+    { id:"AUD-006", ref:"AUD-2026-006", title:"Audit fournisseur — Composants Précis SARL", type:"fournisseur", referentielIds:["ISO9001"], fournisseurId:"FRN-008",
+      processId:"PROC-007", processIds:["PROC-007"], date:"2026-05-15", duration:"1 jour", responsable:"Sophie Martin", auditeurs:["Sophie Martin"], site:"Site fournisseur — Saint-Étienne",
+      objective:"Évaluer la maîtrise qualité du fournisseur unique de composants critiques.", scope:"Processus de fabrication et contrôle qualité du fournisseur.",
+      auditor:"Sophie Martin", status:"valide",
+      motifs:["risque_identifie","programme_annuel"],
+      perimeter:{ processIds:["PROC-007"], activites:"Fabrication et contrôle du composant stratégique X", produits:"Composant stratégique X", periodeDebut:"2025-06-01", periodeFin:"2026-05-01", exclusions:"" },
+      objectifs:["Vérifier la maîtrise des processus de fabrication", "Évaluer le plan de continuité en cas de rupture"],
+      criteres:{ referentielIds:["ISO9001"], requirementIds:["REQ-011"], documentIds:["DOC-005"] },
+      questions:[
+        { id:"AUD-006-Q1", question:"Le fournisseur dispose-t-il d'un plan de continuité en cas de rupture de production ?", requirementId:"REQ-011", processId:"PROC-007", critere:"RISK-001", preuveAttendue:"Plan de continuité formalisé", responsableInterroge:"Responsable qualité fournisseur", statut:"non_conforme", commentaire:"Aucun plan de continuité formalisé n'a été présenté.", preuveIds:[] },
+      ],
+      parties:[ {name:"Sophie Martin", role:"Auditeur", questionIds:["AUD-006-Q1"], echeance:"2026-05-15", status:"complete"} ],
+      findings:[
+        {id:"C-006", type:"vigilance", text:"Absence de plan de continuité formalisé chez le fournisseur en cas de rupture de production.", requirementId:"REQ-011", processId:"PROC-007", questionId:"AUD-006-Q1", gravite:"majeure", cause:"", riskId:"RISK-001", ncEventId:null, actionId:"ACT-018"},
+      ] },
+    { id:"AUD-007", ref:"AUD-2026-007", title:"Audit fournisseur — Transport Express", type:"fournisseur", referentielIds:["ISO9001"], fournisseurId:"FRN-006",
+      processId:"PROC-004", processIds:["PROC-004"], date:"2026-08-01", duration:"0,5 jour", responsable:"Thomas Petit", auditeurs:["Thomas Petit"], site:"Site fournisseur — Lyon",
+      objective:"Évaluer les causes des retards de livraison récurrents.", scope:"Processus de livraison et gestion des délais.",
+      auditor:"Thomas Petit", status:"en_cours",
+      motifs:["non_conformite","incident"],
+      perimeter:{ processIds:["PROC-004"], activites:"Livraison des produits finis", produits:"", periodeDebut:"2026-01-01", periodeFin:"2026-08-01", exclusions:"" },
+      objectifs:["Identifier les causes des retards répétés", "Vérifier les mesures correctives engagées"],
+      criteres:{ referentielIds:["ISO9001"], requirementIds:[], documentIds:[] },
+      questions:[
+        { id:"AUD-007-Q1", question:"Quelles mesures ont été mises en place pour respecter les délais contractuels ?", requirementId:null, processId:"PROC-004", critere:"RISK-007", preuveAttendue:"Plan d'action correctif", responsableInterroge:"Responsable exploitation", statut:"non_conforme", commentaire:"Aucune mesure corrective formalisée à ce stade.", preuveIds:[] },
+      ],
+      parties:[ {name:"Thomas Petit", role:"Auditeur", questionIds:["AUD-007-Q1"], echeance:"2026-08-01", status:"en_cours"} ],
+      findings:[
+        {id:"C-007", type:"ecart", text:"Non-respect récurrent des délais de livraison contractuels.", requirementId:null, processId:"PROC-004", questionId:"AUD-007-Q1", gravite:"majeure", cause:"", riskId:"RISK-007", ncEventId:null, actionId:"ACT-019"},
+      ] },
+    { id:"AUD-008", ref:"AUD-2026-008", title:"Audit interne Production — Site Sud", type:"interne", referentielIds:["ISO9001"],
+      processId:"PROC-004", processIds:["PROC-004"], date:"2026-07-10", duration:"1 jour", responsable:"Thomas Petit", auditeurs:["Thomas Petit"], site:"Établissement Site Sud",
+      objective:"Vérifier la maîtrise de la production sur le site Sud.", scope:"Ligne Sud", auditor:"Thomas Petit", status:"valide",
+      motifs:["risque_identifie"], etablissementId:"ETB-002", serviceId:"SVC-002",
+      perimeter:{ processIds:["PROC-004"], activites:"Production — Ligne Sud", produits:"", periodeDebut:"2026-01-01", periodeFin:"2026-07-01", exclusions:"" },
+      objectifs:["Évaluer l'impact du sous-effectif sur la maîtrise de la production"],
+      criteres:{ referentielIds:["ISO9001"], requirementIds:[], documentIds:[] },
+      questions:[
+        { id:"AUD-008-Q1", question:"Le sous-effectif a-t-il un impact constaté sur la qualité produite ?", requirementId:null, processId:"PROC-004", critere:"RISK-008", preuveAttendue:"Suivi des indicateurs qualité du site", responsableInterroge:"Chef de ligne Sud", statut:"partiellement_conforme", commentaire:"Impact limité mais vigilance nécessaire.", preuveIds:[] },
+      ],
+      parties:[ {name:"Thomas Petit", role:"Auditeur", questionIds:["AUD-008-Q1"], echeance:"2026-07-10", status:"complete"} ],
+      findings:[
+        {id:"C-008", type:"vigilance", text:"Le sous-effectif du site Sud constitue un point de vigilance pour le maintien de la qualité à moyen terme.", requirementId:null, processId:"PROC-004", questionId:"AUD-008-Q1", gravite:"mineure", cause:"", riskId:"RISK-008", ncEventId:null, actionId:"ACT-020"},
       ] },
   ],
 
@@ -252,6 +372,242 @@ const QONNECT_SEED = {
   ],
 
   customExigences: [],
+
+  /* ---------- Compétences & Habilitations ---------- */
+  competences: [
+    { id:"COMP-001", nom:"ISO 9001", code:"C-ISO9001", description:"Connaissance et application des exigences de la norme ISO 9001.", domaine:"Qualité", type:"transversale", niveauRequisPossible:4, criticite:"haute", reglementaire:false, actif:true, documentIds:["DOC-MAN-001"], habilitationIds:["HAB-002"] },
+    { id:"COMP-002", nom:"Gestion des risques", code:"C-RISK", description:"Identification, évaluation et maîtrise des risques et opportunités.", domaine:"Qualité", type:"transversale", niveauRequisPossible:4, criticite:"haute", reglementaire:false, actif:true, documentIds:["DOC-004"], habilitationIds:[] },
+    { id:"COMP-003", nom:"NC / CAPA", code:"C-CAPA", description:"Traitement des non-conformités et des actions correctives.", domaine:"Qualité", type:"métier", niveauRequisPossible:4, criticite:"haute", reglementaire:false, actif:true, documentIds:["DOC-004"], habilitationIds:[] },
+    { id:"COMP-004", nom:"Audit interne", code:"C-AUDIT", description:"Planification et réalisation d'audits internes.", domaine:"Qualité", type:"métier", niveauRequisPossible:4, criticite:"haute", reglementaire:false, actif:true, documentIds:["DOC-007"], habilitationIds:["HAB-002"] },
+    { id:"COMP-005", nom:"Gestion documentaire", code:"C-DOC", description:"Maîtrise du système documentaire du SMQ.", domaine:"Qualité", type:"transversale", niveauRequisPossible:4, criticite:"moyenne", reglementaire:false, actif:true, documentIds:["DOC-006"], habilitationIds:[] },
+    { id:"COMP-006", nom:"Gestion fournisseurs", code:"C-ACH", description:"Sélection, qualification et évaluation des fournisseurs.", domaine:"Achats", type:"métier", niveauRequisPossible:4, criticite:"haute", reglementaire:false, actif:true, documentIds:["DOC-005"], habilitationIds:[] },
+    { id:"COMP-007", nom:"Négociation", code:"C-NEGO", description:"Techniques de négociation commerciale et achats.", domaine:"Achats / Commercial", type:"métier", niveauRequisPossible:4, criticite:"moyenne", reglementaire:false, actif:true, documentIds:[], habilitationIds:[] },
+    { id:"COMP-008", nom:"Pilotage de production", code:"C-PROD", description:"Pilotage et suivi de la performance de la production.", domaine:"Production", type:"métier", niveauRequisPossible:4, criticite:"haute", reglementaire:false, actif:true, documentIds:["DOC-PROC-PRD"], habilitationIds:[] },
+    { id:"COMP-009", nom:"Amélioration continue", code:"C-AMELIO", description:"Démarches d'amélioration continue et résolution de problèmes.", domaine:"Transversal", type:"transversale", niveauRequisPossible:4, criticite:"basse", reglementaire:false, actif:true, documentIds:[], habilitationIds:[] },
+    { id:"COMP-010", nom:"Gestion des compétences", code:"C-RH-COMP", description:"Identification et suivi des compétences et des besoins de formation.", domaine:"RH", type:"métier", niveauRequisPossible:4, criticite:"haute", reglementaire:false, actif:true, documentIds:["DOC-008"], habilitationIds:[] },
+    { id:"COMP-011", nom:"Droit du travail", code:"C-DROIT", description:"Application de la réglementation du travail.", domaine:"RH", type:"réglementaire", niveauRequisPossible:4, criticite:"haute", reglementaire:true, actif:true, documentIds:[], habilitationIds:[] },
+    { id:"COMP-012", nom:"Cybersécurité", code:"C-CYBER", description:"Protection du système d'information contre les menaces numériques.", domaine:"Informatique", type:"métier", niveauRequisPossible:4, criticite:"haute", reglementaire:false, actif:true, documentIds:[], habilitationIds:["HAB-001"] },
+    { id:"COMP-013", nom:"ISO 27001", code:"C-ISO27001", description:"Connaissance et application de la norme de sécurité de l'information.", domaine:"Informatique", type:"réglementaire", niveauRequisPossible:4, criticite:"haute", reglementaire:false, actif:true, documentIds:[], habilitationIds:[] },
+    { id:"COMP-014", nom:"Administration systèmes", code:"C-SYSADMIN", description:"Administration des systèmes et outils informatiques internes.", domaine:"Informatique", type:"métier", niveauRequisPossible:4, criticite:"moyenne", reglementaire:false, actif:true, documentIds:[], habilitationIds:["HAB-001"] },
+    { id:"COMP-015", nom:"Contrôle de gestion", code:"C-FIN", description:"Suivi budgétaire et contrôle de gestion.", domaine:"Finance", type:"métier", niveauRequisPossible:4, criticite:"moyenne", reglementaire:false, actif:true, documentIds:[], habilitationIds:[] },
+    { id:"COMP-016", nom:"Communication", code:"C-COM", description:"Communication interne et relationnelle.", domaine:"Transversal", type:"transversale", niveauRequisPossible:4, criticite:"basse", reglementaire:false, actif:true, documentIds:[], habilitationIds:[] },
+    { id:"COMP-017", nom:"Conduite de ligne B", code:"C-LIGNEB", description:"Conduite et réglage de la ligne de production B.", domaine:"Production", type:"métier", niveauRequisPossible:4, criticite:"haute", reglementaire:true, actif:true, documentIds:["DOC-011"], habilitationIds:["HAB-004"] },
+    { id:"COMP-018", nom:"Contrôle qualité", code:"C-CTRLQ", description:"Contrôle qualité en cours et fin de production.", domaine:"Production", type:"métier", niveauRequisPossible:4, criticite:"moyenne", reglementaire:false, actif:true, documentIds:["DOC-010"], habilitationIds:[] },
+    { id:"COMP-019", nom:"Sécurité au poste", code:"C-SECU", description:"Respect des règles de sécurité sur le poste de travail.", domaine:"Production", type:"réglementaire", niveauRequisPossible:4, criticite:"haute", reglementaire:true, actif:true, documentIds:[], habilitationIds:["HAB-003"] },
+    { id:"COMP-020", nom:"Satisfaction client", code:"C-SATCLI", description:"Suivi et amélioration de la satisfaction client.", domaine:"Commercial", type:"métier", niveauRequisPossible:4, criticite:"moyenne", reglementaire:false, actif:true, documentIds:[], habilitationIds:[] },
+    { id:"COMP-021", nom:"Gestion des réclamations", code:"C-RECLAM", description:"Traitement des réclamations clients.", domaine:"Relation client", type:"métier", niveauRequisPossible:4, criticite:"haute", reglementaire:false, actif:true, documentIds:["DOC-012"], habilitationIds:[] },
+    { id:"COMP-022", nom:"Leadership", code:"C-LEAD", description:"Capacité à fédérer et piloter l'organisation.", domaine:"Direction", type:"transversale", niveauRequisPossible:4, criticite:"haute", reglementaire:false, actif:true, documentIds:[], habilitationIds:["HAB-005"] },
+    { id:"COMP-023", nom:"Revue de direction", code:"C-REVDIR", description:"Conduite et exploitation de la revue de direction.", domaine:"Direction", type:"métier", niveauRequisPossible:4, criticite:"haute", reglementaire:false, actif:true, documentIds:[], habilitationIds:["HAB-005"] },
+  ],
+
+  postes: [
+    { id:"POSTE-001", intitule:"Responsable Qualité", code:"P-RQ", departement:"Qualité", description:"Pilote le système de management de la qualité.", responsable:"Claire Dubreuil", criticite:"haute", actif:true,
+      competencesRequises:[ {competenceId:"COMP-001", niveauRequis:3, obligatoire:true}, {competenceId:"COMP-002", niveauRequis:3, obligatoire:true}, {competenceId:"COMP-003", niveauRequis:3, obligatoire:true}, {competenceId:"COMP-004", niveauRequis:3, obligatoire:true}, {competenceId:"COMP-005", niveauRequis:2, obligatoire:true} ],
+      habilitationsObligatoires:["HAB-002"] },
+    { id:"POSTE-002", intitule:"Responsable Achats", code:"P-RA", departement:"Achats", description:"Pilote le processus achats et la relation fournisseurs.", responsable:"Claire Dubreuil", criticite:"moyenne", actif:true,
+      competencesRequises:[ {competenceId:"COMP-006", niveauRequis:3, obligatoire:true}, {competenceId:"COMP-007", niveauRequis:2, obligatoire:false}, {competenceId:"COMP-001", niveauRequis:2, obligatoire:true} ],
+      habilitationsObligatoires:[] },
+    { id:"POSTE-003", intitule:"Responsable Production", code:"P-RP", departement:"Production", description:"Pilote le processus de production.", responsable:"Claire Dubreuil", criticite:"haute", actif:true,
+      competencesRequises:[ {competenceId:"COMP-008", niveauRequis:3, obligatoire:true}, {competenceId:"COMP-002", niveauRequis:2, obligatoire:true}, {competenceId:"COMP-009", niveauRequis:2, obligatoire:false} ],
+      habilitationsObligatoires:[] },
+    { id:"POSTE-004", intitule:"Responsable RH", code:"P-RH", departement:"RH", description:"Pilote la gestion des compétences et des ressources humaines.", responsable:"Claire Dubreuil", criticite:"haute", actif:true,
+      competencesRequises:[ {competenceId:"COMP-010", niveauRequis:3, obligatoire:true}, {competenceId:"COMP-011", niveauRequis:3, obligatoire:true}, {competenceId:"COMP-001", niveauRequis:2, obligatoire:false} ],
+      habilitationsObligatoires:[] },
+    { id:"POSTE-005", intitule:"Responsable Informatique", code:"P-RI", departement:"Informatique", description:"Pilote la sécurité et la performance du système d'information.", responsable:"Claire Dubreuil", criticite:"haute", actif:true,
+      competencesRequises:[ {competenceId:"COMP-012", niveauRequis:3, obligatoire:true}, {competenceId:"COMP-013", niveauRequis:3, obligatoire:true}, {competenceId:"COMP-014", niveauRequis:3, obligatoire:true} ],
+      habilitationsObligatoires:["HAB-001"] },
+    { id:"POSTE-006", intitule:"Responsable Finance", code:"P-RF", departement:"Finance", description:"Pilote la fiabilité des données financières.", responsable:"Claire Dubreuil", criticite:"moyenne", actif:true,
+      competencesRequises:[ {competenceId:"COMP-015", niveauRequis:3, obligatoire:true}, {competenceId:"COMP-001", niveauRequis:1, obligatoire:false} ],
+      habilitationsObligatoires:[] },
+    { id:"POSTE-007", intitule:"Auditeur interne", code:"P-AUD", departement:"Qualité", description:"Réalise les audits internes du SMQ.", responsable:"Marc Lenoir", criticite:"haute", actif:true,
+      competencesRequises:[ {competenceId:"COMP-004", niveauRequis:3, obligatoire:true}, {competenceId:"COMP-001", niveauRequis:3, obligatoire:true}, {competenceId:"COMP-016", niveauRequis:2, obligatoire:false} ],
+      habilitationsObligatoires:["HAB-002"] },
+    { id:"POSTE-008", intitule:"Opérateur Production", code:"P-OP", departement:"Production", description:"Conduit la ligne de production et applique les contrôles qualité.", responsable:"Thomas Petit", criticite:"haute", actif:true,
+      competencesRequises:[ {competenceId:"COMP-017", niveauRequis:2, obligatoire:true}, {competenceId:"COMP-018", niveauRequis:2, obligatoire:true}, {competenceId:"COMP-019", niveauRequis:3, obligatoire:true} ],
+      habilitationsObligatoires:["HAB-003","HAB-004"] },
+    { id:"POSTE-009", intitule:"Responsable Commercial", code:"P-RC", departement:"Commercial", description:"Pilote le développement commercial.", responsable:"Claire Dubreuil", criticite:"moyenne", actif:true,
+      competencesRequises:[ {competenceId:"COMP-007", niveauRequis:3, obligatoire:true}, {competenceId:"COMP-020", niveauRequis:2, obligatoire:false} ],
+      habilitationsObligatoires:[] },
+    { id:"POSTE-010", intitule:"Responsable Relation Client", code:"P-RRC", departement:"Relation client", description:"Pilote la satisfaction et les réclamations clients.", responsable:"Julie Farge", criticite:"haute", actif:true,
+      competencesRequises:[ {competenceId:"COMP-021", niveauRequis:3, obligatoire:true}, {competenceId:"COMP-016", niveauRequis:2, obligatoire:true} ],
+      habilitationsObligatoires:[] },
+    { id:"POSTE-011", intitule:"Direction Générale", code:"P-DG", departement:"Direction", description:"Assure la direction générale et la revue du système de management.", responsable:"—", criticite:"haute", actif:true,
+      competencesRequises:[ {competenceId:"COMP-022", niveauRequis:3, obligatoire:true}, {competenceId:"COMP-001", niveauRequis:2, obligatoire:true}, {competenceId:"COMP-023", niveauRequis:3, obligatoire:true} ],
+      habilitationsObligatoires:["HAB-005"] },
+  ],
+
+  habilitations: [
+    { id:"HAB-001", nom:"Administration Jira / outils IT", code:"H-JIRA", description:"Autorisation d'administrer les outils et systèmes internes.", activite:"Administration des systèmes internes", niveau:"Standard", prerequis:"", competencesNecessaires:["COMP-014"], formationObligatoire:true, evaluationObligatoire:false, autorite:"Karim Belkacem", dureeValiditeMois:12, renouvellement:true, documentsNecessaires:[], actif:true },
+    { id:"HAB-002", nom:"Audit interne", code:"H-AUDIT", description:"Autorisation à conduire des audits internes du SMQ.", activite:"Réalisation d'audits internes", niveau:"Confirmé", prerequis:"Formation audit interne", competencesNecessaires:["COMP-004","COMP-001"], formationObligatoire:true, evaluationObligatoire:true, autorite:"Marc Lenoir", dureeValiditeMois:12, renouvellement:true, documentsNecessaires:["DOC-007"], actif:true },
+    { id:"HAB-003", nom:"Accès production (zone sécurisée)", code:"H-ACCPROD", description:"Autorisation d'accès à la zone de production.", activite:"Accès à la ligne de production", niveau:"Standard", prerequis:"Formation sécurité", competencesNecessaires:["COMP-019"], formationObligatoire:true, evaluationObligatoire:false, autorite:"Thomas Petit", dureeValiditeMois:12, renouvellement:true, documentsNecessaires:[], actif:true },
+    { id:"HAB-004", nom:"Conduite de ligne B", code:"H-LIGNEB", description:"Autorisation à conduire la ligne de production B.", activite:"Conduite de la ligne de production B", niveau:"Confirmé", prerequis:"Formation ligne B", competencesNecessaires:["COMP-017"], formationObligatoire:true, evaluationObligatoire:true, autorite:"Thomas Petit", dureeValiditeMois:24, renouvellement:true, documentsNecessaires:["DOC-011"], actif:true },
+    { id:"HAB-005", nom:"Signature revue de direction", code:"H-REVDIR", description:"Autorisation à valider les décisions de revue de direction.", activite:"Validation des décisions de revue de direction", niveau:"Direction", prerequis:"", competencesNecessaires:["COMP-022","COMP-023"], formationObligatoire:false, evaluationObligatoire:false, autorite:"Claire Dubreuil", dureeValiditeMois:36, renouvellement:true, documentsNecessaires:[], actif:true },
+  ],
+
+  people: [
+    { id:"P-001", name:"Claire Dubreuil", posteId:"POSTE-011", service:"Direction", manager:null, processId:"PROC-001", dateEntree:"2018-01-15", derniereRevue:"2026-01-15", prochaineRevue:"2027-01-15" },
+    { id:"P-002", name:"Marc Lenoir", posteId:"POSTE-001", service:"Qualité", manager:"Claire Dubreuil", processId:"PROC-002", dateEntree:"2019-03-01", derniereRevue:"2025-06-01", prochaineRevue:"2026-12-01" },
+    { id:"P-003", name:"Julie Farge", posteId:"POSTE-009", service:"Commercial", manager:"Claire Dubreuil", processId:"PROC-003", dateEntree:"2020-06-15", derniereRevue:"2025-09-01", prochaineRevue:"2026-09-01" },
+    { id:"P-004", name:"Thomas Petit", posteId:"POSTE-003", service:"Production", manager:"Claire Dubreuil", processId:"PROC-004", dateEntree:"2017-09-01", derniereRevue:"2025-08-01", prochaineRevue:"2026-08-01" },
+    { id:"P-005", name:"Nadia Amrani", posteId:"POSTE-010", service:"Relation client", manager:"Julie Farge", processId:"PROC-005", dateEntree:"2021-01-10", derniereRevue:"2025-10-01", prochaineRevue:"2026-10-01" },
+    { id:"P-006", name:"Paul Rousseau", posteId:"POSTE-004", service:"RH", manager:"Claire Dubreuil", processId:"PROC-006", dateEntree:"2019-11-01", derniereRevue:null, prochaineRevue:"2026-06-01" },
+    { id:"P-007", name:"Sophie Martin", posteId:"POSTE-002", service:"Achats", manager:"Claire Dubreuil", processId:"PROC-007", dateEntree:"2020-02-01", derniereRevue:"2025-11-01", prochaineRevue:"2026-11-01" },
+    { id:"P-008", name:"Karim Belkacem", posteId:"POSTE-005", service:"Informatique", manager:"Claire Dubreuil", processId:"PROC-008", dateEntree:"2021-05-01", derniereRevue:"2026-01-15", prochaineRevue:"2027-01-15" },
+    { id:"P-009", name:"Elise Vasseur", posteId:"POSTE-006", service:"Finance", manager:"Claire Dubreuil", processId:"PROC-009", dateEntree:"2018-08-01", derniereRevue:"2025-07-01", prochaineRevue:"2026-07-01" },
+    { id:"P-010", name:"Lucas Bonnet", posteId:"POSTE-007", service:"Qualité", manager:"Marc Lenoir", processId:"PROC-002", dateEntree:"2023-01-09", derniereRevue:"2026-01-10", prochaineRevue:"2027-01-10" },
+    { id:"P-011", name:"Amina Cherif", posteId:"POSTE-008", service:"Production", manager:"Thomas Petit", processId:"PROC-004", dateEntree:"2022-04-01", derniereRevue:"2025-05-01", prochaineRevue:"2026-05-01" },
+  ],
+
+  competenceEvaluations: [
+    { id:"EVAL-001", personId:"P-002", competenceId:"COMP-001", niveauEvalue:3, date:"2025-06-01", evaluateur:"Claire Dubreuil", methode:"Entretien annuel", commentaire:"Bonne maîtrise de la norme.", preuveIds:["PRV-001"], resultat:"Conforme", prochaineEvaluation:"2026-12-01" },
+    { id:"EVAL-002", personId:"P-002", competenceId:"COMP-002", niveauEvalue:3, date:"2025-06-01", evaluateur:"Claire Dubreuil", methode:"Entretien annuel", commentaire:"", preuveIds:[], resultat:"Conforme", prochaineEvaluation:"2026-12-01" },
+    { id:"EVAL-003", personId:"P-002", competenceId:"COMP-003", niveauEvalue:3, date:"2025-06-01", evaluateur:"Claire Dubreuil", methode:"Entretien annuel", commentaire:"", preuveIds:[], resultat:"Conforme", prochaineEvaluation:"2026-12-01" },
+    { id:"EVAL-004", personId:"P-002", competenceId:"COMP-004", niveauEvalue:2, date:"2025-06-01", evaluateur:"Claire Dubreuil", methode:"Évaluation interne", commentaire:"Niveau insuffisant pour piloter seul un audit complexe.", preuveIds:["PRV-002"], resultat:"À renforcer", prochaineEvaluation:"2026-12-01" },
+    { id:"EVAL-005", personId:"P-002", competenceId:"COMP-005", niveauEvalue:2, date:"2025-06-01", evaluateur:"Claire Dubreuil", methode:"Entretien annuel", commentaire:"", preuveIds:[], resultat:"Conforme", prochaineEvaluation:"2026-12-01" },
+    { id:"EVAL-006", personId:"P-006", competenceId:"COMP-010", niveauEvalue:2, date:"2026-02-01", evaluateur:"Claire Dubreuil", methode:"Entretien", commentaire:"Aucune cartographie formalisée des compétences critiques.", preuveIds:["PRV-003"], resultat:"À renforcer", prochaineEvaluation:"2026-08-01" },
+    { id:"EVAL-007", personId:"P-006", competenceId:"COMP-011", niveauEvalue:3, date:"2026-02-01", evaluateur:"Claire Dubreuil", methode:"Entretien", commentaire:"", preuveIds:[], resultat:"Conforme", prochaineEvaluation:"2027-02-01" },
+    { id:"EVAL-008", personId:"P-007", competenceId:"COMP-006", niveauEvalue:3, date:"2025-11-01", evaluateur:"Marc Lenoir", methode:"Observation", commentaire:"", preuveIds:["PRV-005"], resultat:"Conforme", prochaineEvaluation:"2026-11-01" },
+    { id:"EVAL-009", personId:"P-007", competenceId:"COMP-001", niveauEvalue:2, date:"2025-11-01", evaluateur:"Marc Lenoir", methode:"Entretien", commentaire:"", preuveIds:[], resultat:"Conforme", prochaineEvaluation:"2026-11-01" },
+    { id:"EVAL-010", personId:"P-008", competenceId:"COMP-012", niveauEvalue:2, date:"2026-01-15", evaluateur:"Claire Dubreuil", methode:"Test technique", commentaire:"Renforcement nécessaire suite au risque cyber identifié.", preuveIds:["PRV-004"], resultat:"À renforcer", prochaineEvaluation:"2026-07-15" },
+    { id:"EVAL-011", personId:"P-008", competenceId:"COMP-013", niveauEvalue:3, date:"2026-01-15", evaluateur:"Claire Dubreuil", methode:"Entretien", commentaire:"", preuveIds:[], resultat:"Conforme", prochaineEvaluation:"2027-01-15" },
+    { id:"EVAL-012", personId:"P-008", competenceId:"COMP-014", niveauEvalue:3, date:"2026-01-15", evaluateur:"Claire Dubreuil", methode:"Entretien", commentaire:"", preuveIds:[], resultat:"Conforme", prochaineEvaluation:"2027-01-15" },
+    { id:"EVAL-013", personId:"P-004", competenceId:"COMP-008", niveauEvalue:3, date:"2025-08-01", evaluateur:"Claire Dubreuil", methode:"Entretien annuel", commentaire:"", preuveIds:[], resultat:"Conforme", prochaineEvaluation:"2026-08-01" },
+    { id:"EVAL-014", personId:"P-004", competenceId:"COMP-002", niveauEvalue:2, date:"2025-08-01", evaluateur:"Claire Dubreuil", methode:"Entretien annuel", commentaire:"", preuveIds:[], resultat:"Conforme", prochaineEvaluation:"2026-08-01" },
+    { id:"EVAL-015", personId:"P-010", competenceId:"COMP-004", niveauEvalue:3, date:"2026-01-10", evaluateur:"Marc Lenoir", methode:"Évaluation interne", commentaire:"", preuveIds:[], resultat:"Conforme", prochaineEvaluation:"2027-01-10" },
+    { id:"EVAL-016", personId:"P-010", competenceId:"COMP-001", niveauEvalue:3, date:"2026-01-10", evaluateur:"Marc Lenoir", methode:"Entretien", commentaire:"", preuveIds:[], resultat:"Conforme", prochaineEvaluation:"2027-01-10" },
+    { id:"EVAL-017", personId:"P-011", competenceId:"COMP-017", niveauEvalue:2, date:"2025-05-01", evaluateur:"Thomas Petit", methode:"Mise en situation", commentaire:"", preuveIds:[], resultat:"Conforme", prochaineEvaluation:"2026-05-01" },
+    { id:"EVAL-018", personId:"P-011", competenceId:"COMP-019", niveauEvalue:2, date:"2025-05-01", evaluateur:"Thomas Petit", methode:"Observation", commentaire:"Rappel des consignes de sécurité nécessaire.", preuveIds:["PRV-006"], resultat:"À renforcer", prochaineEvaluation:"2026-05-01" },
+    { id:"EVAL-019", personId:"P-001", competenceId:"COMP-022", niveauEvalue:4, date:"2026-01-15", evaluateur:"Conseil d'administration", methode:"Entretien", commentaire:"", preuveIds:[], resultat:"Conforme", prochaineEvaluation:"2027-01-15" },
+    { id:"EVAL-020", personId:"P-001", competenceId:"COMP-001", niveauEvalue:3, date:"2026-01-15", evaluateur:"Marc Lenoir", methode:"Entretien", commentaire:"", preuveIds:[], resultat:"Conforme", prochaineEvaluation:"2027-01-15" },
+    { id:"EVAL-021", personId:"P-001", competenceId:"COMP-023", niveauEvalue:4, date:"2026-01-15", evaluateur:"Conseil d'administration", methode:"Entretien", commentaire:"", preuveIds:[], resultat:"Conforme", prochaineEvaluation:"2027-01-15" },
+    { id:"EVAL-022", personId:"P-003", competenceId:"COMP-007", niveauEvalue:3, date:"2025-09-01", evaluateur:"Claire Dubreuil", methode:"Entretien annuel", commentaire:"", preuveIds:[], resultat:"Conforme", prochaineEvaluation:"2026-09-01" },
+    { id:"EVAL-023", personId:"P-005", competenceId:"COMP-021", niveauEvalue:3, date:"2025-10-01", evaluateur:"Julie Farge", methode:"Entretien annuel", commentaire:"", preuveIds:[], resultat:"Conforme", prochaineEvaluation:"2026-10-01" },
+    { id:"EVAL-024", personId:"P-005", competenceId:"COMP-016", niveauEvalue:2, date:"2025-10-01", evaluateur:"Julie Farge", methode:"Entretien annuel", commentaire:"", preuveIds:[], resultat:"Conforme", prochaineEvaluation:"2026-10-01" },
+    { id:"EVAL-025", personId:"P-009", competenceId:"COMP-015", niveauEvalue:3, date:"2025-07-01", evaluateur:"Claire Dubreuil", methode:"Entretien annuel", commentaire:"", preuveIds:[], resultat:"Conforme", prochaineEvaluation:"2026-07-01" },
+  ],
+
+  competencePreuves: [
+    { id:"PRV-001", personId:"P-002", competenceId:"COMP-001", type:"certificat", label:"Certificat ISO 9001 Lead Implementer", date:"2025-06-01", evaluateur:"Claire Dubreuil", resultat:"Validé", documentId:null },
+    { id:"PRV-002", personId:"P-002", competenceId:"COMP-004", type:"evaluation_interne", label:"Grille d'évaluation audit interne", date:"2025-06-01", evaluateur:"Claire Dubreuil", resultat:"À renforcer", documentId:null },
+    { id:"PRV-003", personId:"P-006", competenceId:"COMP-010", type:"entretien", label:"Compte-rendu d'entretien annuel", date:"2026-02-01", evaluateur:"Claire Dubreuil", resultat:"À renforcer", documentId:null },
+    { id:"PRV-004", personId:"P-008", competenceId:"COMP-012", type:"test", label:"Test technique cybersécurité", date:"2026-01-15", evaluateur:"Claire Dubreuil", resultat:"À renforcer", documentId:null },
+    { id:"PRV-005", personId:"P-007", competenceId:"COMP-006", type:"attestation_formation", label:"Attestation formation évaluation fournisseurs", date:"2025-11-01", evaluateur:"Marc Lenoir", resultat:"Validé", documentId:"DOC-014" },
+    { id:"PRV-006", personId:"P-011", competenceId:"COMP-019", type:"observation", label:"Fiche d'observation terrain", date:"2025-05-01", evaluateur:"Thomas Petit", resultat:"À renforcer", documentId:null },
+  ],
+
+  personHabilitations: [
+    { id:"PH-001", personId:"P-002", habilitationId:"HAB-002", dateAttribution:"2025-09-05", dateExpiration:"2026-09-05", statut:"active", historique:[{date:"2025-09-05", action:"Attribution", ancienneValeur:null, nouvelleValeur:"active", commentaire:"Attribution initiale suite à évaluation."}] },
+    { id:"PH-002", personId:"P-010", habilitationId:"HAB-002", dateAttribution:"2026-01-15", dateExpiration:"2027-01-15", statut:"active", historique:[{date:"2026-01-15", action:"Attribution", ancienneValeur:null, nouvelleValeur:"active", commentaire:""}] },
+    { id:"PH-003", personId:"P-008", habilitationId:"HAB-001", dateAttribution:"2025-01-10", dateExpiration:"2026-01-10", statut:"active", historique:[{date:"2025-01-10", action:"Attribution", ancienneValeur:null, nouvelleValeur:"active", commentaire:""}] },
+    { id:"PH-004", personId:"P-011", habilitationId:"HAB-004", dateAttribution:"2025-04-10", dateExpiration:"2027-04-10", statut:"active", historique:[{date:"2025-04-10", action:"Attribution", ancienneValeur:null, nouvelleValeur:"active", commentaire:""}] },
+    { id:"PH-005", personId:"P-011", habilitationId:"HAB-003", dateAttribution:"2025-04-10", dateExpiration:"2026-04-10", statut:"active", historique:[{date:"2025-04-10", action:"Attribution", ancienneValeur:null, nouvelleValeur:"active", commentaire:""}] },
+    { id:"PH-006", personId:"P-001", habilitationId:"HAB-005", dateAttribution:"2024-01-01", dateExpiration:"2027-01-01", statut:"active", historique:[{date:"2024-01-01", action:"Attribution", ancienneValeur:null, nouvelleValeur:"active", commentaire:""}] },
+  ],
+
+  competenceReviews: [
+    { id:"CREV-001", personId:"P-002", date:"2025-06-01", evaluateur:"Claire Dubreuil",
+      competencesMaitrisees:["ISO 9001","Gestion des risques","NC / CAPA","Gestion documentaire"], competencesARenforcer:["Audit interne"],
+      nouvellesCompetencesNecessaires:"", formationsRealisees:"Formation ISO 9001 avancée", formationsAPrevoir:"Perfectionnement audit interne",
+      habilitationsARenouveler:"Habilitation Audit interne à renouveler avant échéance", evolutionPoste:"Aucune évolution prévue à court terme.",
+      conclusion:"Compétences globalement maîtrisées ; renforcement nécessaire sur l'audit interne.", prochaineDateRevue:"2026-12-01" },
+  ],
+
+  /* ---------- Fournisseurs ---------- */
+  fournisseurs: [
+    { id:"FRN-001", raisonSociale:"Microsoft Corporation", nomCommercial:"Microsoft", siret:"—", tva:"IE9825613N", pays:"Irlande", siteWeb:"https://microsoft.com",
+      adresse:"One Microsoft Place, Dublin", contacts:[{nom:"Support Entreprise", role:"Support technique", email:"support@microsoft.com", tel:"—"}],
+      referentInterne:"Karim Belkacem", dateEntree:"2019-01-01", statut:"actif", categories:["Prestataire informatique","Hébergeur"],
+      criticite:"critique", criticiteJustification:"Dépendance forte à la suite Microsoft 365 et à l'infrastructure Azure pour l'ensemble de l'organisation.",
+      processIds:["PROC-008"], produitsServices:[{nom:"Microsoft 365", description:"Suite bureautique et messagerie."},{nom:"Azure", description:"Hébergement cloud des applications internes."}] },
+    { id:"FRN-002", raisonSociale:"OVH SAS", nomCommercial:"OVHcloud", siret:"424761419", tva:"FR22424761419", pays:"France", siteWeb:"https://ovhcloud.com",
+      adresse:"2 rue Kellermann, Roubaix", contacts:[{nom:"Support technique", role:"Support", email:"support@ovhcloud.com", tel:"—"}],
+      referentInterne:"Karim Belkacem", dateEntree:"2020-03-01", statut:"actif", categories:["Hébergeur"],
+      criticite:"elevee", criticiteJustification:"Hébergement des serveurs internes critiques.",
+      processIds:["PROC-008"], produitsServices:[{nom:"Serveurs dédiés", description:"Infrastructure serveur interne."}] },
+    { id:"FRN-003", raisonSociale:"Orange Business Services", nomCommercial:"Orange Business", siret:"—", tva:"—", pays:"France", siteWeb:"https://orange-business.com",
+      adresse:"Paris, France", contacts:[{nom:"Compte entreprise", role:"Commercial", email:"—", tel:"—"}],
+      referentInterne:"Karim Belkacem", dateEntree:"2018-06-01", statut:"actif", categories:["Prestataire informatique"],
+      criticite:"moderee", criticiteJustification:"", processIds:["PROC-008"], produitsServices:[{nom:"Connectivité réseau", description:"Liaisons internet et téléphonie d'entreprise."}] },
+    { id:"FRN-004", raisonSociale:"Bureau Veritas Certification", nomCommercial:"Bureau Veritas", siret:"—", tva:"—", pays:"France", siteWeb:"https://bureauveritas.com",
+      adresse:"Neuilly-sur-Seine, France", contacts:[{nom:"Chargé de certification", role:"Auditeur certificateur", email:"—", tel:"—"}],
+      referentInterne:"Marc Lenoir", dateEntree:"2017-01-01", statut:"actif", categories:["Organisme de certification","Audit"],
+      criticite:"elevee", criticiteJustification:"Organisme réalisant les audits de certification ISO 9001 — conditionne le maintien du certificat.",
+      processIds:["PROC-002"], produitsServices:[{nom:"Audit de certification ISO 9001", description:"Cycle de certification triennal avec audits de surveillance."}] },
+    { id:"FRN-005", raisonSociale:"Docaposte SAS", nomCommercial:"Docaposte", siret:"—", tva:"—", pays:"France", siteWeb:"https://docaposte.com",
+      adresse:"Issy-les-Moulineaux, France", contacts:[{nom:"Gestionnaire de compte", role:"Commercial", email:"—", tel:"—"}],
+      referentInterne:"Marc Lenoir", dateEntree:"2021-09-01", statut:"actif", categories:["Prestataire informatique","Autre"],
+      criticite:"moderee", criticiteJustification:"", processIds:["PROC-002","PROC-008"], produitsServices:[{nom:"Archivage électronique", description:"Archivage à valeur probante des documents qualité."}] },
+    { id:"FRN-006", raisonSociale:"Transport Express SARL", nomCommercial:"Transport Express", siret:"—", tva:"—", pays:"France", siteWeb:"",
+      adresse:"Lyon, France", contacts:[{nom:"Responsable exploitation", role:"Exploitation", email:"—", tel:"—"}],
+      referentInterne:"Thomas Petit", dateEntree:"2019-05-01", statut:"sous_surveillance", categories:["Transport"],
+      criticite:"elevee", criticiteJustification:"Impact direct sur les délais de livraison client ; retards répétés constatés.",
+      processIds:["PROC-004"], produitsServices:[{nom:"Livraison expresse", description:"Transport des produits finis vers les clients."}] },
+    { id:"FRN-007", raisonSociale:"MaintenancePro SAS", nomCommercial:"MaintenancePro", siret:"—", tva:"—", pays:"France", siteWeb:"",
+      adresse:"Grenoble, France", contacts:[{nom:"Technicien référent", role:"Maintenance", email:"—", tel:"—"}],
+      referentInterne:"Thomas Petit", dateEntree:"2020-01-01", statut:"actif", categories:["Maintenance"],
+      criticite:"moderee", criticiteJustification:"", processIds:["PROC-004"], produitsServices:[{nom:"Maintenance préventive lignes A/B", description:"Contrat de maintenance des équipements de production."}],
+      etablissementIds:["ETB-001","ETB-002"] },
+    { id:"FRN-008", raisonSociale:"Composants Précis SARL", nomCommercial:"Composants Précis", siret:"—", tva:"—", pays:"France", siteWeb:"",
+      adresse:"Saint-Étienne, France", contacts:[{nom:"Responsable qualité fournisseur", role:"Qualité", email:"—", tel:"—"}],
+      referentInterne:"Sophie Martin", dateEntree:"2016-02-01", statut:"actif", categories:["Fournisseur de produits"],
+      criticite:"critique", criticiteJustification:"Fournisseur unique pour un composant stratégique — cf. risque RISK-001.",
+      processIds:["PROC-007","PROC-004"], produitsServices:[{nom:"Composant stratégique X", description:"Pièce critique entrant dans la fabrication du produit principal."}] },
+  ],
+
+  fournisseurDocuments: [
+    { id:"FDOC-001", fournisseurId:"FRN-001", type:"certification", titre:"Certification ISO 27001 Microsoft", date:"2025-01-01", version:"2025", echeance:"2027-01-01", responsable:"Karim Belkacem" },
+    { id:"FDOC-002", fournisseurId:"FRN-002", type:"contrat", titre:"Contrat d'hébergement OVHcloud", date:"2024-03-01", version:"1.0", echeance:"2026-10-15", responsable:"Karim Belkacem" },
+    { id:"FDOC-003", fournisseurId:"FRN-004", type:"certification", titre:"Accréditation Bureau Veritas", date:"2023-01-01", version:"1.0", echeance:"2026-01-01", responsable:"Marc Lenoir" },
+    { id:"FDOC-004", fournisseurId:"FRN-006", type:"assurance", titre:"Attestation d'assurance transport", date:"2025-06-01", version:"1.0", echeance:"2026-06-01", responsable:"Thomas Petit" },
+    { id:"FDOC-005", fournisseurId:"FRN-008", type:"qualification", titre:"Dossier de qualification fournisseur", date:"2025-03-01", version:"2.0", echeance:"2027-03-01", responsable:"Sophie Martin" },
+    { id:"FDOC-006", fournisseurId:"FRN-005", type:"nda", titre:"Accord de confidentialité Docaposte", date:"2021-09-01", version:"1.0", echeance:"—", responsable:"Marc Lenoir" },
+  ],
+
+  fournisseurQuestionnaires: [
+    { id:"FQ-001", nom:"Fournisseur informatique", description:"Questionnaire type pour un prestataire ou hébergeur informatique.",
+      criteres:[{nom:"Qualité",ponderation:20},{nom:"Sécurité",ponderation:25},{nom:"Support",ponderation:20},{nom:"Respect des délais",ponderation:15},{nom:"Conformité réglementaire",ponderation:20}] },
+    { id:"FQ-002", nom:"Fournisseur critique", description:"Questionnaire renforcé pour un fournisseur classé critique.",
+      criteres:[{nom:"Qualité",ponderation:25},{nom:"Respect des délais",ponderation:20},{nom:"Gestion des incidents",ponderation:20},{nom:"Conformité réglementaire",ponderation:20},{nom:"Sécurité",ponderation:15}] },
+    { id:"FQ-003", nom:"Hébergeur HDS", description:"Questionnaire dédié à un hébergeur de données de santé.",
+      criteres:[{nom:"Sécurité",ponderation:35},{nom:"Conformité réglementaire",ponderation:30},{nom:"Support",ponderation:15},{nom:"Respect des délais",ponderation:20}] },
+    { id:"FQ-004", nom:"Sous-traitant dispositif médical", description:"Questionnaire pour un sous-traitant impliqué dans la fabrication de dispositifs médicaux.",
+      criteres:[{nom:"Qualité",ponderation:30},{nom:"Conformité réglementaire",ponderation:30},{nom:"Compétence",ponderation:20},{nom:"Gestion des incidents",ponderation:20}] },
+    { id:"FQ-005", nom:"Prestataire qualité", description:"Questionnaire pour un prestataire intervenant sur le système de management (audit, conseil, certification).",
+      criteres:[{nom:"Compétence",ponderation:30},{nom:"Qualité",ponderation:25},{nom:"Réactivité",ponderation:20},{nom:"Satisfaction interne",ponderation:25}] },
+  ],
+
+  fournisseurEvaluations: [
+    { id:"FEVAL-001", fournisseurId:"FRN-001", date:"2026-01-15", periode:"annuelle", evaluateur:"Karim Belkacem", questionnaireId:"FQ-001",
+      criteres:[ {nom:"Qualité",ponderation:20,note:9,commentaire:"",preuve:""}, {nom:"Sécurité",ponderation:30,note:8,commentaire:"",preuve:"FDOC-001"}, {nom:"Support",ponderation:15,note:7,commentaire:"",preuve:""}, {nom:"Respect des délais",ponderation:20,note:9,commentaire:"",preuve:""}, {nom:"Conformité réglementaire",ponderation:15,note:9,commentaire:"",preuve:""} ] },
+    { id:"FEVAL-002", fournisseurId:"FRN-006", date:"2026-07-01", periode:"semestrielle", evaluateur:"Thomas Petit", questionnaireId:null,
+      criteres:[ {nom:"Qualité",ponderation:20,note:6,commentaire:"",preuve:""}, {nom:"Respect des délais",ponderation:30,note:4,commentaire:"Retards répétés ces derniers mois.",preuve:""}, {nom:"Réactivité",ponderation:20,note:5,commentaire:"",preuve:""}, {nom:"Gestion des incidents",ponderation:30,note:4,commentaire:"",preuve:""} ] },
+    { id:"FEVAL-003", fournisseurId:"FRN-008", date:"2026-02-01", periode:"annuelle", evaluateur:"Sophie Martin", questionnaireId:"FQ-002",
+      criteres:[ {nom:"Qualité",ponderation:30,note:7,commentaire:"",preuve:""}, {nom:"Respect des délais",ponderation:25,note:6,commentaire:"",preuve:""}, {nom:"Gestion des incidents",ponderation:20,note:6,commentaire:"",preuve:""}, {nom:"Conformité réglementaire",ponderation:25,note:7,commentaire:"",preuve:""} ] },
+    { id:"FEVAL-004", fournisseurId:"FRN-004", date:"2025-11-01", periode:"annuelle", evaluateur:"Marc Lenoir", questionnaireId:"FQ-005",
+      criteres:[ {nom:"Compétence",ponderation:30,note:9,commentaire:"",preuve:""}, {nom:"Qualité",ponderation:25,note:9,commentaire:"",preuve:""}, {nom:"Réactivité",ponderation:20,note:8,commentaire:"",preuve:""}, {nom:"Satisfaction interne",ponderation:25,note:8,commentaire:"",preuve:""} ] },
+  ],
+
+  fournisseurIncidents: [
+    { id:"FINC-001", fournisseurId:"FRN-006", date:"2026-07-10", type:"retard", description:"Retard de livraison de 4 jours sur la commande client CMD-4521.",
+      impact:"Insatisfaction client, pénalité contractuelle potentielle.", gravite:"majeure", processId:"PROC-005", riskId:"RISK-007", actionId:null, ncEventId:"EVT-004" },
+    { id:"FINC-002", fournisseurId:"FRN-001", date:"2026-03-05", type:"probleme_securite", description:"Interruption de service Azure de 2 heures ayant impacté l'accès aux outils internes.",
+      impact:"Ralentissement de l'activité pendant l'incident.", gravite:"mineure", processId:"PROC-008", riskId:null, actionId:null, ncEventId:null },
+    { id:"FINC-003", fournisseurId:"FRN-008", date:"2026-08-05", type:"defaut_qualite", description:"Lot de composants non conforme livré, hors tolérance dimensionnelle.",
+      impact:"Retard de production, tri à 100 % nécessaire.", gravite:"majeure", processId:"PROC-007", riskId:"RISK-001", actionId:null, ncEventId:"EVT-001" },
+  ],
+
+  /* ---------- Groupe / Établissements / Services ---------- */
+  groupe: { id:"GRP-001", nom:"Groupe Acme Industries" },
+  etablissements: [
+    { id:"ETB-001", nom:"Établissement Siège", groupeId:"GRP-001", type:"siège", adresse:"—", parDefaut:true },
+    { id:"ETB-002", nom:"Établissement Site Sud", groupeId:"GRP-001", type:"site de production", adresse:"Lyon, France", parDefaut:false },
+  ],
+  services: [
+    { id:"SVC-001", nom:"Ligne A", etablissementId:"ETB-001", description:"Ligne de production principale du siège." },
+    { id:"SVC-002", nom:"Ligne Sud", etablissementId:"ETB-002", description:"Ligne de production du site Sud." },
+  ],
+
+
 
   requirements: [
     { id:"REQ-001", ref:"4.1", label:"Compréhension de l'organisation et de son contexte", status:"maitrise", processId:"PROC-001" },
@@ -322,10 +678,21 @@ const LABELS = {
   eventStatus:{ ouvert:{l:"Ouvert",c:"warning"}, cloture:{l:"Clôturé",c:"success"} },
   priority:{ critique:{l:"Critique",c:"danger"}, haute:{l:"Haute",c:"warning"}, moyenne:{l:"Moyenne",c:"info"}, basse:{l:"Basse",c:"neutral"} },
   actionStatus:{ retard:{l:"En retard",c:"danger"}, en_cours:{l:"En cours",c:"warning"}, a_faire:{l:"À faire",c:"info"}, termine:{l:"Terminée",c:"success"} },
-  actionOrigin:{ evenement:"Événement", risque:"Risque", audit:"Audit", indicateur:"Indicateur", objectif:"Objectif", changement:"Changement", revue_direction:"Revue de direction" },
+  actionOrigin:{ evenement:"Événement", risque:"Risque", audit:"Audit", indicateur:"Indicateur", objectif:"Objectif", changement:"Changement", revue_direction:"Revue de direction", competence:"Compétence", fournisseur:"Fournisseur" },
   objStatus:{ en_cours:{l:"En cours",c:"warning"}, atteint:{l:"Atteint",c:"success"}, en_retard:{l:"En retard",c:"danger"} },
   indStatus:{ vert:{l:"Sur cible",c:"success"}, orange:{l:"À surveiller",c:"warning"}, rouge:{l:"Hors cible",c:"danger"} },
-  auditStatus:{ planifie:{l:"Planifié",c:"info"}, realise:{l:"Réalisé",c:"warning"}, cloture:{l:"Clôturé",c:"success"} },
+  auditStatus:{ planifie:{l:"Planifié",c:"info"}, preparation:{l:"Préparation",c:"info"}, en_cours:{l:"En cours",c:"warning"}, analyse:{l:"Analyse",c:"warning"}, synthese:{l:"Synthèse",c:"warning"}, a_valider:{l:"À valider",c:"warning"}, valide:{l:"Validé",c:"success"}, cloture:{l:"Clôturé",c:"success"}, realise:{l:"Validé",c:"success"} },
+  auditType:{ interne:"Audit interne", externe:"Audit externe", certification:"Audit de certification", fournisseur:"Audit fournisseur", client:"Audit client", processus:"Audit processus", produit:"Audit produit / service", reglementaire:"Audit réglementaire", conformite:"Audit de conformité", suivi:"Audit de suivi", renouvellement:"Audit de renouvellement", cible:"Audit ciblé", autre:"Autre" },
+  auditMotif:{ programme_annuel:"Programme annuel", exigence_reglementaire:"Exigence réglementaire", certification:"Certification", surveillance:"Surveillance", risque_identifie:"Risque identifié", non_conformite:"Non-conformité", action_corrective:"Action corrective", changement:"Changement important", incident:"Incident", demande_direction:"Demande de la Direction", fournisseur:"Fournisseur", client:"Client", autre:"Autre" },
+  questionStatus:{ conforme:{l:"Conforme",c:"success"}, partiellement_conforme:{l:"Partiellement conforme",c:"warning"}, non_conforme:{l:"Non conforme",c:"danger"}, non_applicable:{l:"Non applicable",c:"neutral"}, a_verifier:{l:"À vérifier",c:"info"}, non_evalue:{l:"Non évalué",c:"neutral"} },
+  constatType:{ point_fort:{l:"Point fort",c:"success",e:"🟢"}, conforme:{l:"Conforme",c:"info",e:"🔵"}, vigilance:{l:"Point de vigilance",c:"warning",e:"🟠"}, opportunite:{l:"Opportunité d'amélioration",c:"warning",e:"🟠"}, ecart:{l:"Écart",c:"danger",e:"🔴"}, nc_majeure:{l:"Non-conformité majeure",c:"danger",e:"🔴"} },
+  constatGravite:{ mineure:"Mineure", majeure:"Majeure", critique:"Critique" },
+  partyStatus:{ en_attente:{l:"En attente",c:"warning"}, en_cours:{l:"En cours",c:"info"}, complete:{l:"Complétée",c:"success"}, indisponible:{l:"Indisponible",c:"neutral"} },
+  niveauCompetence:{ 0:"Non acquis", 1:"Notions", 2:"Autonome", 3:"Maîtrise", 4:"Référent / Expert" },
+  competenceCriticite:{ haute:{l:"Haute",c:"danger"}, moyenne:{l:"Moyenne",c:"warning"}, basse:{l:"Basse",c:"neutral"} },
+  ecartStatut:{ conforme:{l:"Conforme",c:"success"}, a_renforcer:{l:"À renforcer",c:"warning"}, non_evalue:{l:"Non évalué",c:"neutral"}, non_requise:{l:"Non requise",c:"neutral"} },
+  preuveCompetenceType:{ certificat:"Certificat", attestation_formation:"Attestation de formation", diplome:"Diplôme", experience:"Expérience professionnelle", evaluation_interne:"Évaluation interne", entretien:"Entretien", observation:"Observation", test:"Test", validation_manager:"Validation manager", document:"Document", autre:"Autre" },
+  habilitationStatut:{ active:{l:"Valide",c:"success"}, expire_bientot:{l:"Expire bientôt",c:"warning"}, expiree:{l:"Expirée",c:"danger"}, suspendue:{l:"Suspendue",c:"neutral"}, non_habilite:{l:"Non habilité",c:"neutral"} },
   reqStatus:{ maitrise:{l:"Maîtrisée",c:"success"}, a_renforcer:{l:"À renforcer",c:"warning"}, non_couvert:{l:"Non couverte",c:"danger"} },
   exigenceCoverage:{ non_couvert:{l:"Non couverte",c:"danger"}, partiellement:{l:"Partiellement couverte",c:"warning"}, a_renforcer:{l:"À renforcer",c:"warning"}, maitrise:{l:"Maîtrisée",c:"success"}, optimise:{l:"Optimisée",c:"success"} },
   exigenceType:{ exigence:"Exigence", preuve:"Preuve attendue", responsabilite:"Responsabilité" },
@@ -338,7 +705,20 @@ const LABELS = {
   conclusionPerf:{ conforme:"Conforme aux objectifs", a_surveiller:"À surveiller", insuffisante:"Insuffisante" },
   conclusionRessources:{ suffisantes:"Suffisantes", a_renforcer:"À renforcer", insuffisantes:"Insuffisantes" },
   conclusionAmelioration:{ aucune_action_majeure:"Aucune action majeure", actions_amelioration:"Actions d'amélioration nécessaires", actions_prioritaires:"Actions prioritaires nécessaires" },
+  fournisseurStatut:{ prospect:{l:"Prospect",c:"info"}, actif:{l:"Actif",c:"success"}, sous_surveillance:{l:"Sous surveillance",c:"warning"}, suspendu:{l:"Suspendu",c:"danger"}, bloque:{l:"Bloqué",c:"danger"}, archive:{l:"Archivé",c:"neutral"} },
+  fournisseurCriticite:{ faible:{l:"Faible",c:"success"}, moderee:{l:"Modérée",c:"info"}, elevee:{l:"Élevée",c:"warning"}, critique:{l:"Critique",c:"danger"} },
+  fournisseurDocType:{ contrat:"Contrat", convention:"Convention", nda:"NDA / confidentialité", certification:"Certification ISO", attestation:"Attestation", assurance:"Assurance", qualification:"Qualification", agrement:"Agrément", habilitation:"Habilitation", audit:"Rapport d'audit", rapport_evaluation:"Rapport d'évaluation" },
+  fournisseurDocStatut:{ valide:{l:"Valide",c:"success"}, a_renouveler:{l:"À renouveler",c:"warning"}, expire:{l:"Expiré",c:"danger"} },
+  incidentType:{ retard:"Retard", erreur:"Erreur", prestation_non_realisee:"Prestation non réalisée", rupture:"Rupture", defaut_qualite:"Défaut qualité", probleme_securite:"Problème sécurité", probleme_cyber:"Problème cybersécurité", probleme_reglementaire:"Problème réglementaire" },
+  incidentGravite:{ mineure:{l:"Mineure",c:"warning"}, majeure:{l:"Majeure",c:"danger"}, critique:{l:"Critique",c:"danger"} },
+  fournisseurEvalNiveau:{ excellent:{l:"Excellent",c:"success"}, satisfaisant:{l:"Satisfaisant",c:"success"}, sous_surveillance:{l:"Sous surveillance",c:"warning"}, insuffisant:{l:"Insuffisant",c:"danger"}, critique:{l:"Critique",c:"danger"} },
+  fournisseurCategorieOptions:["Fournisseur de produits","Fournisseur de services","Sous-traitant","Prestataire informatique","Hébergeur","Cabinet de conseil","Transport","Maintenance","Organisme de formation","Laboratoire","Dispositif médical","Organisme de certification","Audit","Autre"],
 };
+const FOURNISSEUR_WORKFLOW_STEPS = ["prospect","qualification","evaluation_initiale","actif","surveillance","reevaluation","suspension","archivage"];
+const FOURNISSEUR_WORKFLOW_LABELS = ["Prospect","Qualification","Évaluation initiale","Actif","Surveillance","Réévaluation","Suspension","Archivage"];
+const AUDIT_WORKFLOW_STEPS = ["planifie","preparation","en_cours","analyse","synthese","a_valider","valide","cloture"];
+const AUDIT_WORKFLOW_LABELS = ["Planifié","Préparation","En cours","Analyse","Synthèse","À valider","Validé","Clôturé"];
+function isAuditEcart(f){ return f.type==="ecart" || f.type==="nc_majeure"; }
 
 function normalizeDocuments(){
   DB.documents.forEach(d=>{
@@ -354,6 +734,22 @@ function normalizeDocuments(){
   if(!DB.trainings) DB.trainings = [];
   if(!DB.documentTemplates) DB.documentTemplates = JSON.parse(JSON.stringify(QONNECT_SEED.documentTemplates));
   if(!DB.customExigences) DB.customExigences = [];
+  if(!DB.competences) DB.competences = JSON.parse(JSON.stringify(QONNECT_SEED.competences));
+  if(!DB.postes) DB.postes = JSON.parse(JSON.stringify(QONNECT_SEED.postes));
+  if(!DB.habilitations) DB.habilitations = JSON.parse(JSON.stringify(QONNECT_SEED.habilitations));
+  if(!DB.people) DB.people = JSON.parse(JSON.stringify(QONNECT_SEED.people));
+  if(!DB.competenceEvaluations) DB.competenceEvaluations = JSON.parse(JSON.stringify(QONNECT_SEED.competenceEvaluations));
+  if(!DB.competencePreuves) DB.competencePreuves = JSON.parse(JSON.stringify(QONNECT_SEED.competencePreuves));
+  if(!DB.personHabilitations) DB.personHabilitations = JSON.parse(JSON.stringify(QONNECT_SEED.personHabilitations));
+  if(!DB.competenceReviews) DB.competenceReviews = JSON.parse(JSON.stringify(QONNECT_SEED.competenceReviews));
+  if(!DB.fournisseurs) DB.fournisseurs = JSON.parse(JSON.stringify(QONNECT_SEED.fournisseurs));
+  if(!DB.fournisseurDocuments) DB.fournisseurDocuments = JSON.parse(JSON.stringify(QONNECT_SEED.fournisseurDocuments));
+  if(!DB.fournisseurQuestionnaires) DB.fournisseurQuestionnaires = JSON.parse(JSON.stringify(QONNECT_SEED.fournisseurQuestionnaires));
+  if(!DB.fournisseurEvaluations) DB.fournisseurEvaluations = JSON.parse(JSON.stringify(QONNECT_SEED.fournisseurEvaluations));
+  if(!DB.fournisseurIncidents) DB.fournisseurIncidents = JSON.parse(JSON.stringify(QONNECT_SEED.fournisseurIncidents));
+  if(!DB.groupe) DB.groupe = JSON.parse(JSON.stringify(QONNECT_SEED.groupe));
+  if(!DB.etablissements) DB.etablissements = JSON.parse(JSON.stringify(QONNECT_SEED.etablissements));
+  if(!DB.services) DB.services = JSON.parse(JSON.stringify(QONNECT_SEED.services));
   (DB.referentiels||[]).forEach(r=>{
     if(typeof r.version === "undefined") r.version = null;
     if(typeof r.importDate === "undefined") r.importDate = null;
@@ -366,6 +762,32 @@ function normalizeDocuments(){
     r.extraRiskIds = r.extraRiskIds || [];
     r.extraAuditIds = r.extraAuditIds || [];
     r.extraActionIds = r.extraActionIds || [];
+  });
+  (DB.audits||[]).forEach(a=>{
+    a.ref = a.ref || ("AUD-"+a.id);
+    a.type = a.type || "interne";
+    a.referentielIds = a.referentielIds || ["ISO9001"];
+    a.processIds = a.processIds || (a.processId ? [a.processId] : []);
+    a.duration = a.duration || "";
+    a.responsable = a.responsable || a.auditor || "";
+    a.auditeurs = a.auditeurs || (a.auditor ? [a.auditor] : []);
+    a.site = a.site || "";
+    a.motifs = a.motifs || [];
+    a.perimeter = a.perimeter || { processIds:a.processIds||[], activites:"", produits:"", periodeDebut:"", periodeFin:"", exclusions:"" };
+    a.objectifs = a.objectifs || (a.objective ? [a.objective] : []);
+    a.criteres = a.criteres || { referentielIds:a.referentielIds||[], requirementIds:[], documentIds:[] };
+    a.questions = a.questions || [];
+    a.parties = a.parties || [];
+    if(a.status==="realise") a.status = "valide";
+    (a.findings||[]).forEach(f=>{
+      if(typeof f.requirementId==="undefined") f.requirementId = null;
+      if(typeof f.processId==="undefined") f.processId = a.processId||null;
+      if(typeof f.questionId==="undefined") f.questionId = null;
+      if(typeof f.gravite==="undefined") f.gravite = null;
+      if(typeof f.cause==="undefined") f.cause = "";
+      if(typeof f.riskId==="undefined") f.riskId = null;
+      if(typeof f.ncEventId==="undefined") f.ncEventId = null;
+    });
   });
 }
 function loadDB(){
@@ -419,6 +841,19 @@ const getDecision = (review,id)=> review ? findBy(review.decisions,id) : null;
 const getTemplate = id => findBy(DB.documentTemplates,id);
 const getReferentiel = id => findBy(DB.referentiels,id);
 const getCustomExigence = id => findBy(DB.customExigences,id);
+const getCompetence = id => findBy(DB.competences,id);
+const getPoste = id => findBy(DB.postes,id);
+const getHabilitation = id => findBy(DB.habilitations,id);
+const getPerson = id => findBy(DB.people,id);
+const getPersonHabilitation = id => findBy(DB.personHabilitations,id);
+const getFournisseur = id => findBy(DB.fournisseurs,id);
+const getFournisseurDoc = id => findBy(DB.fournisseurDocuments,id);
+const getFournisseurEvaluation = id => findBy(DB.fournisseurEvaluations,id);
+const getFournisseurIncident = id => findBy(DB.fournisseurIncidents,id);
+const getEtablissement = id => findBy(DB.etablissements,id);
+const getService = id => findBy(DB.services,id);
+const DEFAULT_ETABLISSEMENT_ID = "ETB-001";
+function scopeEtablissementId(entity){ return entity.etablissementId || DEFAULT_ETABLISSEMENT_ID; }
 
 function nextId(prefix, arr){
   let max = 0;
