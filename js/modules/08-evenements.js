@@ -43,6 +43,14 @@ function applyEventFilters(){
   zone.innerHTML = eventTable(rows);
 }
 
+function eventContextHtml(e){
+  const c = e.context;
+  if(!c) return "";
+  const items = [["Tranche d'âge","ageRange"],["Sexe","sex"],["Prise en charge","careType"],["Moment","moment"],["Conséquence","consequence"]]
+    .filter(([,k])=>c[k] && c[k]!=="nc")
+    .map(([l,k])=>`<span class="badge badge-neutral" style="margin-right:6px;">${esc(l)} : ${esc(EVENT_CONTEXT[k][c[k]]||c[k])}</span>`);
+  return items.length ? `<div class="mt-4"><div class="text-xs mb-2">Contexte de prise en charge (non identifiant)</div>${items.join("")}</div>` : "";
+}
 function pageEventFiche(id){
   const e = getEvent(id);
   if(!e) return emptyState("🚨","Événement introuvable","Cet événement n'existe pas.");
@@ -63,6 +71,7 @@ function pageEventFiche(id){
     <h1 class="mt-2">${esc(e.title)}</h1>
     <p class="section-sub mt-2">${esc(LABELS.eventType[e.type])} · Processus : ${p?esc(p.name):"—"} · Déclaré par ${esc(e.declaredBy)} le ${fmtDate(e.date)}</p>
     <p class="text-sm mt-4" style="color:var(--text-primary);line-height:1.7;">${esc(e.description)}</p>
+    ${eventContextHtml(e)}
   </div>
 
   ${isNC ? `<div class="card mb-2">

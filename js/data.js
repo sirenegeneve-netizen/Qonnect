@@ -715,6 +715,16 @@ const LABELS = {
   fournisseurCategorieOptions:["Fournisseur de produits","Fournisseur de services","Sous-traitant","Prestataire informatique","Hébergeur","Cabinet de conseil","Transport","Maintenance","Organisme de formation","Laboratoire","Dispositif médical","Organisme de certification","Audit","Autre"],
 };
 const FOURNISSEUR_WORKFLOW_STEPS = ["prospect","qualification","evaluation_initiale","actif","surveillance","reevaluation","suspension","archivage"];
+/* Contexte de prise en charge d'un événement — champs volontairement NON identifiants
+   (aucun nom, initiales, identifiant patient, ni date de naissance). */
+const EVENT_CONTEXT = {
+  ageRange:{ "0-17":"0 à 17 ans", "18-64":"18 à 64 ans", "65+":"65 ans et plus", nc:"Non concerné / non précisé" },
+  sex:{ f:"Femme", h:"Homme", nc:"Non concerné / non précisé" },
+  careType:{ consultation:"Consultation", hospitalisation:"Hospitalisation", ambulatoire:"Ambulatoire", urgence:"Urgence", domicile:"Prise en charge à domicile", medicotechnique:"Plateau médico-technique", nc:"Autre / non précisé" },
+  moment:{ matin:"Matin", apres_midi:"Après-midi", soir:"Soir", nuit:"Nuit", week_end:"Week-end / jour férié", nc:"Non précisé" },
+  consequence:{ aucune:"Aucune conséquence", mineure:"Conséquence mineure", moderee:"Conséquence modérée", grave:"Conséquence grave", nc:"Non précisée" }
+};
+
 const FOURNISSEUR_WORKFLOW_LABELS = ["Prospect","Qualification","Évaluation initiale","Actif","Surveillance","Réévaluation","Suspension","Archivage"];
 const AUDIT_WORKFLOW_STEPS = ["planifie","preparation","en_cours","analyse","synthese","a_valider","valide","cloture"];
 const AUDIT_WORKFLOW_LABELS = ["Planifié","Préparation","En cours","Analyse","Synthèse","À valider","Validé","Clôturé"];
