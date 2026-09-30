@@ -133,7 +133,7 @@ const QONNECT_SEED = {
       probability:3, impact:4 },
     { id:"RISK-005", name:"Cyberattaque sur le système d'information", level:"critique", processId:"PROC-008", owner:"Karim Belkacem", status:"ouvert", type:"risque",
       description:"Une intrusion informatique pourrait compromettre la disponibilité des données et des applications critiques.",
-      probability:3, impact:5 },
+      probability:3, impact:5, etablissementId:"GROUPE" },
     { id:"RISK-006", name:"Erreur de saisie comptable", level:"faible", processId:"PROC-009", owner:"Elise Vasseur", status:"maitrise", type:"risque",
       description:"Risque d'erreur lors de la saisie manuelle des écritures comptables.",
       probability:2, impact:2 },
@@ -143,6 +143,9 @@ const QONNECT_SEED = {
     { id:"OPP-001", name:"Digitalisation du contrôle qualité", level:"opportunite", processId:"PROC-004", owner:"Thomas Petit", status:"ouvert", type:"opportunite",
       description:"L'automatisation des contrôles pourrait réduire les non-conformités et le temps de traitement.",
       probability:3, impact:3 },
+    { id:"RISK-008", name:"Sous-effectif chronique sur le site Sud", level:"eleve", processId:"PROC-004", owner:"Thomas Petit", status:"ouvert", type:"risque",
+      description:"Le site Sud fonctionne en sous-effectif depuis plusieurs mois, augmentant le risque d'erreur en production.",
+      probability:3, impact:3, etablissementId:"ETB-002", serviceId:"SVC-002" },
   ],
 
   events: [
@@ -194,6 +197,7 @@ const QONNECT_SEED = {
     { id:"ACT-017", title:"Rappel des consignes de sécurité au poste — Amina Cherif", owner:"Thomas Petit", due:"2026-06-15", priority:"haute", status:"termine", origin:"competence", originId:"EVAL-018", processId:"PROC-004", personId:"P-011", competenceId:"COMP-019", efficaciteVerifiee:true },
     { id:"ACT-018", title:"Exiger un plan de continuité formalisé de Composants Précis SARL", owner:"Sophie Martin", due:"2026-11-30", priority:"haute", status:"a_faire", origin:"fournisseur", originId:"AUD-006", processId:"PROC-007", fournisseurId:"FRN-008" },
     { id:"ACT-019", title:"Notifier Transport Express des pénalités de retard et exiger un plan d'action", owner:"Thomas Petit", due:"2026-09-30", priority:"haute", status:"en_cours", origin:"fournisseur", originId:"AUD-007", processId:"PROC-004", fournisseurId:"FRN-006" },
+    { id:"ACT-020", title:"Renforcer les effectifs de la ligne Sud", owner:"Thomas Petit", due:"2026-11-30", priority:"moyenne", status:"a_faire", origin:"audit", originId:"AUD-008", processId:"PROC-004", etablissementId:"ETB-002", serviceId:"SVC-002" },
   ],
 
   objectives: [
@@ -321,6 +325,20 @@ const QONNECT_SEED = {
       parties:[ {name:"Thomas Petit", role:"Auditeur", questionIds:["AUD-007-Q1"], echeance:"2026-08-01", status:"en_cours"} ],
       findings:[
         {id:"C-007", type:"ecart", text:"Non-respect récurrent des délais de livraison contractuels.", requirementId:null, processId:"PROC-004", questionId:"AUD-007-Q1", gravite:"majeure", cause:"", riskId:"RISK-007", ncEventId:null, actionId:"ACT-019"},
+      ] },
+    { id:"AUD-008", ref:"AUD-2026-008", title:"Audit interne Production — Site Sud", type:"interne", referentielIds:["ISO9001"],
+      processId:"PROC-004", processIds:["PROC-004"], date:"2026-07-10", duration:"1 jour", responsable:"Thomas Petit", auditeurs:["Thomas Petit"], site:"Établissement Site Sud",
+      objective:"Vérifier la maîtrise de la production sur le site Sud.", scope:"Ligne Sud", auditor:"Thomas Petit", status:"valide",
+      motifs:["risque_identifie"], etablissementId:"ETB-002", serviceId:"SVC-002",
+      perimeter:{ processIds:["PROC-004"], activites:"Production — Ligne Sud", produits:"", periodeDebut:"2026-01-01", periodeFin:"2026-07-01", exclusions:"" },
+      objectifs:["Évaluer l'impact du sous-effectif sur la maîtrise de la production"],
+      criteres:{ referentielIds:["ISO9001"], requirementIds:[], documentIds:[] },
+      questions:[
+        { id:"AUD-008-Q1", question:"Le sous-effectif a-t-il un impact constaté sur la qualité produite ?", requirementId:null, processId:"PROC-004", critere:"RISK-008", preuveAttendue:"Suivi des indicateurs qualité du site", responsableInterroge:"Chef de ligne Sud", statut:"partiellement_conforme", commentaire:"Impact limité mais vigilance nécessaire.", preuveIds:[] },
+      ],
+      parties:[ {name:"Thomas Petit", role:"Auditeur", questionIds:["AUD-008-Q1"], echeance:"2026-07-10", status:"complete"} ],
+      findings:[
+        {id:"C-008", type:"vigilance", text:"Le sous-effectif du site Sud constitue un point de vigilance pour le maintien de la qualité à moyen terme.", requirementId:null, processId:"PROC-004", questionId:"AUD-008-Q1", gravite:"mineure", cause:"", riskId:"RISK-008", ncEventId:null, actionId:"ACT-020"},
       ] },
   ],
 
@@ -527,7 +545,8 @@ const QONNECT_SEED = {
     { id:"FRN-007", raisonSociale:"MaintenancePro SAS", nomCommercial:"MaintenancePro", siret:"—", tva:"—", pays:"France", siteWeb:"",
       adresse:"Grenoble, France", contacts:[{nom:"Technicien référent", role:"Maintenance", email:"—", tel:"—"}],
       referentInterne:"Thomas Petit", dateEntree:"2020-01-01", statut:"actif", categories:["Maintenance"],
-      criticite:"moderee", criticiteJustification:"", processIds:["PROC-004"], produitsServices:[{nom:"Maintenance préventive lignes A/B", description:"Contrat de maintenance des équipements de production."}] },
+      criticite:"moderee", criticiteJustification:"", processIds:["PROC-004"], produitsServices:[{nom:"Maintenance préventive lignes A/B", description:"Contrat de maintenance des équipements de production."}],
+      etablissementIds:["ETB-001","ETB-002"] },
     { id:"FRN-008", raisonSociale:"Composants Précis SARL", nomCommercial:"Composants Précis", siret:"—", tva:"—", pays:"France", siteWeb:"",
       adresse:"Saint-Étienne, France", contacts:[{nom:"Responsable qualité fournisseur", role:"Qualité", email:"—", tel:"—"}],
       referentInterne:"Sophie Martin", dateEntree:"2016-02-01", statut:"actif", categories:["Fournisseur de produits"],
@@ -575,6 +594,17 @@ const QONNECT_SEED = {
       impact:"Ralentissement de l'activité pendant l'incident.", gravite:"mineure", processId:"PROC-008", riskId:null, actionId:null, ncEventId:null },
     { id:"FINC-003", fournisseurId:"FRN-008", date:"2026-08-05", type:"defaut_qualite", description:"Lot de composants non conforme livré, hors tolérance dimensionnelle.",
       impact:"Retard de production, tri à 100 % nécessaire.", gravite:"majeure", processId:"PROC-007", riskId:"RISK-001", actionId:null, ncEventId:"EVT-001" },
+  ],
+
+  /* ---------- Groupe / Établissements / Services ---------- */
+  groupe: { id:"GRP-001", nom:"Groupe Acme Industries" },
+  etablissements: [
+    { id:"ETB-001", nom:"Établissement Siège", groupeId:"GRP-001", type:"siège", adresse:"—", parDefaut:true },
+    { id:"ETB-002", nom:"Établissement Site Sud", groupeId:"GRP-001", type:"site de production", adresse:"Lyon, France", parDefaut:false },
+  ],
+  services: [
+    { id:"SVC-001", nom:"Ligne A", etablissementId:"ETB-001", description:"Ligne de production principale du siège." },
+    { id:"SVC-002", nom:"Ligne Sud", etablissementId:"ETB-002", description:"Ligne de production du site Sud." },
   ],
 
 
@@ -717,6 +747,9 @@ function normalizeDocuments(){
   if(!DB.fournisseurQuestionnaires) DB.fournisseurQuestionnaires = JSON.parse(JSON.stringify(QONNECT_SEED.fournisseurQuestionnaires));
   if(!DB.fournisseurEvaluations) DB.fournisseurEvaluations = JSON.parse(JSON.stringify(QONNECT_SEED.fournisseurEvaluations));
   if(!DB.fournisseurIncidents) DB.fournisseurIncidents = JSON.parse(JSON.stringify(QONNECT_SEED.fournisseurIncidents));
+  if(!DB.groupe) DB.groupe = JSON.parse(JSON.stringify(QONNECT_SEED.groupe));
+  if(!DB.etablissements) DB.etablissements = JSON.parse(JSON.stringify(QONNECT_SEED.etablissements));
+  if(!DB.services) DB.services = JSON.parse(JSON.stringify(QONNECT_SEED.services));
   (DB.referentiels||[]).forEach(r=>{
     if(typeof r.version === "undefined") r.version = null;
     if(typeof r.importDate === "undefined") r.importDate = null;
@@ -817,6 +850,10 @@ const getFournisseur = id => findBy(DB.fournisseurs,id);
 const getFournisseurDoc = id => findBy(DB.fournisseurDocuments,id);
 const getFournisseurEvaluation = id => findBy(DB.fournisseurEvaluations,id);
 const getFournisseurIncident = id => findBy(DB.fournisseurIncidents,id);
+const getEtablissement = id => findBy(DB.etablissements,id);
+const getService = id => findBy(DB.services,id);
+const DEFAULT_ETABLISSEMENT_ID = "ETB-001";
+function scopeEtablissementId(entity){ return entity.etablissementId || DEFAULT_ETABLISSEMENT_ID; }
 
 function nextId(prefix, arr){
   let max = 0;

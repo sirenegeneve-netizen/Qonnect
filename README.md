@@ -38,9 +38,6 @@ qonnect/
 │   ├── data.js           # Jeu de données fictif + accès/persistance (localStorage)
 │   ├── ui.js              # Composants réutilisables (badges, modales, panneaux, toasts…)
 │   └── app.js             # Routeur, pages, interactions
-│
-└── assets/
-    └── icons/
 ```
 
 ## Navigation
