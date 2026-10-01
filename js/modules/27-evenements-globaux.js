@@ -2,6 +2,24 @@
    20. DÉLÉGATION D'ÉVÉNEMENTS GLOBALE
    ============================================================ */
 function initGlobalEvents(){
+  document.addEventListener("change", ev=>{
+    if(ev.target.id!=="import-data-file") return;
+    const file = ev.target.files && ev.target.files[0];
+    ev.target.value = "";
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      let obj;
+      try{ obj = JSON.parse(reader.result); }catch(err){ toast("Fichier illisible : ce n'est pas un JSON valide.","⚠️"); return; }
+      const problem = validateBackup(obj);
+      if(problem){ toast(problem,"⚠️"); return; }
+      confirmDialog("Remplacer toutes les données actuelles par cette sauvegarde (du "+fmtDate((obj.exportedAt||"").slice(0,10))+") ?", ()=>{
+        try{ restoreBackup(obj); toast("Sauvegarde restaurée","✅"); render(); }
+        catch(err){ toast(err.message,"⚠️"); }
+      });
+    };
+    reader.readAsText(file);
+  });
   document.addEventListener("click", (e)=>{
     const editExigenceEl = e.target.closest("[data-edit-exigence]");
     if(editExigenceEl){
@@ -366,6 +384,17 @@ function initGlobalEvents(){
       refAiSend(refId, input.value); input.value="";
       return;
     }
+    if(e.target.id==="export-data-btn"){
+      const d = new Date().toISOString().slice(0,10);
+      const blob = new Blob([JSON.stringify(buildBackup(), null, 2)], {type:"application/json"});
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = `qonnect-sauvegarde-${d}.json`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+      toast("Sauvegarde exportée","💾");
+      return;
+    }
+    if(e.target.id==="import-data-btn"){ document.getElementById("import-data-file").click(); return; }
     if(e.target.id==="reset-data-btn"){
       confirmDialog("Réinitialiser toutes les données de démonstration ? Cette action est irréversible.", ()=>{
         resetDB(); toast("Données réinitialisées"); render();
