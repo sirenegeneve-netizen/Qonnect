@@ -367,22 +367,25 @@ const REF_AI_GLOSSARY = [
     ex:["Les exigences peuvent venir de la norme, de la loi, des clients ou de l'organisme lui-même."], tip:"" }
 ];
 function refAiIsDefinitionQuestion(n){
-  return /c'est quoi|cest quoi|qu'est[- ]ce (que|qu')|que (signifie|veut dire|sont|represente)|definition|definis|que doit[- ]on entendre|c'est a dire|ca veut dire/.test(n);
+  return /c'est quoi|cest quoi|qu'est[- ]ce (que|qu')|ce qu'est|ce que (c'est|sont|signifie|represente)|que (signifie|veut dire|sont|represente)|definition|definis|que doit[- ]on entendre|ce qu'on entend|c'est a dire|ca veut dire|(explique|expliquer|precise|clarifie)\S* (moi )?(le terme|le mot|la notion|la definition|ce terme|ce mot)|notion de/.test(n);
 }
-function refAiReplyDefinition(ref, views, q, n){
+function refAiReplyDefinition(ref, views, q, n, chapter){
   const entry = REF_AI_GLOSSARY.find(e=>e.re.test(n));
   if(!entry) return null;
   /* Où le référentiel en parle : on cherche les mots clés du terme dans le texte importé. */
-  const found = views.map(v=>{ const hay = refAiNorm(v.title+" "+(v.description||"")); return { v, hits: entry.search.filter(k=>hay.includes(k)).length }; })
+  const scan = (pool) => pool.map(v=>{ const hay = refAiNorm(v.title+" "+(v.description||"")); return { v, hits: entry.search.filter(k=>hay.includes(k)).length }; })
     .filter(x=>x.hits>0).sort((a,b)=>b.hits-a.hits || refAiCmpRef(a.v.ref,b.v.ref));
+  /* Si un chapitre est cité, on montre d'abord ce que ce chapitre dit du terme. */
+  const inChapter = chapter ? scan(refAiViewsOf(views, chapter)) : [];
+  const found = inChapter.length ? inChapter : scan(views);
   let html = `<strong>${entry.name}</strong><p>${entry.def}</p>`;
   if(entry.ex && entry.ex.length) html += refAiList(entry.ex.map(e=>`<li>${e}</li>`));
   if(entry.tip) html += `<p class="text-sm">${entry.tip}</p>`;
   if(found.length){
     const sel = found.slice(0,3).map(x=>x.v);
-    html += `<p class="mt-2"><strong>Dans ${esc(ref.name)} :</strong> ${found.length} passage(s), notamment</p>` +
+    html += `<p class="mt-2"><strong>${inChapter.length?"Dans le chapitre "+esc(chapter):"Dans "+esc(ref.name)} :</strong> ${found.length} passage(s), notamment</p>` +
       refAiList(sel.map(v=>`<li>${refAiBase(v)}</li>`));
-    const top = refAiTop(sel[0].ref);
+    const top = chapter ? chapter : refAiTop(sel[0].ref);
     html += refAiGuideButtons(ref, [["Accompagne-moi sur le chapitre "+top, "Accompagne-moi sur le chapitre "+top], ["Voir tous les passages", "Où parle-t-on de "+entry.search[0]+" ?"]]);
   }
   html += `<p class="text-xs mt-2">Explication en langage courant, rédigée pour aider à comprendre ; la définition officielle se trouve dans l'ISO 9000 (vocabulaire).</p>`;
@@ -406,11 +409,12 @@ function refAIGenerateReply(ref, score, q){
     else if(/detail|plus|ce chapitre|celui|et pour|pourquoi|comment|explique|audit|non couvert/.test(n) && n.length<60 && !/chapitres? \d/.test(n)) chapter = ctx.lastChapter;
   }
 
+  /* Question de vocabulaire (« c'est quoi… », « explique-moi ce qu'est… ») : on explique d'abord, même si un chapitre est cité. */
+  if(refAiIsDefinitionQuestion(n)){ const def = refAiReplyDefinition(ref, views, q, n, chapter); if(def){ if(chapter) ctx.lastChapter = chapter; return def; } }
   if(/audit/.test(n)) { if(chapter) ctx.lastChapter = chapter; return refAiReplyAudit(ref, views, chapter); }
   if(chapter && howTo && !/pourquoi|calcul/.test(n)){ ctx.lastChapter = chapter; return refAiReplyGuide(ref, views, chapter); }
   if(chapter){ ctx.lastChapter = chapter; return refAiReplyChapter(ref, views, chapter, q, n); }
 
-  if(refAiIsDefinitionQuestion(n)){ const def = refAiReplyDefinition(ref, views, q, n); if(def) return def; }
   if(/recommandation/.test(n)) return refAiReplyType(views, "recommandation", "recommandation");
   if(/preuve|enregistrement/.test(n)) return refAiReplyType(views, "preuve", "preuve attendue");
   if(/responsabilite/.test(n)) return refAiReplyType(views, "responsabilite", "responsabilité");
