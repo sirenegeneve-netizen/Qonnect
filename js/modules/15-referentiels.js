@@ -109,7 +109,7 @@ function parseReferentielText(text){
   const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   const chapterRe = /^(\d+(?:\.\d+){0,3})\s+(.{3,90})$/;
   const hardRe = /\b(doit|doivent|shall|must|est tenu de|sont tenus de|est requis|obligatoire)\b/i;
-  const softRe = /\bil convient (?:de|d['’]|que|qu['’])|\b(?:devrait|devraient|should)\b|\bil est recommandé\b/i;
+  const softRe = /\bil convient\b|\b(?:devrait|devraient|should)\b|\bil est recommandé\b/i;
   const reqWordsRe = new RegExp(hardRe.source+"|"+softRe.source, "i");
   /* Phrases qui expliquent le vocabulaire de la norme (« doit » indique une exigence…) : ce ne sont pas des exigences. */
   const definitionRe = /[«"“]\s*(doit|doivent|il convient de|peut|peuvent|shall|should|must|may)\s*[»"”]/i;
@@ -146,6 +146,7 @@ function parseReferentielText(text){
     return /^[a-zà-ÿ(]/.test(line) || /,$/.test(prev) || connectiveRe.test(prev);
   }
 
+  const rawConvient = (text.replace(/\s+/g," ").match(/\bil convient\b/gi)||[]).length;
   lines.forEach(line=>{
     const m = line.match(chapterRe);
     if(m && !reqWordsRe.test(line)){ flush(); currentRef = m[1]; currentTitle = m[2]; return; }
@@ -163,7 +164,7 @@ function parseReferentielText(text){
   const deduped = exigences.filter(e=>{ const k=e.ref+"|"+norm(e.description); if(seen.has(k)) return false; seen.add(k); return true; });
   const kept = deduped.slice(0, MAX_IMPORTED_EXIGENCES);
   annotateRanks(kept);
-  return { chapters: [...new Set(kept.map(e=>e.ref))], exigences: kept, truncated: Math.max(0, deduped.length-kept.length), duplicatesRemoved: exigences.length-deduped.length, ignored };
+  return { chapters: [...new Set(kept.map(e=>e.ref))], exigences: kept, truncated: Math.max(0, deduped.length-kept.length), duplicatesRemoved: exigences.length-deduped.length, ignored, rawConvient };
 }
 function linkExigenceToSMQ(text){
   const low = text.toLowerCase();
@@ -216,6 +217,7 @@ function openReferentielImportModal(presets){
       <p class="text-xs mb-2">Total : ${p.exigences.length} élément(s) retenu(s).</p>
       ${p.duplicatesRemoved?`<p class="text-xs mb-2">${p.duplicatesRemoved} phrase(s) identique(s) répétée(s) dans le même chapitre ont été regroupées (en-têtes ou pieds de page par exemple).</p>`:""}
       ${p.ignored?`<p class="text-xs mb-2">${p.ignored} phrase(s) qui expliquent le vocabulaire de la norme (« doit » indique une exigence…) ont été ignorées : ce ne sont pas des exigences.</p>`:""}
+      ${p.rawConvient?`<p class="text-xs mb-2">Contrôle : « il convient » apparaît ${p.rawConvient} fois dans le texte lu ; ${count("recommandation")} recommandation(s) retenue(s), ${p.ignored} phrase(s) de vocabulaire ignorée(s)${p.duplicatesRemoved?" et "+p.duplicatesRemoved+" doublon(s) regroupé(s)":""}. Si l'écart vous surprend, utilisez le filtre « Tout » pour vérifier que la phrase n'est pas rangée dans un autre type.</p>`:`<p class="text-xs mb-2">Contrôle : l'expression « il convient » n'apparaît pas dans le texte lu. Si votre document en contient, le PDF a peut-être été mal lu (essayez la version Word).</p>`}
       ${p.truncated?`<p class="text-sm mb-2">⚠️ ${p.truncated} exigence(s) au-delà de la limite de ${MAX_IMPORTED_EXIGENCES} n'ont pas été retenues.</p>`:""}
       <div class="field" style="max-width:320px;"><label>Afficher</label>
         <select id="imp-filter">
