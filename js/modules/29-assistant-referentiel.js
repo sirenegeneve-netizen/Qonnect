@@ -290,6 +290,105 @@ document.addEventListener("click", (e)=>{
   }
 });
 
+
+/* Boutons de suggestion intégrés à une réponse (traités comme les puces de suggestion de l'onglet). */
+function refAiGuideButtons(ref, items){
+  return `<div class="ai-suggestions" style="margin-top:10px;">${items.map(([label,cmd])=>`<button class="chip" data-ref-ai-suggest="${esc(cmd)}" data-ref-id="${esc(ref.id)}">${esc(label)}</button>`).join("")}</div>`;
+}
+
+/* ---------- Définitions des termes courants du management de la qualité ---------- */
+/* Explications en langage simple, rédigées pour aider à comprendre : elles ne reproduisent pas le texte des normes.
+   Pour la définition officielle, se reporter à l'ISO 9000 (vocabulaire). */
+const REF_AI_GLOSSARY = [
+  { re:/enjeux?/, name:"Enjeux internes et externes", search:["enjeu"],
+    def:"Ce sont les éléments, extérieurs ou propres à l'organisme, qui peuvent aider ou gêner l'atteinte des résultats attendus du système de management.",
+    ex:["<strong>Externes</strong> : réglementation, concurrence, marché et économie, évolutions techniques, attentes de la société, contexte local.","<strong>Internes</strong> : culture et valeurs, organisation, ressources et compétences, connaissances, performance actuelle, outils et locaux."],
+    tip:"Concrètement : une courte analyse (par exemple type SWOT ou PESTEL) à mettre à jour au moins une fois par an. Le module <strong>Contexte & Stratégie</strong> de Qonnect sert à les enregistrer." },
+  { re:/parties? interess/, name:"Parties intéressées", search:["partie interess","interess"],
+    def:"Les personnes ou organismes qui peuvent influencer l'organisme, être touchés par ses décisions ou ses activités, ou simplement s'en sentir concernés.",
+    ex:["Clients et patients, personnel, fournisseurs et prestataires, autorités et organismes de contrôle, financeurs, partenaires."],
+    tip:"On les liste avec leurs besoins et attentes, puis on décide lesquels sont pertinents pour le système. Module <strong>Contexte & Stratégie</strong>." },
+  { re:/domaine d'application|perimetre/, name:"Domaine d'application (périmètre)", search:["domaine d'application"],
+    def:"Les limites du système de management : quels sites, activités, produits ou services il couvre, et ce qui est volontairement exclu avec la justification.",
+    ex:["Exemple : « consultations et hospitalisation du site A, hors activité de recherche »."], tip:"Il doit être écrit, tenu à jour et accessible : c'est un document à part entière." },
+  { re:/systeme de management|\bsmq\b/, name:"Système de management de la qualité (SMQ)", search:["systeme de management"],
+    def:"L'ensemble organisé des règles, processus, responsabilités et documents grâce auquel l'organisme pilote la qualité de ce qu'il fournit et s'améliore.",
+    ex:["Politique, objectifs, processus, procédures, enregistrements, audits, revue de direction."], tip:"Qonnect est précisément l'outil qui relie ces éléments entre eux." },
+  { re:/processus/, name:"Processus", search:["processus"],
+    def:"Un ensemble d'activités liées qui transforment des éléments d'entrée (une demande, une matière, une information) en éléments de sortie (un service rendu, un produit, un résultat).",
+    ex:["Exemples : accueil du patient, achats, maintenance, recrutement."], tip:"Chaque processus a un pilote, des entrées, des sorties, des risques et des indicateurs : module <strong>Processus</strong>." },
+  { re:/informations? documentee|documents? et enregistrement|enregistrement/, name:"Informations documentées", search:["informations documentees","documentee"],
+    def:"Tout ce que l'organisme doit écrire et maîtriser. On distingue les <strong>documents</strong> (ce qu'il faut faire : politique, procédure, mode opératoire) et les <strong>enregistrements</strong> (ce qui a été fait : compte rendu, résultat de contrôle, feuille de présence).",
+    ex:["Un document se met à jour et se versionne ; un enregistrement se conserve tel quel, daté et signé."], tip:"Module <strong>Documentation du SMQ</strong>." },
+  { re:/risques? (et|ou) opportunite|opportunite|\brisques?\b/, name:"Risques et opportunités", search:["risque","opportunite"],
+    def:"Un <strong>risque</strong> est l'effet de l'incertitude sur un résultat attendu : ce qui pourrait mal tourner. Une <strong>opportunité</strong> est l'effet favorable : ce qui pourrait aider à mieux faire.",
+    ex:["Risque : dépendance à un fournisseur unique. Opportunité : un nouvel outil qui réduit les délais."], tip:"On les évalue (gravité, probabilité), on décide d'agir ou non, et on suit les actions : module <strong>Risques</strong>." },
+  { re:/non[- ]?conformite/, name:"Non-conformité", search:["non-conformite","non conformite"],
+    def:"Une exigence qui n'est pas respectée : écart par rapport à une procédure, à une norme, à une réglementation ou à une attente du client.",
+    ex:["Un contrôle non réalisé, un produit hors tolérance, un document périmé encore utilisé."], tip:"On traite d'abord l'effet immédiat (correction), puis on cherche la cause pour l'éviter (action corrective) : module <strong>Événements</strong>." },
+  { re:/action corrective|correction/, name:"Correction et action corrective", search:["action corrective","corrective"],
+    def:"La <strong>correction</strong> traite l'effet visible tout de suite (on trie, on refait, on répare). L'<strong>action corrective</strong> supprime la <em>cause</em> de l'écart pour qu'il ne se reproduise pas.",
+    ex:["Correction : remplacer le lot défectueux. Action corrective : revoir la méthode de contrôle à la réception."], tip:"Module <strong>Actions</strong>, avec l'événement d'origine rattaché." },
+  { re:/audit interne|\baudit\b/, name:"Audit interne", search:["audit"],
+    def:"Une vérification méthodique, indépendante et documentée, qui compare ce qui est fait aux règles fixées, à partir de preuves, pour juger si le système fonctionne et s'améliore.",
+    ex:["Un auditeur n'audite pas son propre travail ; il conclut par des constats : points forts, écarts, pistes de progrès."], tip:"Module <strong>Audits</strong>." },
+  { re:/revue de direction/, name:"Revue de direction", search:["revue de direction","direction"],
+    def:"Le moment où la direction examine à intervalles planifiés si le système est adapté, efficace et aligné avec la stratégie, puis décide des actions et des moyens.",
+    ex:["Entrées : résultats d'audits, indicateurs, réclamations, risques, état des actions. Sorties : décisions et ressources."], tip:"Module <strong>Revue de Direction</strong> de Qonnect." },
+  { re:/politique qualite|politique/, name:"Politique qualité", search:["politique"],
+    def:"Les intentions et orientations de l'organisme en matière de qualité, exprimées officiellement par sa direction.",
+    ex:["Un texte court, communiqué au personnel et accessible aux parties intéressées pertinentes."], tip:"Elle sert de cadre pour fixer les objectifs." },
+  { re:/objectifs? qualite|objectif/, name:"Objectifs qualité", search:["objectif"],
+    def:"Les résultats précis à atteindre, cohérents avec la politique, mesurables, avec un responsable et une échéance.",
+    ex:["Exemple : « réduire de 10 % les délais de traitement d'ici fin d'année »."], tip:"Module <strong>Objectifs & indicateurs</strong>." },
+  { re:/indicateur|performance/, name:"Indicateur de performance", search:["indicateur","performance"],
+    def:"Une mesure régulière (valeur, cible, seuil d'alerte) qui montre si un processus ou un objectif se comporte comme prévu.",
+    ex:["Taux de satisfaction, délai moyen, nombre de non-conformités par mois."], tip:"Module <strong>Objectifs & indicateurs</strong>." },
+  { re:/amelioration continue|amelioration/, name:"Amélioration continue", search:["amelioration"],
+    def:"La démarche permanente qui consiste à repérer ce qui peut être mieux fait, à agir, puis à vérifier le résultat (le cycle « planifier, faire, vérifier, agir »).",
+    ex:["Source d'idées : audits, réclamations, indicateurs, suggestions du personnel."], tip:"Modules <strong>Actions</strong> et <strong>Événements</strong> (suggestions)." },
+  { re:/satisfaction/, name:"Satisfaction du client", search:["satisfaction"],
+    def:"La perception qu'a le client (ou le patient) de la mesure dans laquelle ses attentes ont été remplies.",
+    ex:["Enquêtes, réclamations, remerciements, taux de retour."], tip:"On en suit des indicateurs et on les passe en revue." },
+  { re:/prestataires? externes?|fournisseur|sous[- ]trait/, name:"Fournisseurs et prestataires externes", search:["fournisseur","prestataire","externe"],
+    def:"Toute entité extérieure dont les produits ou services entrent dans ce que fournit l'organisme. L'organisme reste responsable de ce qu'il en fait.",
+    ex:["On définit des critères de choix, on évalue, on suit les incidents, on garde les preuves."], tip:"Module <strong>Fournisseurs</strong>." },
+  { re:/competence/, name:"Compétence", search:["competence"],
+    def:"L'aptitude à appliquer des connaissances et un savoir-faire pour obtenir un résultat attendu. On vérifie qu'elle existe (formation, expérience, évaluation) et on la prouve.",
+    ex:["Diplôme, habilitation, évaluation par le responsable, formation suivie."], tip:"Module <strong>Compétences & Habilitations</strong>." },
+  { re:/tracabilite/, name:"Traçabilité", search:["tracabilite"],
+    def:"La capacité de retrouver l'historique, l'utilisation ou l'origine de ce qui a été fait ou fourni.",
+    ex:["Savoir quel lot, quel opérateur, quelle version de procédure."], tip:"Elle repose sur des enregistrements fiables et datés." },
+  { re:/changement/, name:"Gestion du changement", search:["changement","modification"],
+    def:"Faire évoluer l'organisation, un processus ou un équipement de façon maîtrisée : évaluer l'impact avant, décider, informer, vérifier après.",
+    ex:["Changer de fournisseur, de logiciel ou de méthode de travail."], tip:"Module <strong>Changements</strong>." },
+  { re:/exigence/, name:"Exigence", search:["exigence"],
+    def:"Un besoin ou une attente énoncé, imposé ou implicite. Dans une norme, « <em>doit</em> » indique une exigence à respecter ; « <em>il convient de</em> » une recommandation.",
+    ex:["Les exigences peuvent venir de la norme, de la loi, des clients ou de l'organisme lui-même."], tip:"" }
+];
+function refAiIsDefinitionQuestion(n){
+  return /c'est quoi|cest quoi|qu'est[- ]ce (que|qu')|que (signifie|veut dire|sont|represente)|definition|definis|que doit[- ]on entendre|c'est a dire|ca veut dire/.test(n);
+}
+function refAiReplyDefinition(ref, views, q, n){
+  const entry = REF_AI_GLOSSARY.find(e=>e.re.test(n));
+  if(!entry) return null;
+  /* Où le référentiel en parle : on cherche les mots clés du terme dans le texte importé. */
+  const found = views.map(v=>{ const hay = refAiNorm(v.title+" "+(v.description||"")); return { v, hits: entry.search.filter(k=>hay.includes(k)).length }; })
+    .filter(x=>x.hits>0).sort((a,b)=>b.hits-a.hits || refAiCmpRef(a.v.ref,b.v.ref));
+  let html = `<strong>${entry.name}</strong><p>${entry.def}</p>`;
+  if(entry.ex && entry.ex.length) html += refAiList(entry.ex.map(e=>`<li>${e}</li>`));
+  if(entry.tip) html += `<p class="text-sm">${entry.tip}</p>`;
+  if(found.length){
+    const sel = found.slice(0,3).map(x=>x.v);
+    html += `<p class="mt-2"><strong>Dans ${esc(ref.name)} :</strong> ${found.length} passage(s), notamment</p>` +
+      refAiList(sel.map(v=>`<li>${refAiBase(v)}</li>`));
+    const top = refAiTop(sel[0].ref);
+    html += refAiGuideButtons(ref, [["Accompagne-moi sur le chapitre "+top, "Accompagne-moi sur le chapitre "+top], ["Voir tous les passages", "Où parle-t-on de "+entry.search[0]+" ?"]]);
+  }
+  html += `<p class="text-xs mt-2">Explication en langage courant, rédigée pour aider à comprendre ; la définition officielle se trouve dans l'ISO 9000 (vocabulaire).</p>`;
+  return html;
+}
+
 function refAIGenerateReply(ref, score, q){
   const views = score.views;
   const n = refAiNorm(q);
@@ -311,6 +410,7 @@ function refAIGenerateReply(ref, score, q){
   if(chapter && howTo && !/pourquoi|calcul/.test(n)){ ctx.lastChapter = chapter; return refAiReplyGuide(ref, views, chapter); }
   if(chapter){ ctx.lastChapter = chapter; return refAiReplyChapter(ref, views, chapter, q, n); }
 
+  if(refAiIsDefinitionQuestion(n)){ const def = refAiReplyDefinition(ref, views, q, n); if(def) return def; }
   if(/recommandation/.test(n)) return refAiReplyType(views, "recommandation", "recommandation");
   if(/preuve|enregistrement/.test(n)) return refAiReplyType(views, "preuve", "preuve attendue");
   if(/responsabilite/.test(n)) return refAiReplyType(views, "responsabilite", "responsabilité");
