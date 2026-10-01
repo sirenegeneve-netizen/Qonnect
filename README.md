@@ -23,6 +23,7 @@ Aucune installation n'est nécessaire.
 - Les données sont fictives, stockées dans `js/data.js`, et interconnectées par identifiants (`PROC-001`, `RISK-001`, `DOC-004`…).
 - Les modifications faites dans l'interface (créer un événement, faire avancer un workflow, etc.) sont persistées dans le `localStorage` du navigateur, propre à chaque poste. Aucune donnée n'est envoyée à un serveur.
 - Vous pouvez réinitialiser les données de démonstration à tout moment depuis **⚙ Administration → Réinitialiser les données de démonstration**.
+- **Sauvegarde** : **⚙ Administration → Exporter mes données** télécharge un fichier JSON ; **Importer une sauvegarde** le restaure (la version précédente est conservée de côté dans le navigateur). À faire régulièrement, car les données disparaissent si le navigateur est vidé.
 
 ## Structure du projet
 

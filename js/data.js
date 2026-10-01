@@ -828,6 +828,36 @@ function resetDB(){
   saveDB();
 }
 
+/* ---------- sauvegarde / restauration (fichier JSON) ---------- */
+const BACKUP_APP = "qonnect";
+const BACKUP_VERSION = 1;
+function buildBackup(){
+  return { app:BACKUP_APP, version:BACKUP_VERSION, exportedAt:new Date().toISOString(), data:DB };
+}
+/* Vérifie qu'un objet ressemble bien à une sauvegarde Qonnect. Retourne un message d'erreur ou null. */
+function validateBackup(obj){
+  if(!obj || typeof obj!=="object") return "Le fichier n'est pas une sauvegarde Qonnect.";
+  if(obj.app!==BACKUP_APP) return "Ce fichier n'a pas été créé par Qonnect.";
+  if(typeof obj.version!=="number" || obj.version>BACKUP_VERSION) return "Version de sauvegarde non prise en charge.";
+  if(!obj.data || typeof obj.data!=="object" || Array.isArray(obj.data)) return "Le contenu de la sauvegarde est vide ou invalide.";
+  const required = ["processes","risks","events","actions","documents"];
+  const missing = required.filter(k=>!Array.isArray(obj.data[k]));
+  if(missing.length) return "Sauvegarde incomplète (sections manquantes : "+missing.join(", ")+").";
+  return null;
+}
+/* Remplace les données par celles de la sauvegarde. La version précédente est gardée de côté. */
+function restoreBackup(obj){
+  const err = validateBackup(obj);
+  if(err) throw new Error(err);
+  try{ localStorage.setItem("qonnect_db_v1_avant_import", JSON.stringify(DB)); }catch(e){}
+  const seedCopy = JSON.parse(JSON.stringify(QONNECT_SEED));
+  const data = obj.data;
+  Object.keys(seedCopy).forEach(key=>{ if(!(key in data)) data[key] = seedCopy[key]; });
+  DB = data;
+  normalizeDocuments();
+  saveDB();
+}
+
 let DB = loadDB();
 normalizeDocuments();
 
