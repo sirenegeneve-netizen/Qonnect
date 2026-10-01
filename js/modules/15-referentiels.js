@@ -192,20 +192,40 @@ function openReferentielImportModal(presets){
     `;
   }
   function step1Foot(){ return `<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="imp-analyze">🧠 Analyser le document</button>`; }
+  function exigenceRowHtml(e){
+    return `<div class="rel-link"><span class="rel-name"><strong>${esc(exigenceLabel(e))}</strong> — ${esc(e.title)}${exigenceExcerpt(e,160)?`<span class="text-xs" style="display:block;color:var(--muted,#64748b);font-weight:400;">${esc(exigenceExcerpt(e,160))}</span>`:""}</span>${badgeRaw("info", LABELS.exigenceType[e.type])}</div>`;
+  }
+  function previewListHtml(filter){
+    const list = state.parsed.exigences.filter(e=> !filter || filter==="all" || e.type===filter);
+    return list.length ? list.map(exigenceRowHtml).join("") : `<p class="text-sm">Aucun élément de ce type dans le document.</p>`;
+  }
   function step2Html(){
     const p = state.parsed;
+    const count = t => p.exigences.filter(e=>e.type===t).length;
+    const kpis = [
+      [p.chapters.length, "Chapitres détectés"],
+      [count("exigence"), "Exigences"],
+      [count("responsabilite"), "Responsabilités"],
+      [count("preuve"), "Preuves attendues"],
+      [count("recommandation"), "Recommandations"]
+    ];
     return `
-      <div class="grid grid-3 mb-4">
-        <div class="kpi"><div class="val">${p.chapters.length}</div><div class="lbl">Chapitres détectés</div></div>
-        <div class="kpi"><div class="val">${p.exigences.length}</div><div class="lbl">Exigences détectées</div></div>
-        <div class="kpi"><div class="val">${p.exigences.filter(e=>e.type==="preuve").length}</div><div class="lbl">Preuves attendues</div></div>
+      <div class="grid mb-2" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));">
+        ${kpis.map(k=>`<div class="kpi"><div class="val">${k[0]}</div><div class="lbl">${k[1]}</div></div>`).join("")}
       </div>
+      <p class="text-xs mb-2">Total : ${p.exigences.length} élément(s) retenu(s).</p>
       ${p.duplicatesRemoved?`<p class="text-xs mb-2">${p.duplicatesRemoved} phrase(s) identique(s) répétée(s) dans le même chapitre ont été regroupées (en-têtes ou pieds de page par exemple).</p>`:""}
       ${p.ignored?`<p class="text-xs mb-2">${p.ignored} phrase(s) qui expliquent le vocabulaire de la norme (« doit » indique une exigence…) ont été ignorées : ce ne sont pas des exigences.</p>`:""}
       ${p.truncated?`<p class="text-sm mb-2">⚠️ ${p.truncated} exigence(s) au-delà de la limite de ${MAX_IMPORTED_EXIGENCES} n'ont pas été retenues.</p>`:""}
-      <div style="max-height:360px;overflow-y:auto;">
-        ${p.exigences.map(e=>`<div class="rel-link"><span class="rel-name"><strong>${esc(exigenceLabel(e))}</strong> — ${esc(e.title)}${exigenceExcerpt(e,160)?`<span class="text-xs" style="display:block;color:var(--muted,#64748b);font-weight:400;">${esc(exigenceExcerpt(e,160))}</span>`:""}</span>${badgeRaw("info", LABELS.exigenceType[e.type])}</div>`).join("")}
-      </div>
+      <div class="field" style="max-width:320px;"><label>Afficher</label>
+        <select id="imp-filter">
+          <option value="all">Tout (${p.exigences.length})</option>
+          <option value="exigence">Exigences (${count("exigence")})</option>
+          <option value="responsabilite">Responsabilités (${count("responsabilite")})</option>
+          <option value="preuve">Preuves attendues (${count("preuve")})</option>
+          <option value="recommandation">Recommandations (${count("recommandation")})</option>
+        </select></div>
+      <div id="imp-preview-list" style="max-height:340px;overflow-y:auto;">${previewListHtml("all")}</div>
       ${!p.exigences.length?`<p class="text-sm mt-2">⚠️ Aucune exigence détectée. Vérifiez que le texte contient des formulations comme « doit », « doivent » ou « shall ».</p>`:""}
     `;
   }
@@ -241,6 +261,8 @@ function openReferentielImportModal(presets){
   }
   function mountStep2(o){
     o.querySelector("#imp-back").addEventListener("click", ()=> renderStep(o,1));
+    const filterEl = o.querySelector("#imp-filter");
+    if(filterEl) filterEl.addEventListener("change", ()=>{ o.querySelector("#imp-preview-list").innerHTML = previewListHtml(filterEl.value); });
     const confirmBtn = o.querySelector("#imp-confirm");
     if(confirmBtn) confirmBtn.addEventListener("click", ()=>{
       let ref = existingRef;
