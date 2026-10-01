@@ -108,7 +108,9 @@ const MAX_IMPORTED_EXIGENCES = 1000;
 function parseReferentielText(text){
   const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   const chapterRe = /^(\d+(?:\.\d+){0,3})\s+(.{3,90})$/;
-  const reqWordsRe = /\b(doit|doivent|shall|must|est tenu de|il convient de|est requis|obligatoire)\b/i;
+  const hardRe = /\b(doit|doivent|shall|must|est tenu de|sont tenus de|est requis|obligatoire)\b/i;
+  const softRe = /\bil convient (?:de|d['’]|que|qu['’])|\b(?:devrait|devraient|should)\b|\bil est recommandé\b/i;
+  const reqWordsRe = new RegExp(hardRe.source+"|"+softRe.source, "i");
   /* Phrases qui expliquent le vocabulaire de la norme (« doit » indique une exigence…) : ce ne sont pas des exigences. */
   const definitionRe = /[«"“]\s*(doit|doivent|il convient de|peut|peuvent|shall|should|must|may)\s*[»"”]/i;
   const listItemRe = /^(?:[a-z]\)|\d{1,2}\)|[-–—•·▪●])\s+/i;
@@ -128,7 +130,9 @@ function parseReferentielText(text){
       if(!reqWordsRe.test(sentence) || sentence.length<=15) return;
       if(definitionRe.test(sentence)){ ignored++; return; }
       let type = "exigence";
-      if(/il convient de/i.test(sentence) && !/\b(doit|doivent|est tenu de|est requis)\b/i.test(sentence)) type = "recommandation";
+      /* Recommandation : formulation « il convient… / devrait… », même si un autre mot plus loin sonne comme une obligation,
+         tant que la phrase commence par cette formulation ou ne contient aucune obligation ferme. */
+      if(softRe.test(sentence) && (!hardRe.test(sentence) || /^(?:\W*)(il convient|il est recommandé|\w+\s+devrait)/i.test(sentence))) type = "recommandation";
       else if(/preuve|enregistrement|trace|document[ée]/i.test(sentence)) type = "preuve";
       else if(/responsab/i.test(sentence)) type = "responsabilite";
       exigences.push({ ref: bufRef || "—", title: (bufTitle || sentence.slice(0,60)).slice(0,90), description: sentence, sourceText: sentence, type });
