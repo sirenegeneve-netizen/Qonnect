@@ -132,8 +132,8 @@ function openReferentielImportModal(presets){
         <div class="field"><label>Version</label><input type="text" id="imp-version" placeholder="Ex : 2026"></div>
         <div class="field"><label>Origine</label><input type="text" id="imp-origin" placeholder="Ex : Import PDF, procédure groupe…"></div>
       </div>
-      <div class="field"><label>Fichier (.txt ou .html — lecture automatique)</label><input type="file" id="imp-file" accept=".txt,.html,.htm,.md"></div>
-      <p class="text-xs">Les formats PDF et DOCX ne peuvent pas être extraits automatiquement dans ce prototype sans serveur : collez le texte ci-dessous, ou utilisez un export .txt.</p>
+      <div class="field"><label>Fichier (PDF, Word .docx, .txt ou .html — lecture automatique)</label><input type="file" id="imp-file" accept=".pdf,.docx,.txt,.html,.htm,.md"></div>
+      <p class="text-xs" id="imp-file-status">La lecture se fait dans votre navigateur : le fichier n'est envoyé nulle part. Les PDF scannés (images) ne sont pas lisibles ; vous pouvez aussi coller le texte ci-dessous.</p>
       <div class="field"><label>Texte du référentiel <span class="req">*</span></label><textarea id="imp-text" style="min-height:180px;" placeholder="Collez ici le texte du référentiel (chapitres, exigences…)">${esc(state.text)}</textarea></div>
     `;
   }
@@ -156,13 +156,21 @@ function openReferentielImportModal(presets){
   function step2Foot(){ return `<button class="btn btn-secondary" id="imp-back">← Revenir</button><button class="btn btn-primary" id="imp-confirm" ${!state.parsed.exigences.length?"disabled":""}>Valider l'import</button>`; }
 
   function mountStep1(o){
-    o.querySelector("#imp-file").addEventListener("change", (e)=>{
+    o.querySelector("#imp-file").addEventListener("change", async (e)=>{
       const f = e.target.files[0];
       if(!f) return;
-      if(!/\.(txt|html?|md)$/i.test(f.name)){ toast("Ce type de fichier ne peut pas être lu automatiquement — collez le texte","⚠️"); return; }
-      const reader = new FileReader();
-      reader.onload = ()=>{ o.querySelector("#imp-text").value = String(reader.result).replace(/<[^>]+>/g," "); toast("Fichier chargé"); };
-      reader.readAsText(f);
+      const status = o.querySelector("#imp-file-status");
+      status.textContent = "Lecture de « "+f.name+" »…";
+      try{
+        const text = await extractTextFromFile(f, (n,total)=>{ status.textContent = "Lecture de « "+f.name+" » : page "+n+" / "+total+"…"; });
+        o.querySelector("#imp-text").value = text;
+        status.textContent = "« "+f.name+" » chargé ("+text.length.toLocaleString("fr-FR")+" caractères). Vérifiez le texte, puis cliquez sur Analyser.";
+        toast("Fichier chargé");
+      }catch(err){
+        status.textContent = "⚠️ "+err.message;
+        toast(err.message,"⚠️");
+        e.target.value = "";
+      }
     });
     o.querySelector("#imp-analyze").addEventListener("click", ()=>{
       const text = o.querySelector("#imp-text").value.trim();
