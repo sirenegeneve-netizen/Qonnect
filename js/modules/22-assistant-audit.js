@@ -78,7 +78,7 @@ function openAuditWizard(presets){
     <div class="step-title">Étape 5/6 — Critères d'audit</div>
     <p class="text-sm mb-2">Qonnect propose les exigences pertinentes selon le périmètre sélectionné.</p>
     <div class="field" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
-      ${relevantViews.length?relevantViews.map(v=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="wiz-req-cb" value="${v.id}" ${state.requirementIds.includes(v.id)?"checked":""} style="width:auto;"> ${esc(v.ref)} — ${esc(v.title)} ${badge(LABELS.exigenceCoverage[v.level])}</label>`).join(""):`<p class="text-sm">Sélectionnez un processus et un référentiel pour voir les exigences suggérées.</p>`}
+      ${relevantViews.length?relevantViews.map(v=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="wiz-req-cb" value="${v.id}" ${state.requirementIds.includes(v.id)?"checked":""} style="width:auto;"> ${esc(exigenceLabel(v))} — ${esc(v.title)}${exigenceExcerpt(v,90)?" : "+esc(exigenceExcerpt(v,90)):""} ${badge(LABELS.exigenceCoverage[v.level])}</label>`).join(""):`<p class="text-sm">Sélectionnez un processus et un référentiel pour voir les exigences suggérées.</p>`}
     </div>
     <div class="field mt-4"><label>Documents applicables</label>
       <div style="max-height:150px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">

@@ -70,10 +70,12 @@ function getReferentielExigenceViews(refId){
         updatedAt: bundle.docs.reduce((max,d)=> d.date>max?d.date:max, "") };
     });
   }
-  return DB.customExigences.filter(e=>e.referentielId===refId).map(e=>{
+  const own = DB.customExigences.filter(e=>e.referentielId===refId);
+  const ranks = annotateRanks(own.map(e=>({ref:e.ref})));
+  return own.map((e,idx)=>{
     const bundle = customExigenceBundle(e);
     const level = scoreCoverage(bundle);
-    return { id:e.id, ref:e.ref, title:e.title, description:e.description, sourceText:e.sourceText, type:e.type, legacy:false, bundle, level, process:bundle.process,
+    return { id:e.id, ref:e.ref, rank:ranks[idx].rank, rankOf:ranks[idx].rankOf, title:e.title, description:e.description, sourceText:e.sourceText, type:e.type, legacy:false, bundle, level, process:bundle.process,
       updatedAt: bundle.docs.reduce((max,d)=> d.date>max?d.date:max, "") };
   });
 }
@@ -87,6 +89,22 @@ function referentielScore(refId){
 }
 
 /* ---------- Analyse & import d'un référentiel ---------- */
+/* Numérote les exigences d'un même chapitre (1/3, 2/3, 3/3) pour les distinguer quand elles portent le même intitulé. */
+function annotateRanks(list){
+  const total = {};
+  list.forEach(e=>{ total[e.ref] = (total[e.ref]||0)+1; });
+  const seen = {};
+  list.forEach(e=>{ seen[e.ref] = (seen[e.ref]||0)+1; e.rank = seen[e.ref]; e.rankOf = total[e.ref]; });
+  return list;
+}
+function exigenceLabel(v){ return v.ref + (v.rankOf>1 ? " ("+v.rank+"/"+v.rankOf+")" : ""); }
+function exigenceExcerpt(v, max){
+  const t = (v.description||"").replace(/\s+/g," ").trim();
+  if(!t || t===(v.title||"")) return "";
+  return t.length>max ? t.slice(0,max-1).trimEnd()+"…" : t;
+}
+const MAX_IMPORTED_EXIGENCES = 1000;
+
 function parseReferentielText(text){
   const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   const chapterRe = /^(\d+(?:\.\d+){0,3})\s+(.{3,90})$/;
@@ -107,9 +125,13 @@ function parseReferentielText(text){
       });
     }
   });
+  /* Doublon = même chapitre ET même phrase (ex. en-tête ou pied de page répété sur chaque page du PDF). */
   const seen = new Set();
-  const deduped = exigences.filter(e=>{ const k=e.ref+"|"+e.description.slice(0,40); if(seen.has(k)) return false; seen.add(k); return true; });
-  return { chapters: [...new Set(deduped.map(e=>e.ref))], exigences: deduped.slice(0,80) };
+  const norm = t => t.toLowerCase().replace(/\s+/g," ").trim();
+  const deduped = exigences.filter(e=>{ const k=e.ref+"|"+norm(e.description); if(seen.has(k)) return false; seen.add(k); return true; });
+  const kept = deduped.slice(0, MAX_IMPORTED_EXIGENCES);
+  annotateRanks(kept);
+  return { chapters: [...new Set(kept.map(e=>e.ref))], exigences: kept, truncated: Math.max(0, deduped.length-kept.length), duplicatesRemoved: exigences.length-deduped.length };
 }
 function linkExigenceToSMQ(text){
   const low = text.toLowerCase();
@@ -146,9 +168,10 @@ function openReferentielImportModal(presets){
         <div class="kpi"><div class="val">${p.exigences.length}</div><div class="lbl">Exigences détectées</div></div>
         <div class="kpi"><div class="val">${p.exigences.filter(e=>e.type==="preuve").length}</div><div class="lbl">Preuves attendues</div></div>
       </div>
-      <div style="max-height:320px;overflow-y:auto;">
-        ${p.exigences.slice(0,15).map(e=>`<div class="rel-link"><span class="rel-name">${esc(e.ref)} — ${esc(e.title)}</span>${badgeRaw("info", LABELS.exigenceType[e.type])}</div>`).join("")}
-        ${p.exigences.length>15?`<p class="text-xs mt-2">… et ${p.exigences.length-15} autre(s).</p>`:""}
+      ${p.duplicatesRemoved?`<p class="text-xs mb-2">${p.duplicatesRemoved} phrase(s) identique(s) répétée(s) dans le même chapitre ont été regroupées (en-têtes ou pieds de page par exemple).</p>`:""}
+      ${p.truncated?`<p class="text-sm mb-2">⚠️ ${p.truncated} exigence(s) au-delà de la limite de ${MAX_IMPORTED_EXIGENCES} n'ont pas été retenues.</p>`:""}
+      <div style="max-height:360px;overflow-y:auto;">
+        ${p.exigences.map(e=>`<div class="rel-link"><span class="rel-name"><strong>${esc(exigenceLabel(e))}</strong> — ${esc(e.title)}${exigenceExcerpt(e,160)?`<span class="text-xs" style="display:block;color:var(--muted,#64748b);font-weight:400;">${esc(exigenceExcerpt(e,160))}</span>`:""}</span>${badgeRaw("info", LABELS.exigenceType[e.type])}</div>`).join("")}
       </div>
       ${!p.exigences.length?`<p class="text-sm mt-2">⚠️ Aucune exigence détectée. Vérifiez que le texte contient des formulations comme « doit », « doivent » ou « shall ».</p>`:""}
     `;
@@ -198,7 +221,7 @@ function openReferentielImportModal(presets){
       let diffDetail = null;
       if(isNewVersion){
         const oldExigences = DB.customExigences.filter(e=>e.referentielId===ref.id);
-        const keyOf = e => e.ref + "|" + (e.title||"").toLowerCase().slice(0,40);
+        const keyOf = e => e.ref + "|" + (e.description||e.title||"").toLowerCase().replace(/\s+/g," ").trim();
         const oldMap = new Map(oldExigences.map(e=>[keyOf(e), e]));
         const newMap = new Map(state.parsed.exigences.map(e=>[keyOf(e), e]));
         const added = [...newMap.keys()].filter(k=>!oldMap.has(k)).map(k=>newMap.get(k));
@@ -214,7 +237,7 @@ function openReferentielImportModal(presets){
           }
         });
         diffNote = `Nouvelle version — ${added.length} exigence(s) ajoutée(s), ${removed.length} supprimée(s), ${modified.length} chapitre(s) modifié(s).`;
-        diffDetail = { added: added.map(e=>e.ref+" — "+e.title), removed: removed.map(e=>e.ref+" — "+e.title), modified };
+        diffDetail = { added: added.map(e=>e.ref+" — "+(exigenceExcerpt(e,100)||e.title)), removed: removed.map(e=>e.ref+" — "+(exigenceExcerpt(e,100)||e.title)), modified };
         DB.customExigences = DB.customExigences.filter(e=>e.referentielId!==ref.id);
       }
       state.parsed.exigences.forEach((e,i)=>{
@@ -341,11 +364,11 @@ function refAIGenerateReply(ref, score, q){
   }
   if(/non couvert|pas couvert|[ée]cart|manque/.test(low)){
     const list = score.views.filter(v=>v.level==="non_couvert").slice(0,8);
-    return list.length? `Exigences non couvertes :<ul>${list.map(v=>`<li>${esc(v.ref)} — ${esc(v.title)}</li>`).join("")}</ul>` : "Toutes les exigences disposent d'au moins un élément de preuve associé.";
+    return list.length? `Exigences non couvertes :<ul>${list.map(v=>`<li>${esc(exigenceLabel(v))} — ${esc(v.title)}${exigenceExcerpt(v,100)?" : "+esc(exigenceExcerpt(v,100)):""}</li>`).join("")}</ul>` : "Toutes les exigences disposent d'au moins un élément de preuve associé.";
   }
   if(/audit/.test(low)){
     const weak = score.views.filter(v=>v.level==="non_couvert"||v.level==="partiellement").slice(0,6);
-    return weak.length? `Pour préparer un audit sur ${esc(ref.name)}, concentrez-vous en priorité sur :<ul>${weak.map(v=>`<li>${esc(v.ref)} — ${esc(v.title)}</li>`).join("")}</ul>` : "Aucun point de vigilance majeur identifié actuellement pour cet audit.";
+    return weak.length? `Pour préparer un audit sur ${esc(ref.name)}, concentrez-vous en priorité sur :<ul>${weak.map(v=>`<li>${esc(exigenceLabel(v))} — ${esc(v.title)}${exigenceExcerpt(v,100)?" : "+esc(exigenceExcerpt(v,100)):""}</li>`).join("")}</ul>` : "Aucun point de vigilance majeur identifié actuellement pour cet audit.";
   }
   if(/revue de direction/.test(low)){
     return `Éléments à intégrer à la revue de direction pour ${esc(ref.name)} : niveau de maîtrise (${score.pct}%), ${score.counts.non_couvert} exigence(s) non couvertes, et les risques réglementaires associés aux processus concernés.`;
@@ -468,7 +491,7 @@ function refTabVue(ref, score){
   <div class="grid grid-2">
     <div class="card">
       <h3 class="mb-2">⚠️ Risques réglementaires</h3>
-      ${critiques.length? critiques.map(v=>`<div class="rel-link" data-route="referentiels/${ref.id}/exigences/${v.id}"><span class="rel-name">${esc(v.ref)} — ${esc(v.title)}</span>${badge(LABELS.exigenceCoverage[v.level])}</div>`).join("") : `<p class="text-sm">Aucune exigence critique non couverte.</p>`}
+      ${critiques.length? critiques.map(v=>`<div class="rel-link" data-route="referentiels/${ref.id}/exigences/${v.id}"><span class="rel-name">${esc(exigenceLabel(v))} — ${esc(v.title)}${exigenceExcerpt(v,100)?`<span class="text-xs" style="display:block;font-weight:400;">${esc(exigenceExcerpt(v,100))}</span>`:""}</span>${badge(LABELS.exigenceCoverage[v.level])}</div>`).join("") : `<p class="text-sm">Aucune exigence critique non couverte.</p>`}
     </div>
     <div class="card">
       <h3 class="mb-2">✅ Actions prioritaires</h3>
@@ -484,7 +507,7 @@ function refTabVue(ref, score){
 
 function refTabExigences(ref, score){
   return dataTable(
-    [ {label:"Exigence", render:v=>`<div class="cell-title">${esc(v.ref)} — ${esc(v.title)}</div>`},
+    [ {label:"Exigence", render:v=>`<div class="cell-title">${esc(exigenceLabel(v))} — ${esc(v.title)}</div>${exigenceExcerpt(v,110)?`<div class="text-xs">${esc(exigenceExcerpt(v,110))}</div>`:""}`},
       {label:"Niveau", render:v=>badge(LABELS.exigenceCoverage[v.level])},
       {label:"Preuves", render:v=>v.bundle.docs.length+" doc(s)"},
       {label:"Risques", render:v=>v.bundle.risksOpen.length},
@@ -505,7 +528,7 @@ function refExigenceDetail(ref, v){
     <div>
       <div class="card mb-2">
         <div class="flex justify-between items-center">${badge(LABELS.exigenceCoverage[v.level])}${badgeRaw("neutral", LABELS.exigenceType[v.type]||v.type)}</div>
-        <h1 class="mt-2">${esc(v.ref)} — ${esc(v.title)}</h1>
+        <h1 class="mt-2">${esc(exigenceLabel(v))} — ${esc(v.title)}</h1>
         ${v.sourceText?`<p class="text-sm mt-4" style="color:var(--text-primary);line-height:1.7;">« ${esc(v.sourceText)} »</p>`:""}
       </div>
       <div class="card mb-2">
@@ -546,7 +569,7 @@ function refExigenceDetail(ref, v){
 function refTabCartographie(ref, score){
   return score.views.map(v=>`
     <div class="card mb-2">
-      <div class="flex justify-between items-center"><h3 style="font-size:14.5px;">${esc(v.ref)} — ${esc(v.title)}</h3>${badge(LABELS.exigenceCoverage[v.level])}</div>
+      <div class="flex justify-between items-center"><h3 style="font-size:14.5px;">${esc(exigenceLabel(v))} — ${esc(v.title)}</h3>${badge(LABELS.exigenceCoverage[v.level])}</div>
       <div class="grid grid-2 mt-2">
         <div>
           ${v.bundle.docs.length?`<div class="text-xs mb-2">DOCUMENTS</div>${v.bundle.docs.map(d=>`<div class="rel-link" data-route="documents/${d.type}/${d.id}"><span class="rel-name">📄 ${esc(d.title)}</span></div>`).join("")}`:""}

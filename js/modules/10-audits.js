@@ -8,7 +8,12 @@ function resolveExigence(id){
   const legacy = findBy(DB.requirements, id);
   if(legacy) return {ref:legacy.ref, label:legacy.label, referentielId:"ISO9001"};
   const custom = getCustomExigence(id);
-  if(custom) return {ref:custom.ref, label:custom.title, referentielId:custom.referentielId};
+  if(custom){
+    /* Si le chapitre contient plusieurs exigences, on ajoute un extrait de la phrase pour les distinguer. */
+    const siblings = DB.customExigences.filter(e=>e.referentielId===custom.referentielId && e.ref===custom.ref);
+    const extra = siblings.length>1 ? exigenceExcerpt(custom,80) : "";
+    return {ref:custom.ref, label:custom.title+(extra?" — "+extra:""), referentielId:custom.referentielId};
+  }
   return null;
 }
 function auditConformityRate(a){
