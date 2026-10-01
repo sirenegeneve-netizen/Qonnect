@@ -60,7 +60,7 @@ function openQuickForm(kind, presets, triggerEl){
   else if(kind==="action"){
     openModal({title:"Créer une action",
       bodyHtml:`
-        <div class="field"><label>Intitulé <span class="req">*</span></label><input type="text" id="qf-title" placeholder="Ex : Vérifier l'étalonnage de la sonde"></div>
+        <div class="field"><label>Intitulé <span class="req">*</span></label><input type="text" id="qf-title" value="${esc(presets.title||"")}" placeholder="Ex : Vérifier l'étalonnage de la sonde"></div>
         <div class="field-row">
           <div class="field"><label>Responsable</label><input type="text" id="qf-owner" placeholder="Nom du responsable"></div>
           <div class="field"><label>Échéance</label><input type="date" id="qf-due"></div>

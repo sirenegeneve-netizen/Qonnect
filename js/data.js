@@ -678,7 +678,7 @@ const LABELS = {
   eventStatus:{ ouvert:{l:"Ouvert",c:"warning"}, cloture:{l:"Clôturé",c:"success"} },
   priority:{ critique:{l:"Critique",c:"danger"}, haute:{l:"Haute",c:"warning"}, moyenne:{l:"Moyenne",c:"info"}, basse:{l:"Basse",c:"neutral"} },
   actionStatus:{ retard:{l:"En retard",c:"danger"}, en_cours:{l:"En cours",c:"warning"}, a_faire:{l:"À faire",c:"info"}, termine:{l:"Terminée",c:"success"} },
-  actionOrigin:{ evenement:"Événement", risque:"Risque", audit:"Audit", indicateur:"Indicateur", objectif:"Objectif", changement:"Changement", revue_direction:"Revue de direction", competence:"Compétence", fournisseur:"Fournisseur" },
+  actionOrigin:{ evenement:"Événement", risque:"Risque", audit:"Audit", indicateur:"Indicateur", objectif:"Objectif", changement:"Changement", revue_direction:"Revue de direction", competence:"Compétence", fournisseur:"Fournisseur", exigence:"Exigence de référentiel" },
   objStatus:{ en_cours:{l:"En cours",c:"warning"}, atteint:{l:"Atteint",c:"success"}, en_retard:{l:"En retard",c:"danger"} },
   indStatus:{ vert:{l:"Sur cible",c:"success"}, orange:{l:"À surveiller",c:"warning"}, rouge:{l:"Hors cible",c:"danger"} },
   auditStatus:{ planifie:{l:"Planifié",c:"info"}, preparation:{l:"Préparation",c:"info"}, en_cours:{l:"En cours",c:"warning"}, analyse:{l:"Analyse",c:"warning"}, synthese:{l:"Synthèse",c:"warning"}, a_valider:{l:"À valider",c:"warning"}, valide:{l:"Validé",c:"success"}, cloture:{l:"Clôturé",c:"success"}, realise:{l:"Validé",c:"success"} },
