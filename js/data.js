@@ -695,7 +695,7 @@ const LABELS = {
   habilitationStatut:{ active:{l:"Valide",c:"success"}, expire_bientot:{l:"Expire bientôt",c:"warning"}, expiree:{l:"Expirée",c:"danger"}, suspendue:{l:"Suspendue",c:"neutral"}, non_habilite:{l:"Non habilité",c:"neutral"} },
   reqStatus:{ maitrise:{l:"Maîtrisée",c:"success"}, a_renforcer:{l:"À renforcer",c:"warning"}, non_couvert:{l:"Non couverte",c:"danger"} },
   exigenceCoverage:{ non_couvert:{l:"Non couverte",c:"danger"}, partiellement:{l:"Partiellement couverte",c:"warning"}, a_renforcer:{l:"À renforcer",c:"warning"}, maitrise:{l:"Maîtrisée",c:"success"}, optimise:{l:"Optimisée",c:"success"} },
-  exigenceType:{ exigence:"Exigence", preuve:"Preuve attendue", responsabilite:"Responsabilité" },
+  exigenceType:{ exigence:"Exigence", preuve:"Preuve attendue", responsabilite:"Responsabilité", recommandation:"Recommandation" },
   importance:{ haute:{l:"Haute",c:"danger"}, moyenne:{l:"Moyenne",c:"warning"}, basse:{l:"Basse",c:"neutral"} },
   stakeholderCat:{ client:"Client", patient:"Patient", collaborateur:"Collaborateur", fournisseur:"Fournisseur", autorite:"Autorité", certificateur:"Organisme certificateur", actionnaire:"Actionnaire", partenaire:"Partenaire", soustraitant:"Sous-traitant", autre:"Autre" },
   needType:{ besoin:"Besoin", attente:"Attente", exigence:"Exigence" },
