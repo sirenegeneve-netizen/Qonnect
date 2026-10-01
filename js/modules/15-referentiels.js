@@ -413,29 +413,7 @@ function openExigenceEditForm(refId, exigenceId){
 }
 
 /* ---------- Assistant IA spécialisé Référentiels ---------- */
-const REF_AI_HISTORY = {};
-function refAIGenerateReply(ref, score, q){
-  const low = q.toLowerCase();
-  if(/r[ée]sum/.test(low)){
-    return `${esc(ref.name)} comporte ${score.total} exigence(s) identifiée(s). Niveau global de maîtrise : <strong>${score.pct}%</strong>. ${score.counts.non_couvert} exigence(s) ne sont couvertes par aucun élément du SMQ à ce jour.<p class="text-xs mt-4">Analyse générée à partir des données disponibles dans Qonnect.</p>`;
-  }
-  if(/non couvert|pas couvert|[ée]cart|manque/.test(low)){
-    const list = score.views.filter(v=>v.level==="non_couvert").slice(0,8);
-    return list.length? `Exigences non couvertes :<ul>${list.map(v=>`<li>${esc(exigenceLabel(v))} — ${esc(v.title)}${exigenceExcerpt(v,100)?" : "+esc(exigenceExcerpt(v,100)):""}</li>`).join("")}</ul>` : "Toutes les exigences disposent d'au moins un élément de preuve associé.";
-  }
-  if(/audit/.test(low)){
-    const weak = score.views.filter(v=>v.level==="non_couvert"||v.level==="partiellement").slice(0,6);
-    return weak.length? `Pour préparer un audit sur ${esc(ref.name)}, concentrez-vous en priorité sur :<ul>${weak.map(v=>`<li>${esc(exigenceLabel(v))} — ${esc(v.title)}${exigenceExcerpt(v,100)?" : "+esc(exigenceExcerpt(v,100)):""}</li>`).join("")}</ul>` : "Aucun point de vigilance majeur identifié actuellement pour cet audit.";
-  }
-  if(/revue de direction/.test(low)){
-    return `Éléments à intégrer à la revue de direction pour ${esc(ref.name)} : niveau de maîtrise (${score.pct}%), ${score.counts.non_couvert} exigence(s) non couvertes, et les risques réglementaires associés aux processus concernés.`;
-  }
-  if(/pourquoi|conforme|non conforme/.test(low)){
-    return `La conformité d'une exigence est calculée à partir des preuves réellement enregistrées dans Qonnect (documents, audits, actions, risques, indicateurs) — jamais déclarée sans preuve. Ouvrez une exigence dans l'onglet « Exigences » pour voir le détail du calcul.`;
-  }
-  return `Je peux résumer ce référentiel, lister les exigences non couvertes, préparer un audit ou une revue de direction, ou expliquer le calcul de conformité d'une exigence. Que souhaitez-vous savoir sur ${esc(ref.name)} ?`;
-}
-
+const REF_AI_HISTORY = {};  /* La génération des réponses est dans 29-assistant-referentiel.js */
 /* ---------- Pages ---------- */
 function pageReferentiels(){
   return `
@@ -648,8 +626,10 @@ function refTabVersions(ref){
 }
 
 function refTabAssistant(ref, score){
-  if(!REF_AI_HISTORY[ref.id]) REF_AI_HISTORY[ref.id] = [{role:"bot", text:"Bonjour, je suis l'assistant spécialisé "+esc(ref.name)+". Je peux résumer ce référentiel, identifier les preuves attendues, préparer un audit ou expliquer un niveau de conformité — toujours à partir de vos données réelles."}];
-  const suggestions = ["Résume ce référentiel","Quelles exigences ne sont pas couvertes ?","Prépare un audit sur ce référentiel","Pourquoi une exigence peut être non conforme ?"];
+  if(!REF_AI_HISTORY[ref.id]) REF_AI_HISTORY[ref.id] = [{role:"bot", text:"Bonjour, je suis l'assistant spécialisé "+esc(ref.name)+". Je peux résumer ce référentiel, expliquer un chapitre à partir du texte importé, chercher un sujet, indiquer par où commencer ou préparer des questions d'audit — toujours à partir de vos données réelles."}];
+  const views = score.views || [];
+  const sample = views.length ? refAiTop(views[Math.floor(views.length/2)].ref) : "4";
+  const suggestions = ["Résume ce référentiel","Explique-moi le chapitre "+sample,"Par où commencer ?","Quelles sont les recommandations ?","Prépare un audit sur le chapitre "+sample];
   return `
   <div class="card" style="padding:0;">
     <div class="ai-shell" style="padding:20px;height:auto;max-height:560px;">
