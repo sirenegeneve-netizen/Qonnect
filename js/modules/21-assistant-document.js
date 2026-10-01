@@ -12,7 +12,7 @@ const DOC_STANDARD_SECTIONS = ["Objet","Domaine d'application","Définitions","R
 
 function openDocumentWizard(presets){
   presets = presets || {};
-  const state = { step:1, type:null, processId:presets.processId||"", referentiels:[], templateId:null, title:"" };
+  const state = { step:1, type:null, processId:presets.processId||"", referentiels:[], templateId:null, title:presets.title||"" };
   if(presets.templateId){
     const tpl = getTemplate(presets.templateId);
     if(tpl){ state.type = tpl.forType; state.templateId = tpl.id; state.title = tpl.title; state.referentiels = [tpl.referentiel]; state.step = 2; }
@@ -92,7 +92,8 @@ function openDocumentWizard(presets){
         author:"Vous", approver:"—", date:new Date().toISOString().slice(0,10), nextReview:"—", body,
         requirementIds:reqSuggested, riskIds:[], auditIds:[], indicatorIds:[], actionIds:[], crossDocIds:[], flowSteps:[],
         referentiels: state.referentiels.length ? state.referentiels : ["ISO 9001"] });
-      saveDB(); closeModal(); toast("Document créé — structure générée automatiquement");
+      if(presets.linkExigenceId && typeof refAiLinkDoc==="function") refAiLinkDoc(presets.linkExigenceId, id);
+      saveDB(); closeModal(); toast("Document créé — structure générée automatiquement"+(presets.linkExigenceId?" et associé à l'exigence":""));
       navigate(`documents/${state.type}/${id}`);
     });
   }

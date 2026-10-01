@@ -7,6 +7,7 @@ const REF_AI_CONTEXT = {};   // dernier chapitre évoqué, par référentiel (po
 const REF_AI_LEVEL_ORDER = { non_couvert:0, partiellement:1, a_renforcer:2, maitrise:3, optimise:4 };
 const REF_AI_STOP = new Set(("dans pour avec sans cette cette ceux celle comme plus moins tout tous toute toutes quel quelle quels quelles quoi donc alors "+
   "etre avoir fait faire dois doit peux peut veux veut explique expliquer expliques parle parler resume resumer liste lister montre montrer donne donner "+
+  "comment faire moi toi aide aider accompagne accompagner guide guider etape etapes demarche mise place mettre oeuvre concretement "+
   "referentiel norme exigence exigences chapitre chapitres couverte couvertes couvert couverts conforme conformes preuve preuves recommandation recommandations "+
   "responsabilite responsabilites audit audits prepare preparer quelles quelles sont est les des une aux sur par que qui").split(/\s+/));
 
@@ -113,6 +114,11 @@ function refAiReplyType(views, type, label){
 }
 
 function refAiReplySearch(views, kws){
+  /* Les mots présents dans presque toutes les exigences (« système », « management »…) ne discriminent rien : on les écarte. */
+  const hayOf = v => refAiNorm(v.title+" "+(v.description||""));
+  const df = k => views.filter(v=>hayOf(v).includes(k)).length;
+  const rare = kws.filter(k=> df(k) <= views.length*0.4);
+  if(rare.length) kws = rare;
   const scored = views.map(v=>{
     const hay = refAiNorm(v.title+" "+(v.description||""));
     const hits = kws.filter(k=>hay.includes(k)).length;
@@ -162,13 +168,136 @@ function refAiReplyAudit(ref, views, chapter){
     `<p class="text-sm">Pour créer l'audit complet : module <strong>Audits → + Nouvel audit</strong>, il reprendra ces exigences.</p>` + refAiFooter();
 }
 
+
+/* ---------- Accompagnement pas à pas ---------- */
+const REF_AI_VERBS = [
+  { re:/d[ée]termin|identifi|d[ée]fin|[ée]tabli|fixe/i,
+    produit:"formaliser le résultat dans un document (liste, tableau ou paragraphe du manuel qualité ou d'une politique)", preuve:"document daté, approuvé par la direction et versionné" },
+  { re:/surveill|suiv|revo|r[ée]examin|[ée]valu|mesur|analys/i,
+    produit:"mettre en place un suivi périodique avec une fréquence fixée (par exemple annuelle, ou à chaque revue de direction)", preuve:"comptes rendus ou enregistrements datés de chaque revue" },
+  { re:/planifi|programm/i,
+    produit:"un plan d'actions avec responsables et échéances", preuve:"plan à jour et actions suivies dans le module Actions" },
+  { re:/conserv|document|enregistr|ma[îi]tris|archiv/i,
+    produit:"des informations documentées maîtrisées (identification, version, approbation, durée de conservation)", preuve:"document ou enregistrement présent dans la Documentation du SMQ" },
+  { re:/communiqu|diffus|inform|sensibilis/i,
+    produit:"un support de communication et une trace de sa diffusion", preuve:"liste de diffusion ou accusés de lecture (campagne de lecture du module Documentation)" },
+  { re:/d[ée]montr|assur|garanti|v[ée]rifi|contr[ôo]l/i,
+    produit:"des éléments vérifiables qui prouvent l'application", preuve:"enregistrements de contrôle, résultats d'audit interne" },
+  { re:/mettre en [œo]uvre|appliqu|r[ée]alis|respect|satisf|prendre en compte/i,
+    produit:"une pratique décrite dans une procédure et réellement appliquée", preuve:"preuves d'application (enregistrements) vérifiées lors d'un audit interne" }
+];
+function refAiGuideFor(v){
+  const text = (v.description||v.title||"");
+  if(v.type==="responsabilite") return { produit:"désigner nommément la personne responsable (fiche de poste, fiche processus, organigramme)", preuve:"document qui nomme le responsable et son périmètre" };
+  if(v.type==="recommandation") return { produit:"appliquer la recommandation si elle est pertinente, sinon noter la raison de ne pas le faire", preuve:"mention dans le document concerné ou décision consignée" };
+  const hit = REF_AI_VERBS.find(x=>x.re.test(text));
+  return hit || { produit:"une réponse formalisée dans votre SMQ", preuve:"un document ou un enregistrement associé à l'exigence" };
+}
+function refAiTopicChapter(views, q){
+  /* Retrouve un chapitre à partir de son intitulé écrit en toutes lettres dans la question. */
+  const qk = new Set(refAiNorm(q).split(/[^a-z0-9]+/).filter(w=>w.length>3).map(w=>w.replace(/(?:s|x)$/,"")));
+  const seen = new Map();
+  views.forEach(v=>{ if(!seen.has(v.ref)) seen.set(v.ref, v.title); });
+  let best = null, bestScore = 0;
+  seen.forEach((title, ref)=>{
+    const tk = [...new Set(refAiNorm(title).split(/[^a-z0-9]+/).filter(w=>w.length>3).map(w=>w.replace(/(?:s|x)$/,"")))];
+    if(tk.length<2) return;
+    const score = tk.filter(w=>qk.has(w)).length / tk.length;
+    if(score>bestScore){ bestScore = score; best = ref; }
+  });
+  return bestScore>=0.6 ? best : null;
+}
+function refAiButtons(ref, v){
+  return `<span class="flex gap-2" style="flex-wrap:wrap;margin-top:6px;">
+    <button class="btn btn-secondary btn-sm" data-ref-ai-newdoc="${esc(v.id)}" data-ref-id="${esc(ref.id)}">📄 Créer le document</button>
+    <button class="btn btn-secondary btn-sm" data-ref-ai-linkdoc="${esc(v.id)}" data-ref-id="${esc(ref.id)}">🔗 Associer un document existant</button>
+    <button class="btn btn-secondary btn-sm" data-ref-ai-newaction="${esc(v.id)}" data-ref-id="${esc(ref.id)}">✅ Créer une action</button></span>`;
+}
+function refAiReplyGuide(ref, views, chapter){
+  const list = refAiViewsOf(views, chapter).sort((a,b)=>refAiCmpRef(a.ref,b.ref));
+  const head = list.find(v=>v.ref===chapter) || list[0];
+  /* D'abord ce qui n'est couvert par aucun document : c'est là que l'effort compte. */
+  const ordered = list.slice().sort((a,b)=> (a.bundle.docs.length?1:0)-(b.bundle.docs.length?1:0) || refAiCmpRef(a.ref,b.ref)).slice(0,6);
+  const missing = list.filter(v=>!v.bundle.docs.length).length;
+  let html = `<strong>Mettre en place le chapitre ${esc(chapter)} — ${esc(head.title)}</strong><br>${list.length} élément(s) à traiter, dont ${missing} sans aucun document associé.` +
+    `<p class="text-sm mt-2">Voici une démarche pas à pas. Les pistes sont <em>générales</em> (déduites du verbe de chaque exigence) : adaptez-les à votre organisation et au texte complet de la norme.</p><ol>`;
+  ordered.forEach(v=>{
+    const g = refAiGuideFor(v);
+    const intro = /:\s*$/.test((v.description||"").trim());
+    const docs = v.bundle.docs.slice(0,2).map(d=>d.title);
+    html += `<li style="margin-bottom:12px;"><strong>${esc(exigenceLabel(v))}</strong> — <span class="text-sm">${esc(refAiText(v,260)||v.title)}</span>` +
+      `<br><span class="text-sm">➜ <strong>À faire :</strong> ${esc(g.produit)}.</span>` +
+      `<br><span class="text-sm">🧾 <strong>Preuve attendue :</strong> ${esc(g.preuve)}.</span>` +
+      (intro ? `<br><span class="text-sm">ℹ️ Cette phrase introduit une liste (a, b, c…) : relisez le texte de la norme pour la liste complète.</span>` : "") +
+      `<br><span class="text-xs">Dans Qonnect : ${esc(refAiLevel(v))} — ${docs.length ? "documents reliés (rapprochement automatique, à vérifier) : "+esc(docs.join(", ")) : "aucun document relié"}.</span>` +
+      refAiButtons(ref, v) + `</li>`;
+  });
+  html += `</ol>`;
+  if(list.length>ordered.length) html += `<p class="text-xs">… et ${list.length-ordered.length} autre(s) élément(s). Demandez « explique-moi le chapitre ${esc(chapter)} » pour la liste complète.</p>`;
+  html += `<p class="text-sm"><strong>Ensuite :</strong> une même procédure peut répondre à plusieurs exigences du chapitre. Une fois le document rédigé ou associé, la couverture se met à jour automatiquement ; vous pourrez alors demander « prépare un audit sur le chapitre ${esc(chapter)} » pour vérifier.</p>`;
+  return html + refAiFooter();
+}
+function refAiEntity(id){ return findBy(DB.requirements, id) || getCustomExigence(id); }
+function refAiLinkDoc(exId, docId){
+  const legacy = findBy(DB.requirements, exId);
+  if(legacy){ legacy.extraDocIds = legacy.extraDocIds || []; if(!legacy.extraDocIds.includes(docId)) legacy.extraDocIds.push(docId); saveDB(); return true; }
+  const c = getCustomExigence(exId);
+  if(!c) return false;
+  c.docIds = c.docIds || []; if(!c.docIds.includes(docId)) c.docIds.push(docId);
+  saveDB(); return true;
+}
+function refAiPost(refId, html){
+  (REF_AI_HISTORY[refId] = REF_AI_HISTORY[refId] || []).push({role:"bot", text:html});
+}
+function refAiTitleOf(exId){
+  const v = refAiEntity(exId);
+  if(!v) return { label:"", title:"" };
+  const ref = v.ref, title = v.title || v.label || "";
+  return { label:ref, title };
+}
+
+document.addEventListener("click", (e)=>{
+  const newDoc = e.target.closest("[data-ref-ai-newdoc]");
+  const linkDoc = e.target.closest("[data-ref-ai-linkdoc]");
+  const newAct = e.target.closest("[data-ref-ai-newaction]");
+  if(newDoc){
+    const id = newDoc.getAttribute("data-ref-ai-newdoc"); const t = refAiTitleOf(id);
+    openQuickForm("document", { title:t.title, linkExigenceId:id });
+    return;
+  }
+  if(newAct){
+    const id = newAct.getAttribute("data-ref-ai-newaction"); const t = refAiTitleOf(id);
+    openQuickForm("action", { title:"Répondre à l'exigence "+t.label+" — "+t.title, originType:"exigence", originId:id });
+    return;
+  }
+  if(linkDoc){
+    const id = linkDoc.getAttribute("data-ref-ai-linkdoc"); const refId = linkDoc.getAttribute("data-ref-id");
+    const docs = DB.documents.filter(d=>d.status!=="obsolete");
+    const t = refAiTitleOf(id);
+    openModal({ title:"Associer un document à l'exigence "+t.label,
+      bodyHtml:`<p class="text-sm mb-2">${esc(t.title)}</p><div class="field"><label>Document existant</label><select id="ai-link-doc">${docs.map(d=>`<option value="${esc(d.id)}">${esc(d.ref||d.id)} — ${esc(d.title)}</option>`).join("")}</select></div>`,
+      footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="ai-link-confirm">Associer</button>`,
+      onMount:(o)=>{ o.querySelector("#ai-link-confirm").addEventListener("click", ()=>{
+        const docId = o.querySelector("#ai-link-doc").value;
+        if(!docId){ toast("Aucun document à associer","⚠️"); return; }
+        const d = getDocument(docId);
+        if(refAiLinkDoc(id, docId)){
+          refAiPost(refId, `✅ Document « ${esc(d?d.title:docId)} » associé à l'exigence ${esc(t.label)}. Sa couverture est recalculée : redemandez-moi le chapitre pour voir le nouveau niveau.`);
+          closeModal(); toast("Document associé à l'exigence"); render();
+        } else toast("Exigence introuvable","⚠️");
+      });}
+    });
+  }
+});
+
 function refAIGenerateReply(ref, score, q){
   const views = score.views;
   const n = refAiNorm(q);
   const ctx = REF_AI_CONTEXT[ref.id] = REF_AI_CONTEXT[ref.id] || {};
   if(!views.length) return `Ce référentiel ne contient encore aucune exigence. Importez un texte depuis l'onglet « Versions ».`;
 
-  let chapter = refAiChapterOf(views, q);
+  let chapter = refAiChapterOf(views, q) || refAiTopicChapter(views, q);
+  const howTo = /comment|faire|mettre en|mise en place|concretement|que dois|accompagne|guide|aide|etape|demarche|par quoi/.test(n);
   /* Suites de conversation : « et le suivant ? », « plus de détails », « pourquoi ? » */
   if(!chapter && ctx.lastChapter){
     const tops = [...new Set(views.map(v=>refAiTop(v.ref)))].sort(refAiCmpRef);
@@ -179,6 +308,7 @@ function refAIGenerateReply(ref, score, q){
   }
 
   if(/audit/.test(n)) { if(chapter) ctx.lastChapter = chapter; return refAiReplyAudit(ref, views, chapter); }
+  if(chapter && howTo && !/pourquoi|calcul/.test(n)){ ctx.lastChapter = chapter; return refAiReplyGuide(ref, views, chapter); }
   if(chapter){ ctx.lastChapter = chapter; return refAiReplyChapter(ref, views, chapter, q, n); }
 
   if(/recommandation/.test(n)) return refAiReplyType(views, "recommandation", "recommandation");
