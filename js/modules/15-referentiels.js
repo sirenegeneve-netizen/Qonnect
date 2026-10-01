@@ -109,29 +109,57 @@ function parseReferentielText(text){
   const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   const chapterRe = /^(\d+(?:\.\d+){0,3})\s+(.{3,90})$/;
   const reqWordsRe = /\b(doit|doivent|shall|must|est tenu de|il convient de|est requis|obligatoire)\b/i;
+  /* Phrases qui expliquent le vocabulaire de la norme (« doit » indique une exigence…) : ce ne sont pas des exigences. */
+  const definitionRe = /[«"“]\s*(doit|doivent|il convient de|peut|peuvent|shall|should|must|may)\s*[»"”]/i;
+  const listItemRe = /^(?:[a-z]\)|\d{1,2}\)|[-–—•·▪●])\s+/i;
+  const endsSentenceRe = /[.;:!?»”]$/;
+  const connectiveRe = /\b(et|ou|de|du|des|d'|la|le|les|l'|à|au|aux|en|que|qui|pour|par|sur|avec|dans|son|sa|ses|leur|leurs|ce|cette|ces)$/i;
   let currentRef = "", currentTitle = "";
+  let buf = "", bufRef = "", bufTitle = "";
   const exigences = [];
+  let ignored = 0;
+
+  function flush(){
+    const paragraph = buf.replace(/\s+/g," ").trim();
+    buf = "";
+    if(!paragraph || !reqWordsRe.test(paragraph)) return;
+    paragraph.split(/(?<=[.;])\s+/).forEach(sentence=>{
+      sentence = sentence.trim();
+      if(!reqWordsRe.test(sentence) || sentence.length<=15) return;
+      if(definitionRe.test(sentence)){ ignored++; return; }
+      let type = "exigence";
+      if(/il convient de/i.test(sentence) && !/\b(doit|doivent|est tenu de|est requis)\b/i.test(sentence)) type = "recommandation";
+      else if(/preuve|enregistrement|trace|document[ée]/i.test(sentence)) type = "preuve";
+      else if(/responsab/i.test(sentence)) type = "responsabilite";
+      exigences.push({ ref: bufRef || "—", title: (bufTitle || sentence.slice(0,60)).slice(0,90), description: sentence, sourceText: sentence, type });
+    });
+  }
+  /* Une ligne prolonge la précédente si celle-ci ne se termine pas par une ponctuation de fin de phrase
+     et que la suivante commence en minuscule (ou que la précédente finit par un mot de liaison). */
+  function continues(prev, line){
+    if(endsSentenceRe.test(prev)) return false;
+    if(listItemRe.test(line)) return false;
+    return /^[a-zà-ÿ(]/.test(line) || /,$/.test(prev) || connectiveRe.test(prev);
+  }
+
   lines.forEach(line=>{
     const m = line.match(chapterRe);
-    if(m && !reqWordsRe.test(line)){ currentRef = m[1]; currentTitle = m[2]; return; }
-    if(reqWordsRe.test(line)){
-      line.split(/(?<=[.;])\s+/).forEach(sentence=>{
-        if(reqWordsRe.test(sentence) && sentence.length>15){
-          let type = "exigence";
-          if(/preuve|enregistrement|trace|document[ée]/i.test(sentence)) type = "preuve";
-          else if(/responsab/i.test(sentence)) type = "responsabilite";
-          exigences.push({ ref: currentRef || "—", title: (currentTitle || sentence.slice(0,60)).slice(0,90), description: sentence.trim(), sourceText: sentence.trim(), type });
-        }
-      });
+    if(m && !reqWordsRe.test(line)){ flush(); currentRef = m[1]; currentTitle = m[2]; return; }
+    if(buf && continues(buf, line)){
+      buf = /-$/.test(buf) && /^[a-zà-ÿ]/.test(line) ? buf.slice(0,-1)+line : buf+" "+line;
+    }else{
+      flush(); buf = line; bufRef = currentRef; bufTitle = currentTitle;
     }
   });
+  flush();
+
   /* Doublon = même chapitre ET même phrase (ex. en-tête ou pied de page répété sur chaque page du PDF). */
   const seen = new Set();
   const norm = t => t.toLowerCase().replace(/\s+/g," ").trim();
   const deduped = exigences.filter(e=>{ const k=e.ref+"|"+norm(e.description); if(seen.has(k)) return false; seen.add(k); return true; });
   const kept = deduped.slice(0, MAX_IMPORTED_EXIGENCES);
   annotateRanks(kept);
-  return { chapters: [...new Set(kept.map(e=>e.ref))], exigences: kept, truncated: Math.max(0, deduped.length-kept.length), duplicatesRemoved: exigences.length-deduped.length };
+  return { chapters: [...new Set(kept.map(e=>e.ref))], exigences: kept, truncated: Math.max(0, deduped.length-kept.length), duplicatesRemoved: exigences.length-deduped.length, ignored };
 }
 function linkExigenceToSMQ(text){
   const low = text.toLowerCase();
@@ -169,6 +197,7 @@ function openReferentielImportModal(presets){
         <div class="kpi"><div class="val">${p.exigences.filter(e=>e.type==="preuve").length}</div><div class="lbl">Preuves attendues</div></div>
       </div>
       ${p.duplicatesRemoved?`<p class="text-xs mb-2">${p.duplicatesRemoved} phrase(s) identique(s) répétée(s) dans le même chapitre ont été regroupées (en-têtes ou pieds de page par exemple).</p>`:""}
+      ${p.ignored?`<p class="text-xs mb-2">${p.ignored} phrase(s) qui expliquent le vocabulaire de la norme (« doit » indique une exigence…) ont été ignorées : ce ne sont pas des exigences.</p>`:""}
       ${p.truncated?`<p class="text-sm mb-2">⚠️ ${p.truncated} exigence(s) au-delà de la limite de ${MAX_IMPORTED_EXIGENCES} n'ont pas été retenues.</p>`:""}
       <div style="max-height:360px;overflow-y:auto;">
         ${p.exigences.map(e=>`<div class="rel-link"><span class="rel-name"><strong>${esc(exigenceLabel(e))}</strong> — ${esc(e.title)}${exigenceExcerpt(e,160)?`<span class="text-xs" style="display:block;color:var(--muted,#64748b);font-weight:400;">${esc(exigenceExcerpt(e,160))}</span>`:""}</span>${badgeRaw("info", LABELS.exigenceType[e.type])}</div>`).join("")}
