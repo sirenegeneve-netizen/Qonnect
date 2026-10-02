@@ -460,7 +460,7 @@ document.addEventListener("click", (e)=>{
 /* ---------- Méthodes et outils (PESTEL, SWOT, 5 pourquoi…) : comment les remplir, avec un exemple ---------- */
 /* Explications pédagogiques rédigées pour Qonnect ; exemples volontairement génériques (aucune donnée réelle, aucun patient). */
 const REF_AI_METHODES = [
-  { id:"pestel", nom:"PESTEL", re:/pestel|\bpest\b/,
+  { id:"pestel",duree:"Comptez 1 à 2 heures pour une première version (30 min de préparation seul, 1 h d'échange à 3–5 personnes), puis 30 min par an pour la mettre à jour.", qui:"La direction et le responsable qualité animent ; invitez 2 à 4 personnes qui connaissent l'environnement (cadre, direction, finances/RH selon les cas).", freq:"Au moins une fois par an, ou quand le contexte change (nouvelle réglementation, restructuration…). Idéalement avant la revue de direction.", pieges:"Lister trop de généralités ; ne rien dater ; ne pas décider de réaction. Pour un auditeur : un tableau court, daté, validé et revu chaque année suffit.",  nom:"PESTEL", re:/pestel|\bpest\b/,
     but:"Passer en revue les facteurs EXTERNES qui influencent l'organisme, en 6 familles. Il répond à : « qu'est-ce qui, dehors, peut m'aider ou me gêner ? ».",
     etapes:[
       "Faire une grille à 6 lignes : <strong>P</strong>olitique, <strong>É</strong>conomique, <strong>S</strong>ocial/sociétal, <strong>T</strong>echnologique, <strong>E</strong>nvironnemental, <strong>L</strong>égal/réglementaire.",
@@ -479,7 +479,7 @@ const REF_AI_METHODES = [
     colonnes:"Facteur · Impact (+/−, niveau) · Enjeu retenu · Réaction. Dans le tableau « Analyse du contexte », les facteurs PESTEL alimentent la partie <strong>enjeux externes</strong>.",
     tip:"Astuce : PESTEL ne couvre que l'externe. Complétez avec un SWOT/AFOM (ou une liste de forces et faiblesses) pour l'interne.",
     doc:"Analyse du contexte" },
-  { id:"swot", nom:"SWOT (AFOM)", re:/swot|afom|forces et faiblesses|forces\/faiblesses/,
+  { id:"swot",duree:"Un atelier d'1 heure à 1 h 30 suffit pour une première version, plus 30 min pour hiérarchiser et décider. La mise à jour annuelle prend environ 30 min.", qui:"Réunissez 3 à 8 personnes de métiers différents, animées par le responsable qualité ; la direction valide.", freq:"Au moins une fois par an, avant la revue de direction, ou lors d'un changement important.", pieges:"Faire un inventaire interminable ; mélanger interne et externe ; ne pas en tirer d'actions. Mieux vaut 10 éléments clairs que 40 vagues.",  nom:"SWOT (AFOM)", re:/swot|afom|forces et faiblesses|forces\/faiblesses/,
     but:"Croiser l'INTERNE (forces, faiblesses) et l'EXTERNE (opportunités, menaces) pour en tirer des priorités.",
     etapes:[
       "Faire 4 cases : <strong>Forces</strong> et <strong>Faiblesses</strong> (internes, ce que vous maîtrisez), <strong>Opportunités</strong> et <strong>Menaces</strong> (externes, ce que vous subissez).",
@@ -496,7 +496,7 @@ const REF_AI_METHODES = [
     colonnes:"Type · Élément · Interne/Externe · Réponse prévue. Forces/faiblesses → enjeux <strong>internes</strong> ; opportunités/menaces → enjeux <strong>externes</strong>.",
     tip:"Astuce : un SWOT sans décision derrière est inutile. Chaque élément retenu doit aboutir à une action, un risque suivi ou un « rien pour l'instant » justifié.",
     doc:"Analyse du contexte" },
-  { id:"5p", nom:"5 pourquoi", re:/5 pourquoi|cinq pourquoi|5 why/,
+  { id:"5p",duree:"Quelques minutes à 30 minutes par problème, en petit groupe de 2 à 4 personnes concernées.", qui:"Les personnes qui ont vécu la situation, animées par le responsable qualité (ton neutre : on cherche le processus défaillant, pas un coupable).", freq:"À chaque événement ou non-conformité significatif(ve), pas de façon systématique.", pieges:"S'arrêter à « erreur humaine » : demandez pourquoi l'erreur était possible. Ne jamais citer de nom ni d'identifiant patient.",  nom:"5 pourquoi", re:/5 pourquoi|cinq pourquoi|5 why/,
     but:"Remonter à la cause racine d'un problème en se demandant « pourquoi ? » plusieurs fois de suite.",
     etapes:[
       "Écrire le problème de façon factuelle : quoi, où, quand (sans nom de personne, sans identifiant patient).",
@@ -514,7 +514,7 @@ const REF_AI_METHODES = [
     colonnes:"Niveau · Pourquoi · Cause · Action. Se rattache à un <strong>événement / non-conformité</strong> et à une <strong>action corrective</strong> dans Qonnect.",
     tip:"Si les causes sont multiples, faites d'abord un diagramme d'Ishikawa, puis des « 5 pourquoi » sur les 1 à 2 causes principales.",
     doc:"Analyse des causes" },
-  { id:"ishikawa", nom:"Diagramme d'Ishikawa (5M)", re:/ishikawa|arete de poisson|diagramme des causes|causes[- ]effets?/,
+  { id:"ishikawa",duree:"30 à 60 minutes en groupe de 4 à 8 personnes ; moins si le problème est simple.", qui:"Les acteurs concernés par le problème, avec un animateur (responsable qualité).", freq:"Pour les problèmes complexes ou récurrents seulement.", pieges:"Remplir les familles par obligation ; ne pas vérifier les causes par des faits.",  nom:"Diagramme d'Ishikawa (5M)", re:/ishikawa|arete de poisson|diagramme des causes|causes[- ]effets?/,
     but:"Classer toutes les causes possibles d'un problème par famille pour n'en oublier aucune.",
     etapes:[
       "Écrire le problème (l'effet) dans la « tête du poisson ».",
@@ -529,7 +529,7 @@ const REF_AI_METHODES = [
     colonnes:"Famille · Cause possible · Confirmée (oui/non) · Action.",
     tip:"Inutile de remplir toutes les familles : gardez celles qui parlent de votre problème.",
     doc:"Analyse des causes" },
-  { id:"criticite", nom:"Matrice de criticité (risques)", re:/criticite|matrice des risques|matrice de risques?|amdec|cotation/,
+  { id:"criticite",duree:"La première cotation d'un processus prend 1 à 2 heures en groupe ; ensuite une relecture de 30 min par an.", qui:"Le pilote de processus et 2 à 4 personnes qui le pratiquent, animés par le responsable qualité.", freq:"Au moins une fois par an, après un événement important ou un changement.", pieges:"Des échelles non définies ; coter seul ; ne pas recoter après action.",  nom:"Matrice de criticité (risques)", re:/criticite|matrice des risques|matrice de risques?|amdec|cotation/,
     but:"Coter chaque risque pour décider lesquels traiter en premier.",
     etapes:[
       "Décrire chaque risque clairement : « si [cause], alors [événement], ce qui entraîne [conséquence] ».",
@@ -558,6 +558,18 @@ function refAiReplyMethod(ref, m){
     <span class="flex gap-2" style="flex-wrap:wrap;margin-top:8px;"><button class="btn btn-secondary btn-sm" data-ref-ai-newdoctitle="${esc(m.doc+" — "+m.nom)}">📄 Créer le document « ${esc(m.doc)} »</button></span>`
     + refAiGuideButtons(ref, [["Autres méthodes","quelles méthodes puis-je utiliser ?"],["Retour aux enjeux","c'est quoi les enjeux internes et externes ?"]]);
 }
+
+/* Questions pratiques sur la méthode en cours : durée, qui, fréquence, pièges. */
+function refAiMethodFollowUp(ref, m, n){
+  const L=[]; const w=(re)=>re.test(n);
+  if(w(/long|temps|duree|combien de temps|rapide|\bvite\b/)) L.push(["⏱️ Durée",m.duree]);
+  if(w(/qui |participe|equipe|seul|animer|invite|personnes/)) L.push(["👥 Qui associer",m.qui]);
+  if(w(/frequence|souvent|quand|mettre a jour|mise a jour|refaire|annuel/)) L.push(["🔁 Fréquence",m.freq]);
+  if(w(/erreur|piege|eviter|auditeur|preuve|attend/)) L.push(["⚠️ À éviter / ce que regarde un auditeur",m.pieges]);
+  if(!L.length) return null;
+  return `<strong>${esc(m.nom)}</strong><ul style="margin:6px 0 0 18px;">${L.map(([t,x])=>`<li><strong>${t}</strong> : ${esc(x)}</li>`).join("")}</ul>`
+   + refAiGuideButtons(ref, [["Voir le pas-à-pas","comment compléter "+m.nom.split(" ")[0]],["Autres méthodes","quelles méthodes puis-je utiliser ?"]]);
+}
 function refAiReplyMethodList(ref){
   return `<strong>Méthodes et outils que je peux vous expliquer</strong><ul style="margin:6px 0 0 18px;">${REF_AI_METHODES.map(m=>`<li><strong>${esc(m.nom)}</strong> — ${esc(m.but)}</li>`).join("")}</ul>`
     + refAiGuideButtons(ref, REF_AI_METHODES.map(m=>[m.nom, "comment compléter "+m.nom]));
@@ -573,6 +585,10 @@ function refAIGenerateReply(ref, score, q){
   const meth = refAiDetectMethod(n);
   if(meth){ ctx.lastMethod = meth.id; return refAiReplyMethod(ref, meth); }
   if(/quelles? (methodes?|outils?)|methodes? (pour|d')|outils? (pour|d')|autres methodes/.test(n)) return refAiReplyMethodList(ref);
+  if(ctx.lastMethod && !/chapitre/.test(n)){
+    const m = REF_AI_METHODES.find(x=>x.id===ctx.lastMethod);
+    const r = m && refAiMethodFollowUp(ref, m, n); if(r) return r;
+  }
   if(ctx.lastMethod && n.length<50 && /exemple|complete|remplir|remplis|concret|detail|tableau/.test(n) && !/chapitre|\d/.test(n)){
     const m = REF_AI_METHODES.find(x=>x.id===ctx.lastMethod); if(m) return refAiReplyMethod(ref, m);
   }
