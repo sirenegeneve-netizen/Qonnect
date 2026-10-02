@@ -575,6 +575,30 @@ function refAiReplyMethodList(ref){
     + refAiGuideButtons(ref, REF_AI_METHODES.map(m=>[m.nom, "comment compléter "+m.nom]));
 }
 
+
+/* Questions pratiques (durée, qui, fréquence, pièges) sur le sujet qui vient d'être traité : terme défini ou chapitre. */
+const REF_AI_PRACTICAL = /long|temps|duree|rapide|\bvite\b|\bqui\b|participe|equipe|frequence|souvent|quand |mettre a jour|piege|erreur|eviter|auditeur|attend|preuve/;
+function refAiPracticalReply(ref, ctx, n){
+  if(n.length>70 || /\bou (parle|est)|parle-t-on|chapitre \d/.test(n)) return null;
+  if(!REF_AI_PRACTICAL.test(n)) return null;
+  const buttons = [["Autres méthodes","quelles méthodes puis-je utiliser ?"]];
+  const liv = ctx.lastKind==="term" && ctx.lastTerm ? REF_AI_LIVRABLES[ctx.lastTerm] : null;
+  if(liv){
+    const L=[];
+    if(/long|temps|duree|rapide|\bvite\b/.test(n)) L.push(["⏱️ Durée", /enregistrement|registre/.test(liv.nature)?"Quelques minutes à remplir à chaque fois ; prévoyez 1 à 2 heures une seule fois pour créer le modèle et la règle d'utilisation.":/procedure|manuel/.test(liv.nature)?"Comptez une demi-journée à une journée pour une première version (rédaction + relecture), puis des mises à jour courtes.":"Comptez 1 à 3 heures pour une première version, souvent en échangeant avec 2 ou 3 personnes concernées, puis une relecture rapide à chaque mise à jour."]);
+    if(/\bqui\b|participe|equipe/.test(n)) L.push(["👥 Qui", "Responsable proposé : "+liv.qui+". Associez les personnes qui pratiquent l'activité, et faites valider par la direction."]);
+    if(/frequence|souvent|quand |mettre a jour/.test(n)) L.push(["🔁 Fréquence", "Rythme conseillé : "+liv.freq+"."]);
+    if(/piege|erreur|eviter|auditeur|attend|preuve/.test(n)) L.push(["⚠️ À éviter / ce que regarde un auditeur","Un document daté, approuvé et à jour (rythme : "+liv.freq+"), un responsable clairement identifié ("+liv.qui+"), et un lien visible avec des actions ou des décisions. Les pièges : un document écrit une fois puis jamais relu, trop général pour votre organisme, ou sans suite concrète."]);
+    if(L.length) return `<strong>${esc(liv.nom)}</strong><ul style="margin:6px 0 0 18px;">${L.map(([t,x])=>`<li><strong>${t}</strong> : ${esc(x)}</li>`).join("")}</ul>` + refAiGuideButtons(ref, buttons);
+  }
+  if(ctx.lastChapter && ctx.lastKind==="chapter"){
+    return `Pour le chapitre ${esc(ctx.lastChapter)}, la durée et les personnes à associer dépendent du document à produire. Dites-moi lequel (par exemple « analyse du contexte », « procédure d'audit interne ») ou demandez « accompagne-moi sur le chapitre ${esc(ctx.lastChapter)} » pour voir ce qu'il faut produire, avec la preuve attendue.` + refAiGuideButtons(ref, [["Accompagne-moi sur le chapitre "+ctx.lastChapter,"Accompagne-moi sur le chapitre "+ctx.lastChapter]]);
+  }
+  if(/piege|erreur|eviter|\blong\b|duree|frequence/.test(n) && !ctx.lastKind)
+    return `Sur quel sujet ? Dites-moi par exemple « quels pièges éviter pour l'analyse du contexte ? » ou demandez d'abord « c'est quoi les enjeux internes et externes ? » : je pourrai ensuite répondre sur la durée, les personnes à associer, la fréquence et les pièges.`;
+  return null;
+}
+
 function refAIGenerateReply(ref, score, q){
   const views = score.views;
   const n = refAiNorm(q);
@@ -583,16 +607,17 @@ function refAIGenerateReply(ref, score, q){
 
   /* Méthodes et outils (PESTEL, SWOT…) : prioritaires sur le guide de chapitre, y compris pour les questions de suite. */
   const meth = refAiDetectMethod(n);
-  if(meth){ ctx.lastMethod = meth.id; return refAiReplyMethod(ref, meth); }
+  if(meth){ ctx.lastMethod = meth.id; ctx.lastKind = "method"; return refAiReplyMethod(ref, meth); }
   if(/quelles? (methodes?|outils?)|methodes? (pour|d')|outils? (pour|d')|autres methodes/.test(n)) return refAiReplyMethodList(ref);
-  if(ctx.lastMethod && !/chapitre/.test(n)){
+  if(ctx.lastMethod && ctx.lastKind==="method" && !/chapitre/.test(n)){
     const m = REF_AI_METHODES.find(x=>x.id===ctx.lastMethod);
     const r = m && refAiMethodFollowUp(ref, m, n); if(r) return r;
   }
-  if(ctx.lastMethod && n.length<50 && /exemple|complete|remplir|remplis|concret|detail|tableau/.test(n) && !/chapitre|\d/.test(n)){
+  if(ctx.lastMethod && ctx.lastKind==="method" && n.length<50 && /exemple|complete|remplir|remplis|concret|detail|tableau/.test(n) && !/chapitre|\d/.test(n)){
     const m = REF_AI_METHODES.find(x=>x.id===ctx.lastMethod); if(m) return refAiReplyMethod(ref, m);
   }
 
+  { const pr = refAiPracticalReply(ref, ctx, n); if(pr) return pr; }
   let chapter = refAiChapterOf(views, q) || refAiTopicChapter(views, q);
   const howTo = /comment|faire|mettre en|mise en place|concretement|que dois|accompagne|guide|aide|etape|demarche|par quoi/.test(n);
   /* Suites de conversation : « et le suivant ? », « plus de détails », « pourquoi ? » */
@@ -604,10 +629,10 @@ function refAIGenerateReply(ref, score, q){
     else if(/detail|plus|ce chapitre|celui|et pour|pourquoi|comment|explique|audit|non couvert/.test(n) && n.length<60 && !/chapitres? \d/.test(n)) chapter = ctx.lastChapter;
   }
 
-  if(refAiIsDefinitionQuestion(n)){ const def = refAiReplyDefinition(ref, views, q, n, chapter); if(def){ if(chapter) ctx.lastChapter = chapter; return def; } }
+  if(refAiIsDefinitionQuestion(n)){ const def = refAiReplyDefinition(ref, views, q, n, chapter); if(def){ if(chapter) ctx.lastChapter = chapter; const ge = REF_AI_GLOSSARY.find(e=>e.re.test(n)); if(ge){ ctx.lastTerm = ge.name; ctx.lastKind = "term"; } return def; } }
   if(/audit/.test(n)) { if(chapter) ctx.lastChapter = chapter; return refAiReplyAudit(ref, views, chapter); }
-  if(chapter && howTo && !/pourquoi|calcul/.test(n)){ ctx.lastChapter = chapter; return refAiReplyGuide(ref, views, chapter); }
-  if(chapter){ ctx.lastChapter = chapter; return refAiReplyChapter(ref, views, chapter, q, n); }
+  if(chapter && howTo && !/pourquoi|calcul/.test(n)){ ctx.lastChapter = chapter; ctx.lastKind = "chapter"; return refAiReplyGuide(ref, views, chapter); }
+  if(chapter){ ctx.lastChapter = chapter; ctx.lastKind = "chapter"; return refAiReplyChapter(ref, views, chapter, q, n); }
 
   if(/recommandation/.test(n)) return refAiReplyType(views, "recommandation", "recommandation");
   if(/preuve|enregistrement/.test(n)) return refAiReplyType(views, "preuve", "preuve attendue");
