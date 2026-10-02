@@ -408,8 +408,8 @@ function refAiReplyDefinition(ref, views, q, n, chapter){
 /* Propositions de structure, à adapter : ce sont des conventions courantes, pas des exigences de la norme.
    Quand un modèle existe dans la bibliothèque de Qonnect (« Documentation du SMQ → Modèles »), on le propose. */
 const REF_AI_LIVRABLES = {
-  "Enjeux internes et externes": { nom:"Analyse du contexte", nature:"tableau daté", sections:["Enjeu","Interne ou externe","Catégorie (réglementaire, marché, ressources, organisation…)","Effet sur le système (favorable ou défavorable)","Risque, opportunité ou action associé","Responsable et date de revue"], freq:"une fois par an, et à chaque changement important", qui:"direction avec le responsable qualité", methode:"grille SWOT (forces/faiblesses/opportunités/menaces) ou PESTEL (politique, économique, social, technique, environnemental, légal)" },
-  "Parties intéressées": { nom:"Tableau des parties intéressées", nature:"tableau daté", sections:["Partie intéressée","Besoins et attentes","Exigence applicable (oui/non)","Comment on la suit","Responsable"], freq:"une fois par an", qui:"responsable qualité" },
+  "Enjeux internes et externes": { pieges:"Pièges fréquents : une liste de généralités valable pour n'importe quelle structure ; ne traiter que l'externe ou que l'interne ; un document jamais daté ni revu ; aucun lien avec les risques, les objectifs ou les actions ; oublier la surveillance de ces enjeux (exigence 4.1, 2e partie). Un auditeur cherche : des enjeux propres à votre établissement, une date de mise à jour, et ce que vous en avez fait.", nom:"Analyse du contexte", nature:"tableau daté", sections:["Enjeu","Interne ou externe","Catégorie (réglementaire, marché, ressources, organisation…)","Effet sur le système (favorable ou défavorable)","Risque, opportunité ou action associé","Responsable et date de revue"], freq:"une fois par an, et à chaque changement important", qui:"direction avec le responsable qualité", methode:"grille SWOT (forces/faiblesses/opportunités/menaces) ou PESTEL (politique, économique, social, technique, environnemental, légal)" },
+  "Parties intéressées": { pieges:"Pièges fréquents : lister des parties sans dire ce qu'elles attendent ; confondre toutes les attentes avec des exigences à satisfaire (seules celles qui s'appliquent comptent) ; ne jamais relire le tableau. Un auditeur cherche : les besoins et attentes réels, et le critère qui rend une exigence « applicable ».", nom:"Tableau des parties intéressées", nature:"tableau daté", sections:["Partie intéressée","Besoins et attentes","Exigence applicable (oui/non)","Comment on la suit","Responsable"], freq:"une fois par an", qui:"responsable qualité" },
   "Domaine d'application (périmètre)": { nom:"Déclaration du domaine d'application", nature:"page du manuel qualité", sections:["Sites et activités couverts","Produits et services concernés","Exclusions et leur justification","Référentiels appliqués","Version, date, approbation"], freq:"à chaque évolution du périmètre", qui:"direction" },
   "Système de management de la qualité (SMQ)": { nom:"Manuel qualité et cartographie des processus", nature:"document de référence", sections:["Présentation de l'organisme","Politique et objectifs","Cartographie des processus","Responsabilités","Liste des procédures"], freq:"revue annuelle", qui:"responsable qualité" },
   "Processus": { nom:"Fiche processus", nature:"fiche d'une page", sections:["Finalité","Pilote","Éléments d'entrée et de sortie","Activités principales","Ressources","Indicateurs","Risques","Documents associés"], freq:"revue annuelle", qui:"pilote du processus" },
@@ -579,8 +579,12 @@ function refAiReplyMethodList(ref){
 /* Questions pratiques (durée, qui, fréquence, pièges) sur le sujet qui vient d'être traité : terme défini ou chapitre. */
 const REF_AI_PRACTICAL = /long|temps|duree|rapide|\bvite\b|\bqui\b|participe|equipe|frequence|souvent|quand |mettre a jour|piege|erreur|eviter|auditeur|attend|preuve/;
 function refAiPracticalReply(ref, ctx, n){
-  if(n.length>70 || /\bou (parle|est)|parle-t-on|chapitre \d/.test(n)) return null;
+  if(n.length>110 || /\bou (parle|est)|parle-t-on/.test(n)) return null;
   if(!REF_AI_PRACTICAL.test(n)) return null;
+  /* Le sujet est nommé dans la question (« chapitre 4, enjeux internes et externes : quels pièges ? ») : on l'utilise en priorité. */
+  const named = REF_AI_GLOSSARY.find(e=>e.re.test(n) && REF_AI_LIVRABLES[e.name]);
+  if(named){ ctx.lastTerm = named.name; ctx.lastKind = "term"; }
+  else if(/chapitres? \d/.test(n)) return null;
   const buttons = [["Autres méthodes","quelles méthodes puis-je utiliser ?"]];
   const liv = ctx.lastKind==="term" && ctx.lastTerm ? REF_AI_LIVRABLES[ctx.lastTerm] : null;
   if(liv){
@@ -588,7 +592,7 @@ function refAiPracticalReply(ref, ctx, n){
     if(/long|temps|duree|rapide|\bvite\b/.test(n)) L.push(["⏱️ Durée", /enregistrement|registre/.test(liv.nature)?"Quelques minutes à remplir à chaque fois ; prévoyez 1 à 2 heures une seule fois pour créer le modèle et la règle d'utilisation.":/procedure|manuel/.test(liv.nature)?"Comptez une demi-journée à une journée pour une première version (rédaction + relecture), puis des mises à jour courtes.":"Comptez 1 à 3 heures pour une première version, souvent en échangeant avec 2 ou 3 personnes concernées, puis une relecture rapide à chaque mise à jour."]);
     if(/\bqui\b|participe|equipe/.test(n)) L.push(["👥 Qui", "Responsable proposé : "+liv.qui+". Associez les personnes qui pratiquent l'activité, et faites valider par la direction."]);
     if(/frequence|souvent|quand |mettre a jour/.test(n)) L.push(["🔁 Fréquence", "Rythme conseillé : "+liv.freq+"."]);
-    if(/piege|erreur|eviter|auditeur|attend|preuve/.test(n)) L.push(["⚠️ À éviter / ce que regarde un auditeur","Un document daté, approuvé et à jour (rythme : "+liv.freq+"), un responsable clairement identifié ("+liv.qui+"), et un lien visible avec des actions ou des décisions. Les pièges : un document écrit une fois puis jamais relu, trop général pour votre organisme, ou sans suite concrète."]);
+    if(/piege|erreur|eviter|auditeur|attend|preuve/.test(n)) L.push(["⚠️ À éviter / ce que regarde un auditeur",liv.pieges||"Un document daté, approuvé et à jour (rythme : "+liv.freq+"), un responsable clairement identifié ("+liv.qui+"), et un lien visible avec des actions ou des décisions. Les pièges : un document écrit une fois puis jamais relu, trop général pour votre organisme, ou sans suite concrète."]);
     if(L.length) return `<strong>${esc(liv.nom)}</strong><ul style="margin:6px 0 0 18px;">${L.map(([t,x])=>`<li><strong>${t}</strong> : ${esc(x)}</li>`).join("")}</ul>` + refAiGuideButtons(ref, buttons);
   }
   if(ctx.lastChapter && ctx.lastKind==="chapter"){
