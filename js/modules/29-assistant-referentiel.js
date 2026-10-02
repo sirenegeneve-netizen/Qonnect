@@ -228,6 +228,8 @@ function refAiReplyGuide(ref, views, chapter){
     html += `<li style="margin-bottom:12px;"><strong>${esc(exigenceLabel(v))}</strong> — <span class="text-sm">${esc(refAiText(v,260)||v.title)}</span>` +
       `<br><span class="text-sm">➜ <strong>À faire :</strong> ${esc(g.produit)}.</span>` +
       `<br><span class="text-sm">🧾 <strong>Preuve attendue :</strong> ${esc(g.preuve)}.</span>` +
+      (()=>{ const f = refAiFormatFor(v); if(!f) return "";
+        return `<br><span class="text-sm">📐 <strong>Format conseillé :</strong> ${esc(f.format)}${f.exemple?" — colonnes : <em>"+esc(f.exemple)+"</em>":""}${f.module?" ("+esc(f.module)+")":""}.</span>` + (f.tpl?`<br>${refAiTemplateButton(ref, f.tpl)}`:""); })() +
       (intro ? `<br><span class="text-sm">ℹ️ Cette phrase introduit une liste (a, b, c…) : relisez le texte de la norme pour la liste complète.</span>` : "") +
       `<br><span class="text-xs">Dans Qonnect : ${esc(refAiLevel(v))} — ${docs.length ? "documents reliés (rapprochement automatique, à vérifier) : "+esc(docs.join(", ")) : "aucun document relié"}.</span>` +
       refAiButtons(ref, v) + `</li>`;
@@ -367,17 +369,26 @@ const REF_AI_GLOSSARY = [
     ex:["Les exigences peuvent venir de la norme, de la loi, des clients ou de l'organisme lui-même."], tip:"" }
 ];
 function refAiIsDefinitionQuestion(n){
-  return /c'est quoi|cest quoi|qu'est[- ]ce (que|qu')|que (signifie|veut dire|sont|represente)|definition|definis|que doit[- ]on entendre|c'est a dire|ca veut dire/.test(n);
+  return /c'est quoi|cest quoi|qu'est[- ]ce (que|qu')|que (signifie|veut dire|sont|represente)|definition|definis|que doit[- ]on entendre|c'est a dire|ca veut dire|explique(?:-moi| moi)? (?:ce qu'|ce que|le sens|la difference)|ce qu'est|ce que c'est|ce que sont|ce que veut dire/.test(n);
 }
-function refAiReplyDefinition(ref, views, q, n){
+function refAiReplyDefinition(ref, views, q, n, chapter){
   const entry = REF_AI_GLOSSARY.find(e=>e.re.test(n));
   if(!entry) return null;
+  if(entry.name==="Exigence" && chapter) return null;   /* « les exigences du chapitre 4 » : on parle du chapitre, pas du mot */
   /* Où le référentiel en parle : on cherche les mots clés du terme dans le texte importé. */
+  const inChapter = v => chapter && (v.ref===chapter || String(v.ref).startsWith(chapter+"."));
   const found = views.map(v=>{ const hay = refAiNorm(v.title+" "+(v.description||"")); return { v, hits: entry.search.filter(k=>hay.includes(k)).length }; })
-    .filter(x=>x.hits>0).sort((a,b)=>b.hits-a.hits || refAiCmpRef(a.v.ref,b.v.ref));
+    .filter(x=>x.hits>0).sort((a,b)=> (inChapter(b.v)?1:0)-(inChapter(a.v)?1:0) || b.hits-a.hits || refAiCmpRef(a.v.ref,b.v.ref));
   let html = `<strong>${entry.name}</strong><p>${entry.def}</p>`;
   if(entry.ex && entry.ex.length) html += refAiList(entry.ex.map(e=>`<li>${e}</li>`));
   if(entry.tip) html += `<p class="text-sm">${entry.tip}</p>`;
+  const liv = REF_AI_LIVRABLES[entry.name];
+  if(liv){
+    html += `<p class="mt-2"><strong>Quel document produire ?</strong> ${esc(liv.nom)} <span class="text-sm">(${esc(liv.nature)})</span></p>` +
+      `<p class="text-sm">Contenu conseillé :</p>` + refAiList(liv.sections.map(x=>`<li>${esc(x)}</li>`)) +
+      `<p class="text-sm">Fréquence : ${esc(liv.freq)} · Qui : ${esc(liv.qui)}${liv.methode?" · Méthode possible : "+esc(liv.methode):""}.</p>` +
+      `<p class="text-xs">Structure proposée à titre indicatif : la norme n'impose pas de format, seulement que l'information existe, soit tenue à jour et conservée.</p>`;
+  }
   if(found.length){
     const sel = found.slice(0,3).map(x=>x.v);
     html += `<p class="mt-2"><strong>Dans ${esc(ref.name)} :</strong> ${found.length} passage(s), notamment</p>` +
@@ -385,9 +396,65 @@ function refAiReplyDefinition(ref, views, q, n){
     const top = refAiTop(sel[0].ref);
     html += refAiGuideButtons(ref, [["Accompagne-moi sur le chapitre "+top, "Accompagne-moi sur le chapitre "+top], ["Voir tous les passages", "Où parle-t-on de "+entry.search[0]+" ?"]]);
   }
+  if(liv){
+    html += `<span class="flex gap-2" style="flex-wrap:wrap;margin-top:8px;">${refAiTemplateButton(ref, liv.tpl)}<button class="btn btn-secondary btn-sm" data-ref-ai-newdoctitle="${esc(liv.nom)}">📄 Créer « ${esc(liv.nom)} »</button></span>`;
+  }
   html += `<p class="text-xs mt-2">Explication en langage courant, rédigée pour aider à comprendre ; la définition officielle se trouve dans l'ISO 9000 (vocabulaire).</p>`;
   return html;
 }
+
+/* ---------- Documents types et formats proposés ---------- */
+/* Propositions de structure, à adapter : ce sont des conventions courantes, pas des exigences de la norme.
+   Quand un modèle existe dans la bibliothèque de Qonnect (« Documentation du SMQ → Modèles »), on le propose. */
+const REF_AI_LIVRABLES = {
+  "Enjeux internes et externes": { nom:"Analyse du contexte", nature:"tableau daté", sections:["Enjeu","Interne ou externe","Catégorie (réglementaire, marché, ressources, organisation…)","Effet sur le système (favorable ou défavorable)","Risque, opportunité ou action associé","Responsable et date de revue"], freq:"une fois par an, et à chaque changement important", qui:"direction avec le responsable qualité", methode:"grille SWOT (forces/faiblesses/opportunités/menaces) ou PESTEL (politique, économique, social, technique, environnemental, légal)" },
+  "Parties intéressées": { nom:"Tableau des parties intéressées", nature:"tableau daté", sections:["Partie intéressée","Besoins et attentes","Exigence applicable (oui/non)","Comment on la suit","Responsable"], freq:"une fois par an", qui:"responsable qualité" },
+  "Domaine d'application (périmètre)": { nom:"Déclaration du domaine d'application", nature:"page du manuel qualité", sections:["Sites et activités couverts","Produits et services concernés","Exclusions et leur justification","Référentiels appliqués","Version, date, approbation"], freq:"à chaque évolution du périmètre", qui:"direction" },
+  "Système de management de la qualité (SMQ)": { nom:"Manuel qualité et cartographie des processus", nature:"document de référence", sections:["Présentation de l'organisme","Politique et objectifs","Cartographie des processus","Responsabilités","Liste des procédures"], freq:"revue annuelle", qui:"responsable qualité" },
+  "Processus": { nom:"Fiche processus", nature:"fiche d'une page", sections:["Finalité","Pilote","Éléments d'entrée et de sortie","Activités principales","Ressources","Indicateurs","Risques","Documents associés"], freq:"revue annuelle", qui:"pilote du processus" },
+  "Informations documentées": { nom:"Procédure de maîtrise documentaire", nature:"procédure", sections:["Objet","Domaine d'application","Règles de création, de versionnage et d'approbation","Conservation et archivage","Liste des documents et enregistrements"], freq:"revue tous les 2 à 3 ans", qui:"responsable qualité", tpl:"TPL-001" },
+  "Risques et opportunités": { nom:"Registre des risques et opportunités + procédure", nature:"registre et procédure", sections:["Description","Gravité et probabilité","Niveau","Traitement décidé","Responsable et échéance","Efficacité du traitement"], freq:"revue au moins annuelle", qui:"pilotes de processus", tpl:"TPL-004" },
+  "Non-conformité": { nom:"Fiche de non-conformité", nature:"enregistrement", sections:["Description des faits","Date et lieu","Correction immédiate","Analyse de cause","Action corrective décidée","Vérification de l'efficacité"], freq:"à chaque événement", qui:"déclarant puis responsable qualité", tpl:"TPL-003" },
+  "Correction et action corrective": { nom:"Procédure de traitement des non-conformités", nature:"procédure", sections:["Déclaration","Correction","Analyse des causes (5 pourquoi, Ishikawa)","Action corrective","Suivi et clôture"], freq:"revue tous les 2 à 3 ans", qui:"responsable qualité", tpl:"TPL-003" },
+  "Audit interne": { nom:"Programme et procédure d'audit interne", nature:"procédure et programme annuel", sections:["Programme d'audits","Critères de choix des auditeurs","Plan d'audit","Rapport avec constats","Suivi des écarts"], freq:"programme annuel", qui:"responsable qualité", tpl:"TPL-002" },
+  "Revue de direction": { nom:"Compte rendu de revue de direction", nature:"enregistrement", sections:["Données d'entrée (audits, indicateurs, réclamations, risques)","Analyse","Décisions et ressources","Actions et responsables"], freq:"au moins une fois par an", qui:"direction", tpl:"TPL-005" },
+  "Politique qualité": { nom:"Politique qualité", nature:"document court (1 page)", sections:["Finalité et contexte","Engagements (exigences, amélioration continue)","Cadre de fixation des objectifs","Signature de la direction, date","Diffusion"], freq:"revue annuelle", qui:"direction" },
+  "Objectifs qualité": { nom:"Tableau des objectifs", nature:"tableau suivi", sections:["Objectif","Indicateur","Cible","Échéance","Responsable","Actions prévues","État"], freq:"suivi trimestriel", qui:"direction et pilotes" },
+  "Indicateur de performance": { nom:"Fiche indicateur", nature:"fiche d'une page", sections:["Nom et définition","Formule de calcul","Source des données","Fréquence","Cible et seuil d'alerte","Responsable"], freq:"selon l'indicateur", qui:"pilote du processus" },
+  "Amélioration continue": { nom:"Registre des actions d'amélioration", nature:"registre", sections:["Origine (audit, réclamation, suggestion)","Action","Responsable","Échéance","Résultat constaté"], freq:"suivi continu", qui:"responsable qualité" },
+  "Satisfaction du client": { nom:"Enquête de satisfaction et synthèse", nature:"questionnaire et bilan", sections:["Questions (accueil, délai, qualité, recommandation)","Population interrogée","Résultats et analyse","Actions décidées"], freq:"annuelle ou en continu", qui:"responsable qualité" },
+  "Fournisseurs et prestataires externes": { nom:"Procédure et liste des fournisseurs évalués", nature:"procédure et liste", sections:["Critères de sélection","Évaluation initiale et périodique","Liste des fournisseurs agréés","Gestion des écarts"], freq:"évaluation annuelle", qui:"achats et responsable qualité", tpl:"TPL-007" },
+  "Compétence": { nom:"Matrice de compétences", nature:"tableau", sections:["Poste","Compétences requises et niveau","Niveau évalué","Écart","Formation prévue","Preuves"], freq:"revue annuelle", qui:"managers et RH", tpl:"TPL-006" },
+  "Traçabilité": { nom:"Procédure de traçabilité", nature:"procédure", sections:["Éléments à tracer","Identification","Enregistrements conservés","Durée de conservation","Retrouver l'historique"], freq:"revue tous les 2 à 3 ans", qui:"pilote du processus concerné" },
+  "Gestion du changement": { nom:"Procédure de gestion des modifications", nature:"procédure", sections:["Demande de changement","Analyse d'impact","Décision","Mise en œuvre","Vérification après changement"], freq:"à chaque changement", qui:"responsable du changement", tpl:"TPL-012" }
+};
+
+/* Format conseillé selon ce que demande la phrase (même logique que les pistes ci-dessus). */
+const REF_AI_FORMATS = [
+  { re:/determin|identifi|defin|fixer|etablir la liste/, format:"un tableau daté : élément, source, date, responsable", exemple:"Élément | Source | Date | Responsable" },
+  { re:/surveill|revoi|revis|evalu|examin|mesur|suivre/, format:"un compte rendu de revue : date, participants, constats, décisions", exemple:"Date | Participants | Constats | Décisions | Actions" },
+  { re:/planifi|programm/, format:"un plan d'actions : action, responsable, échéance, état", exemple:"Action | Responsable | Échéance | État", module:"module Actions" },
+  { re:/informations? documentee|conserv|enregistr|documente/, format:"une procédure de maîtrise documentaire et une liste des documents à jour", tpl:"TPL-001" },
+  { re:/communiqu|diffus|inform|sensibilis/, format:"un plan de communication : quoi, à qui, quand, par quel canal, qui", exemple:"Message | Destinataires | Quand | Canal | Responsable" },
+  { re:/responsab|autorit|\broles?\b|nomm/, format:"une fiche de poste ou une matrice des responsabilités (qui décide, qui fait, qui est informé)" },
+  { re:/demontr|garantir|assur|verifier|controle/, format:"un enregistrement type : date, contrôle effectué, résultat, visa", exemple:"Date | Contrôle | Résultat | Visa" },
+  { re:/mettre en oeuvre|appliqu|etabli|maintenir|instaur/, format:"une procédure : objet, domaine d'application, responsabilités, description, enregistrements", tpl:"TPL-001" }
+];
+function refAiFormatFor(v){
+  const low = refAiNorm(v.title+" "+(v.description||""));
+  return REF_AI_FORMATS.find(f=>f.re.test(low)) || null;
+}
+function refAiTemplateButton(ref, tplId, label){
+  const t = tplId ? getTemplate(tplId) : null;
+  if(!t) return "";
+  return `<button class="btn btn-secondary btn-sm" data-ref-ai-template="${esc(tplId)}" data-ref-id="${esc(ref.id)}">📑 ${esc(label||("Partir du modèle « "+t.title+" »"))}</button>`;
+}
+document.addEventListener("click", (e)=>{
+  const tpl = e.target.closest("[data-ref-ai-template]");
+  if(tpl){ openQuickForm("document", { templateId: tpl.getAttribute("data-ref-ai-template") }); return; }
+  const nd = e.target.closest("[data-ref-ai-newdoctitle]");
+  if(nd){ openQuickForm("document", { title: nd.getAttribute("data-ref-ai-newdoctitle") }); return; }
+});
 
 function refAIGenerateReply(ref, score, q){
   const views = score.views;
@@ -406,11 +473,11 @@ function refAIGenerateReply(ref, score, q){
     else if(/detail|plus|ce chapitre|celui|et pour|pourquoi|comment|explique|audit|non couvert/.test(n) && n.length<60 && !/chapitres? \d/.test(n)) chapter = ctx.lastChapter;
   }
 
+  if(refAiIsDefinitionQuestion(n)){ const def = refAiReplyDefinition(ref, views, q, n, chapter); if(def){ if(chapter) ctx.lastChapter = chapter; return def; } }
   if(/audit/.test(n)) { if(chapter) ctx.lastChapter = chapter; return refAiReplyAudit(ref, views, chapter); }
   if(chapter && howTo && !/pourquoi|calcul/.test(n)){ ctx.lastChapter = chapter; return refAiReplyGuide(ref, views, chapter); }
   if(chapter){ ctx.lastChapter = chapter; return refAiReplyChapter(ref, views, chapter, q, n); }
 
-  if(refAiIsDefinitionQuestion(n)){ const def = refAiReplyDefinition(ref, views, q, n); if(def) return def; }
   if(/recommandation/.test(n)) return refAiReplyType(views, "recommandation", "recommandation");
   if(/preuve|enregistrement/.test(n)) return refAiReplyType(views, "preuve", "preuve attendue");
   if(/responsabilite/.test(n)) return refAiReplyType(views, "responsabilite", "responsabilité");
