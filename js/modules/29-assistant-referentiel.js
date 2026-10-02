@@ -382,6 +382,7 @@ function refAiReplyDefinition(ref, views, q, n, chapter){
   let html = `<strong>${entry.name}</strong><p>${entry.def}</p>`;
   if(entry.ex && entry.ex.length) html += refAiList(entry.ex.map(e=>`<li>${e}</li>`));
   if(entry.tip) html += `<p class="text-sm">${entry.tip}</p>`;
+  if(entry.name==="Enjeux internes et externes") html += refAiGuideButtons(ref, [["Comment faire un PESTEL ?","comment compléter un PESTEL"],["Comment faire un SWOT ?","comment compléter un SWOT"]]);
   const liv = REF_AI_LIVRABLES[entry.name];
   if(liv){
     html += `<p class="mt-2"><strong>Quel document produire ?</strong> ${esc(liv.nom)} <span class="text-sm">(${esc(liv.nature)})</span></p>` +
@@ -456,11 +457,125 @@ document.addEventListener("click", (e)=>{
   if(nd){ openQuickForm("document", { title: nd.getAttribute("data-ref-ai-newdoctitle") }); return; }
 });
 
+/* ---------- Méthodes et outils (PESTEL, SWOT, 5 pourquoi…) : comment les remplir, avec un exemple ---------- */
+/* Explications pédagogiques rédigées pour Qonnect ; exemples volontairement génériques (aucune donnée réelle, aucun patient). */
+const REF_AI_METHODES = [
+  { id:"pestel", nom:"PESTEL", re:/pestel|\bpest\b/,
+    but:"Passer en revue les facteurs EXTERNES qui influencent l'organisme, en 6 familles. Il répond à : « qu'est-ce qui, dehors, peut m'aider ou me gêner ? ».",
+    etapes:[
+      "Faire une grille à 6 lignes : <strong>P</strong>olitique, <strong>É</strong>conomique, <strong>S</strong>ocial/sociétal, <strong>T</strong>echnologique, <strong>E</strong>nvironnemental, <strong>L</strong>égal/réglementaire.",
+      "Pour chaque ligne, noter 1 à 3 faits concrets qui concernent VOTRE organisme (pas des généralités). Si rien ne vous concerne, écrivez « sans objet » plutôt que d'inventer.",
+      "Pour chaque fait, préciser l'<strong>impact</strong> : opportunité (+) ou menace (−), et son niveau (faible / moyen / fort).",
+      "Garder les enjeux importants (impact moyen ou fort) et indiquer pour chacun une <strong>réaction</strong> : action, surveillance, ou rien à faire pour l'instant.",
+      "Dater, faire valider par la direction, puis relire au moins une fois par an ou lors d'un changement majeur."],
+    exemple:[
+      ["Facteur","Exemple de fait","Impact","Réaction"],
+      ["Politique","Évolution de la politique régionale de santé / des autorisations","Menace moyenne","Suivre les orientations du territoire"],
+      ["Économique","Financements contraints","Menace forte","Piloter les coûts, prioriser les investissements"],
+      ["Social","Vieillissement de la population accueillie, attentes de transparence","Moyen","Adapter l'information et les parcours"],
+      ["Technologique","Outils numériques, cybermenaces","Opportunité et menace","Sécurité informatique, formation"],
+      ["Environnemental","Obligations de gestion des déchets et d'énergie","Menace moyenne","Suivi d'indicateurs, plan d'amélioration"],
+      ["Légal","Nouvelles exigences réglementaires et de certification","Menace forte","Veille réglementaire, mise à jour des procédures"]],
+    colonnes:"Facteur · Impact (+/−, niveau) · Enjeu retenu · Réaction. Dans le tableau « Analyse du contexte », les facteurs PESTEL alimentent la partie <strong>enjeux externes</strong>.",
+    tip:"Astuce : PESTEL ne couvre que l'externe. Complétez avec un SWOT/AFOM (ou une liste de forces et faiblesses) pour l'interne.",
+    doc:"Analyse du contexte" },
+  { id:"swot", nom:"SWOT (AFOM)", re:/swot|afom|forces et faiblesses|forces\/faiblesses/,
+    but:"Croiser l'INTERNE (forces, faiblesses) et l'EXTERNE (opportunités, menaces) pour en tirer des priorités.",
+    etapes:[
+      "Faire 4 cases : <strong>Forces</strong> et <strong>Faiblesses</strong> (internes, ce que vous maîtrisez), <strong>Opportunités</strong> et <strong>Menaces</strong> (externes, ce que vous subissez).",
+      "Remplir en équipe (3 à 8 personnes de métiers différents), idéalement en atelier d'une heure : chacun propose, on regroupe, on supprime les doublons.",
+      "Rester concret et vérifiable : « 80 % des agents formés à X » plutôt que « personnel compétent ».",
+      "Hiérarchiser : entourer les 3 à 5 éléments les plus importants.",
+      "Pour chaque élément retenu, décider d'une réponse : s'appuyer sur une force, corriger une faiblesse, saisir une opportunité, se protéger d'une menace. C'est le point de départ de vos <strong>risques/opportunités</strong> et de vos actions."],
+    exemple:[
+      ["Type","Élément","Origine","Réponse prévue"],
+      ["Force","Équipe stable et engagée sur la qualité","Interne","S'appuyer dessus pour les audits internes"],
+      ["Faiblesse","Documents non mis à jour régulièrement","Interne","Action : revue documentaire annuelle"],
+      ["Opportunité","Dynamique territoriale de coopération","Externe","Formaliser un partenariat"],
+      ["Menace","Tension sur le recrutement","Externe","Plan de fidélisation et de compétences"]],
+    colonnes:"Type · Élément · Interne/Externe · Réponse prévue. Forces/faiblesses → enjeux <strong>internes</strong> ; opportunités/menaces → enjeux <strong>externes</strong>.",
+    tip:"Astuce : un SWOT sans décision derrière est inutile. Chaque élément retenu doit aboutir à une action, un risque suivi ou un « rien pour l'instant » justifié.",
+    doc:"Analyse du contexte" },
+  { id:"5p", nom:"5 pourquoi", re:/5 pourquoi|cinq pourquoi|5 why/,
+    but:"Remonter à la cause racine d'un problème en se demandant « pourquoi ? » plusieurs fois de suite.",
+    etapes:[
+      "Écrire le problème de façon factuelle : quoi, où, quand (sans nom de personne, sans identifiant patient).",
+      "Demander « Pourquoi cela s'est-il produit ? » et noter la réponse (un fait vérifié, pas une supposition).",
+      "Reposer « pourquoi ? » sur cette réponse, et recommencer jusqu'à atteindre une cause <strong>sur laquelle on peut agir</strong> (souvent 3 à 5 fois).",
+      "Si plusieurs causes apparaissent, faire une branche par cause.",
+      "Définir une action corrective sur la cause racine, avec pilote et échéance ; vérifier plus tard son efficacité."],
+    exemple:[
+      ["Niveau","Réponse"],
+      ["Problème","Une procédure obsolète a été utilisée"],
+      ["Pourquoi 1","La version affichée n'était pas la dernière"],
+      ["Pourquoi 2","L'ancienne version n'a pas été retirée du poste"],
+      ["Pourquoi 3","Pas de règle de diffusion/retrait lors d'une mise à jour"],
+      ["Cause racine → action","Gestion documentaire incomplète → ajouter une étape de retrait des anciennes versions"]],
+    colonnes:"Niveau · Pourquoi · Cause · Action. Se rattache à un <strong>événement / non-conformité</strong> et à une <strong>action corrective</strong> dans Qonnect.",
+    tip:"Si les causes sont multiples, faites d'abord un diagramme d'Ishikawa, puis des « 5 pourquoi » sur les 1 à 2 causes principales.",
+    doc:"Analyse des causes" },
+  { id:"ishikawa", nom:"Diagramme d'Ishikawa (5M)", re:/ishikawa|arete de poisson|diagramme des causes|causes[- ]effets?/,
+    but:"Classer toutes les causes possibles d'un problème par famille pour n'en oublier aucune.",
+    etapes:[
+      "Écrire le problème (l'effet) dans la « tête du poisson ».",
+      "Tracer les familles : <strong>Main-d'œuvre</strong> (personnes, compétences), <strong>Méthode</strong> (procédures), <strong>Matériel</strong>, <strong>Milieu</strong> (locaux, ambiance), <strong>Matière</strong> (produits, informations) — parfois <strong>Management</strong>.",
+      "En groupe, lister les causes possibles de chaque famille (remue-méninges, sans critiquer).",
+      "Entourer les causes les plus probables et les vérifier par des faits.",
+      "Traiter les causes confirmées par des actions ; approfondir au besoin avec les 5 pourquoi."],
+    exemple:[
+      ["Famille","Cause possible"],
+      ["Méthode","Consigne imprécise"],["Matériel","Outil indisponible aux heures de pointe"],
+      ["Main-d'œuvre","Nouvel arrivant non formé"],["Milieu","Local exigu, interruptions"],["Matière","Information incomplète à la transmission"]],
+    colonnes:"Famille · Cause possible · Confirmée (oui/non) · Action.",
+    tip:"Inutile de remplir toutes les familles : gardez celles qui parlent de votre problème.",
+    doc:"Analyse des causes" },
+  { id:"criticite", nom:"Matrice de criticité (risques)", re:/criticite|matrice des risques|matrice de risques?|amdec|cotation/,
+    but:"Coter chaque risque pour décider lesquels traiter en premier.",
+    etapes:[
+      "Décrire chaque risque clairement : « si [cause], alors [événement], ce qui entraîne [conséquence] ».",
+      "Coter la <strong>gravité</strong> (1 à 4) et la <strong>probabilité</strong> (1 à 4), éventuellement la détectabilité.",
+      "Calculer la criticité = gravité × probabilité (× détectabilité si utilisée).",
+      "Fixer un seuil (ex. criticité ≥ 8 = à traiter) et décider : réduire, accepter, transférer ou éviter.",
+      "Définir des actions avec pilote et échéance, puis recoter après action pour vérifier la baisse."],
+    exemple:[
+      ["Risque","Cotation","Réponse"],
+      ["Panne du système d'information","G3 × P2 = 6","Plan de continuité testé"],
+      ["Perte d'une compétence clé","G3 × P3 = 9","Binômage, formation croisée"]],
+    colonnes:"Risque · Gravité · Probabilité · Criticité · Action · Criticité résiduelle. C'est le module <strong>Risques</strong> de Qonnect.",
+    tip:"Les échelles de cotation doivent être écrites et partagées pour que deux personnes cotent de la même façon.",
+    doc:"Cartographie des risques" }
+];
+
+function refAiDetectMethod(n){ return REF_AI_METHODES.find(m=>m.re.test(n)) || null; }
+function refAiReplyMethod(ref, m){
+  const rows = m.exemple.map((r,i)=>`<tr>${r.map(c=>i===0?`<th style="padding:4px 8px;border:1px solid var(--border,#ddd);text-align:left;">${esc(c)}</th>`:`<td style="padding:4px 8px;border:1px solid var(--border,#ddd);">${esc(c)}</td>`).join("")}</tr>`).join("");
+  return `<strong>${esc(m.nom)} — comment le compléter</strong><br>${esc(m.but)}
+    <br><br><strong>Pas à pas</strong><ol style="margin:6px 0 0 18px;">${m.etapes.map(e=>`<li>${e}</li>`).join("")}</ol>
+    <br><strong>Exemple générique</strong> (à adapter à votre établissement)
+    <div style="overflow-x:auto;margin-top:6px;"><table style="border-collapse:collapse;font-size:.85em;">${rows}</table></div>
+    <br>🗂️ <strong>Où le mettre ?</strong> ${m.colonnes}
+    <br><span class="text-sm">${m.tip}</span>
+    <span class="flex gap-2" style="flex-wrap:wrap;margin-top:8px;"><button class="btn btn-secondary btn-sm" data-ref-ai-newdoctitle="${esc(m.doc+" — "+m.nom)}">📄 Créer le document « ${esc(m.doc)} »</button></span>`
+    + refAiGuideButtons(ref, [["Autres méthodes","quelles méthodes puis-je utiliser ?"],["Retour aux enjeux","c'est quoi les enjeux internes et externes ?"]]);
+}
+function refAiReplyMethodList(ref){
+  return `<strong>Méthodes et outils que je peux vous expliquer</strong><ul style="margin:6px 0 0 18px;">${REF_AI_METHODES.map(m=>`<li><strong>${esc(m.nom)}</strong> — ${esc(m.but)}</li>`).join("")}</ul>`
+    + refAiGuideButtons(ref, REF_AI_METHODES.map(m=>[m.nom, "comment compléter "+m.nom]));
+}
+
 function refAIGenerateReply(ref, score, q){
   const views = score.views;
   const n = refAiNorm(q);
   const ctx = REF_AI_CONTEXT[ref.id] = REF_AI_CONTEXT[ref.id] || {};
   if(!views.length) return `Ce référentiel ne contient encore aucune exigence. Importez un texte depuis l'onglet « Versions ».`;
+
+  /* Méthodes et outils (PESTEL, SWOT…) : prioritaires sur le guide de chapitre, y compris pour les questions de suite. */
+  const meth = refAiDetectMethod(n);
+  if(meth){ ctx.lastMethod = meth.id; return refAiReplyMethod(ref, meth); }
+  if(/quelles? (methodes?|outils?)|methodes? (pour|d')|outils? (pour|d')|autres methodes/.test(n)) return refAiReplyMethodList(ref);
+  if(ctx.lastMethod && n.length<50 && /exemple|complete|remplir|remplis|concret|detail|tableau/.test(n) && !/chapitre|\d/.test(n)){
+    const m = REF_AI_METHODES.find(x=>x.id===ctx.lastMethod); if(m) return refAiReplyMethod(ref, m);
+  }
 
   let chapter = refAiChapterOf(views, q) || refAiTopicChapter(views, q);
   const howTo = /comment|faire|mettre en|mise en place|concretement|que dois|accompagne|guide|aide|etape|demarche|par quoi/.test(n);
