@@ -45,16 +45,16 @@ function generateAuditQuestions(processIds, referentielIds){
     const order = {non_couvert:0,partiellement:1,a_renforcer:2,maitrise:3,optimise:4};
     const views = getReferentielExigenceViews(refId).filter(v=>v.process && processIds.includes(v.process.id)).sort((a,b)=>order[a.level]-order[b.level]);
     views.slice(0,5).forEach(v=>{
-      qs.push({ id:"Q-"+Math.random().toString(36).slice(2,8), question:`Comment l'exigence ${v.ref} — ${v.title} est-elle mise en œuvre et démontrée ?`,
-        requirementId:v.id, processId:v.process.id, critere:v.ref, preuveAttendue:"Procédure, enregistrement ou indicateur associé", responsableInterroge:v.process.pilot, statut:"non_evalue", commentaire:"", preuveIds:[] });
+      qs.push(newAuditQuestion({ question:`Comment cette exigence est-elle mise en œuvre et comment pouvez-vous démontrer son application dans le processus ${v.process.name} ?`,
+        requirementId:v.id, processId:v.process.id, critere:v.ref, preuveAttendue:"Procédure, enregistrement ou indicateur associé", responsableInterroge:v.process.pilot }));
     });
   });
   processIds.forEach(pid=>{
     const p = getProcess(pid);
     const topRisk = DB.risks.filter(r=>r.processId===pid && r.type==="risque" && r.status==="ouvert").sort((a,b)=>(b.probability*b.impact)-(a.probability*a.impact))[0];
-    if(topRisk) qs.push({ id:"Q-"+Math.random().toString(36).slice(2,8), question:`Comment le risque « ${topRisk.name} » est-il maîtrisé ?`, requirementId:null, processId:pid, critere:topRisk.name, preuveAttendue:"Plan de maîtrise du risque", responsableInterroge:p?p.pilot:"", statut:"non_evalue", commentaire:"", preuveIds:[] });
+    if(topRisk) qs.push(newAuditQuestion({ question:`Comment le risque « ${topRisk.name} » est-il maîtrisé ?`, requirementId:null, processId:pid, critere:topRisk.name, preuveAttendue:"Plan de maîtrise du risque", responsableInterroge:p?p.pilot:"" }));
     const priorNc = DB.events.filter(e=>e.processId===pid && e.type==="non_conformite")[0];
-    if(priorNc) qs.push({ id:"Q-"+Math.random().toString(36).slice(2,8), question:`L'action corrective suite à « ${priorNc.title} » est-elle efficace ?`, requirementId:null, processId:pid, critere:priorNc.ref, preuveAttendue:"Preuve de vérification d'efficacité", responsableInterroge:p?p.pilot:"", statut:"non_evalue", commentaire:"", preuveIds:[] });
+    if(priorNc) qs.push(newAuditQuestion({ question:`L'action corrective suite à « ${priorNc.title} » est-elle efficace ?`, requirementId:null, processId:pid, critere:priorNc.ref, preuveAttendue:"Preuve de vérification d'efficacité", responsableInterroge:p?p.pilot:"" }));
   });
   return qs.slice(0,10);
 }
@@ -255,60 +255,7 @@ function auditTabPerimetre(a, isLocked){
   </div>`;
 }
 
-function auditTabGrille(a, qIdx, isLocked){
-  const total = a.questions.length;
-  if(!total){
-    return `<div class="card">${emptyState("📋","Aucune question","Générez ou ajoutez des questions pour construire la grille d'audit.",
-      `<button class="btn btn-primary" data-generate-questions="${a.id}">🧠 Générer des questions</button>`)}</div>`;
-  }
-  let idx = qIdx!=null ? parseInt(qIdx,10) : 0;
-  if(isNaN(idx) || idx<0) idx = 0;
-  if(idx>=total) idx = total-1;
-  const q = a.questions[idx];
-  const answered = a.questions.filter(x=>x.statut!=="non_evalue").length;
-  const ex = resolveExigence(q.requirementId);
-  const proc = getProcess(q.processId);
-  const availableDocs = DB.documents.filter(d=>d.status!=="obsolete");
-
-  return `
-  <div class="card mb-4">
-    <div class="flex justify-between items-center"><span class="text-sm" style="font-weight:700;">${answered} / ${total} questions évaluées</span>
-      ${!isLocked?`<button class="btn btn-secondary btn-sm" data-generate-questions="${a.id}">🧠 Générer plus</button>`:""}
-    </div>
-    <div class="progress mt-2"><div style="width:${Math.round(answered/total*100)}%"></div></div>
-  </div>
-  <div class="card mb-4">
-    <div class="flex justify-between items-center">${badge(LABELS.questionStatus[q.statut])}${ex?badgeRaw("info",ex.ref):""}</div>
-    <h3 class="mt-2">${esc(q.question)}</h3>
-    <p class="text-xs mt-4">PROCESSUS</p><p class="text-sm">${proc?esc(proc.name):"—"}</p>
-    <p class="text-xs mt-4">CRITÈRE</p><p class="text-sm">${esc(q.critere||"—")}</p>
-    <p class="text-xs mt-4">PREUVE ATTENDUE</p><p class="text-sm">${esc(q.preuveAttendue||"—")}</p>
-    <p class="text-xs mt-4">RESPONSABLE INTERROGÉ</p><p class="text-sm">${esc(q.responsableInterroge||"—")}</p>
-    ${!isLocked?`
-    <div class="field mt-4"><label>Statut</label><select id="q-statut">${Object.entries(LABELS.questionStatus).map(([v,l])=>`<option value="${v}" ${q.statut===v?"selected":""}>${l.l}</option>`).join("")}</select></div>
-    <div class="field"><label>Commentaire / réponse</label><textarea id="q-comment">${esc(q.commentaire)}</textarea></div>
-    <div class="field"><label>Preuve(s) constatée(s) — sélectionner un document déjà présent dans Qonnect</label>
-      <div style="max-height:120px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
-        ${availableDocs.map(d=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="q-preuve-cb" value="${d.id}" ${q.preuveIds.includes(d.id)?"checked":""} style="width:auto;"> ${esc(d.title)}</label>`).join("")}
-      </div>
-    </div>
-    <button class="btn btn-primary" data-save-question='${jsonAttr({auditId:a.id, questionId:q.id, qIdx:idx})}'>Enregistrer la réponse</button>
-    `:`
-    <p class="text-sm mt-4"><strong>Commentaire :</strong> ${esc(q.commentaire||"—")}</p>
-    ${q.preuveIds.length?`<p class="text-xs mt-4">PREUVES</p>${q.preuveIds.map(id=>{const d=getDocument(id); return d?`<div class="rel-link" data-route="documents/${d.type}/${d.id}"><span class="rel-name">📄 ${esc(d.title)}</span></div>`:"";}).join("")}`:""}
-    `}
-    <div class="flex justify-between mt-4">
-      <button class="btn btn-secondary" ${idx<=0?"disabled":""} data-route="audits/${a.id}/grille/${idx-1}">← Précédent</button>
-      <button class="btn btn-secondary" ${idx>=total-1?"disabled":""} data-route="audits/${a.id}/grille/${idx+1}">Suivant →</button>
-    </div>
-  </div>
-  ${!isLocked?`<div class="mb-2"><button class="btn btn-secondary btn-sm" data-add-question="${a.id}">+ Ajouter une question manuelle</button></div>`:""}
-  <div class="card card-flush table-wrap">
-    <table class="dt"><thead><tr><th>#</th><th>Question</th><th>Statut</th></tr></thead><tbody>
-      ${a.questions.map((qq,i)=>`<tr class="clickable" data-route="audits/${a.id}/grille/${i}" style="${i===idx?'background:var(--primary-soft);':''}"><td>${i+1}</td><td>${esc(qq.question)}</td><td>${badge(LABELS.questionStatus[qq.statut])}</td></tr>`).join("")}
-    </tbody></table>
-  </div>`;
-}
+/* auditTabGrille : voir modules/30-audit-question.js (parcours en 6 étapes) */
 
 function auditTabConstats(a, isLocked){
   return `
@@ -320,6 +267,7 @@ function auditTabConstats(a, isLocked){
       <div class="flex justify-between items-center">${badge(ct)}${f.gravite?badgeRaw("neutral",LABELS.constatGravite[f.gravite]):""}</div>
       <p class="text-sm mt-2" style="color:var(--text-primary)">${esc(f.text)}</p>
       ${ex?`<p class="text-xs mt-2">Exigence : ${esc(ex.ref)} — ${esc(ex.label)}</p>`:""}
+      ${f.questionId && a.questions.findIndex(x=>x.id===f.questionId)>=0 ? `<p class="text-xs mt-2">Question liée : <span data-route="audits/${a.id}/grille/${a.questions.findIndex(x=>x.id===f.questionId)}" style="color:var(--primary);cursor:pointer;">Q${a.questions.findIndex(x=>x.id===f.questionId)+1}</span>${(f.preuveRefs||[]).length?" · "+f.preuveRefs.length+" preuve(s) associée(s) : "+f.preuveRefs.map(p=>esc(p.title)).join(", "):""}</p>`:""}
       ${f.cause?`<p class="text-xs mt-2">Cause potentielle : ${esc(f.cause)}</p>`:""}
       <div class="flex gap-2 mt-2" style="flex-wrap:wrap;">
         ${f.ncEventId?`<span class="badge badge-neutral" data-route="evenements/non_conformite/${f.ncEventId}" style="cursor:pointer;">NC créée →</span>`:(isAuditEcart(f)&&!isLocked?`<button class="btn btn-secondary btn-sm" data-create-nc-from-constat='${jsonAttr({auditId:a.id, constatId:f.id})}'>+ Créer une NC</button>`:"")}
@@ -363,21 +311,44 @@ function auditTabAnalyse(a){
 }
 
 function auditTabTracabilite(a){
-  const rows = a.questions.map(q=>{
-    const ex = resolveExigence(q.requirementId);
+  const rows = a.questions.map((q,i)=>{
+    const ex = resolveExigenceFull(q.requirementId);
     const proc = getProcess(q.processId);
-    const constat = a.findings.find(f=>f.questionId===q.id);
-    return {q, ex, proc, constat};
+    const findings = a.findings.filter(f=>f.questionId===q.id);
+    const st = getAnalysisState(a, q);
+    const proposal = q.analyse && q.analyse.result ? q.analyse.result.proposedStatus : null;
+    return {i, q, ex, proc, findings, st, proposal};
   });
-  return dataTable(
-    [ {label:"Question", render:r=>esc(r.q.question.slice(0,50))+(r.q.question.length>50?"…":"")},
-      {label:"Exigence", render:r=>r.ex?esc(r.ex.ref):"—"},
-      {label:"Processus", render:r=>r.proc?esc(r.proc.name):"—"},
-      {label:"Preuve", render:r=>r.q.preuveIds.length+" doc(s)"},
-      {label:"Constat", render:r=>r.constat?badge(LABELS.constatType[r.constat.type]):"—"},
-      {label:"Action / NC", render:r=>r.constat?(r.constat.actionId?"✅ Action":"")+(r.constat.ncEventId?" 🚨 NC":""):"—"} ],
-    rows
-  );
+  /* Index des preuves de cet audit : une même preuve Qonnect est référencée par plusieurs questions, jamais dupliquée. */
+  const index = {};
+  a.questions.forEach((q,i)=>(q.preuves||[]).forEach(ev=>{
+    const key = ev.refKind ? ev.refKind+"|"+ev.refId : "local|"+q.id+"|"+ev.id;
+    (index[key] = index[key] || { ev, qs:[] }).qs.push(i);
+  }));
+  const evRows = Object.values(index).sort((x,y)=>y.qs.length-x.qs.length);
+  return `
+  <div class="card card-flush table-wrap mb-4">
+    <table class="dt"><thead><tr><th>#</th><th>Exigence</th><th>Question</th><th>Preuves</th><th>Analyse</th><th>Proposition</th><th>Décision auditeur</th><th>Constat</th><th>Action / NC</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr class="clickable" data-route="audits/${a.id}/grille/${r.i}">
+      <td data-label="#">${r.i+1}</td>
+      <td data-label="Exigence">${r.ex?esc(r.ex.referentielName)+" — "+esc(r.ex.ref):esc(r.q.critere||"—")}</td>
+      <td data-label="Question">${esc(r.q.question.slice(0,60))+(r.q.question.length>60?"…":"")}${r.proc?`<div class="cell-sub">${esc(r.proc.name)}</div>`:""}</td>
+      <td data-label="Preuves">${(r.q.preuves||[]).length}</td>
+      <td data-label="Analyse">${badge(AQ_ANALYSIS_STATE_BADGE[r.st])}</td>
+      <td data-label="Proposition">${r.proposal?aqStatusBadge(r.proposal,true):"—"}</td>
+      <td data-label="Décision auditeur">${aqStatusBadge(r.q.statut||"non_evalue",true)}${r.q.decision&&r.q.decision.proposedStatus&&r.q.decision.status!==r.q.decision.proposedStatus?`<div class="cell-sub">≠ proposition Qonnect</div>`:""}</td>
+      <td data-label="Constat">${r.findings.length?r.findings.map(f=>badge(LABELS.constatType[f.type])).join(" "):"—"}</td>
+      <td data-label="Action / NC">${r.findings.length?r.findings.map(f=>(f.actionId?"✅ Action":"")+(f.ncEventId?" 🚨 NC":"")).join(" ").trim()||"—":"—"}</td>
+    </tr>`).join("")}
+    </tbody></table>
+  </div>
+  <div class="card">
+    <h3 class="mb-2">Index des preuves de cet audit</h3>
+    <p class="text-sm mb-2">Chaque preuve est une référence vers un objet Qonnect existant : une même preuve peut soutenir plusieurs exigences sans être dupliquée.</p>
+    ${evRows.length?`<div class="table-wrap"><table class="dt"><thead><tr><th>Preuve</th><th>Type</th><th>Utilisée dans</th></tr></thead><tbody>
+      ${evRows.map(x=>{ const r = resolveEvidence(x.ev); return `<tr><td data-label="Preuve">${r.route?`<span class="cell-title" data-route="${esc(r.route)}" style="cursor:pointer;">${esc(r.title)}</span>`:`<span class="cell-title">${esc(r.title)}</span>`}</td><td data-label="Type">${esc(getEvidenceType(x.ev.type).label)}</td><td data-label="Utilisée dans">${x.qs.map(i=>`<span class="badge badge-neutral" data-route="audits/${a.id}/grille/${i}" style="cursor:pointer;">Q${i+1}</span>`).join(" ")}</td></tr>`; }).join("")}
+    </tbody></table></div>`:`<p class="text-sm">Aucune preuve n'est encore référencée dans cet audit.</p>`}
+  </div>`;
 }
 
 function auditTabRapport(a){

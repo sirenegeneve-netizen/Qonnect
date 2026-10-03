@@ -255,11 +255,21 @@ const QONNECT_SEED = {
       motifs:["programme_annuel","non_conformite"],
       perimeter:{ processIds:["PROC-004"], activites:"Réglage et suivi de la ligne A", produits:"Ligne A", periodeDebut:"2025-10-01", periodeFin:"2026-04-01", exclusions:"Ligne B" },
       objectifs:["Vérifier la maîtrise des paramètres critiques de production", "Vérifier l'efficacité de l'action corrective sur l'étalonnage"],
-      criteres:{ referentielIds:["ISO9001"], requirementIds:["REQ-019"], documentIds:["DOC-011"] },
+      criteres:{ referentielIds:["ISO9001"], requirementIds:["REQ-019","REQ-010"], documentIds:["DOC-011"] },
       questions:[
         { id:"AUD-003-Q1", question:"La sonde de température est-elle étalonnée et sa traçabilité assurée ?", requirementId:"REQ-019", processId:"PROC-004", critere:"MO-011", preuveAttendue:"Certificat d'étalonnage", responsableInterroge:"Thomas Petit", statut:"non_conforme", commentaire:"Absence de certificat sur une période.", preuveIds:[] },
+        /* Exemple du nouveau parcours (exigence 8.1) : pratique décrite + 4 preuves, SANS analyse ni décision — c'est à l'utilisateur de les déclencher. */
+        { id:"AUD-003-Q2", question:"Comment cette exigence est-elle mise en œuvre et comment pouvez-vous démontrer son application dans le processus Production ?", requirementId:"REQ-010", processId:"PROC-004", critere:"8.1", preuveAttendue:"Procédure, enregistrement ou indicateur associé", responsableInterroge:"Thomas Petit", statut:"non_evalue", commentaire:"",
+          pratique:"La production est planifiée à partir des commandes validées. Les paramètres critiques de production sont définis dans les instructions de fabrication. Le responsable de production vérifie les paramètres avant démarrage et les contrôles sont enregistrés dans le dossier de production.",
+          preuveIds:["DOC-PROC-PRD","DOC-011"],
+          preuves:[
+            { id:"EV-001", type:"document_qonnect", refKind:"document", refId:"DOC-PROC-PRD", title:"Processus Production", description:"", url:"", fileName:"", addedAt:null, addedBy:null },
+            { id:"EV-002", type:"document_qonnect", refKind:"document", refId:"DOC-011", title:"Réglage ligne de production A", description:"", url:"", fileName:"", addedAt:null, addedBy:null },
+            { id:"EV-003", type:"observation", refKind:null, refId:null, title:"Vérification du réglage de la ligne A observée le 14/04/2026", description:"Vérification du réglage observée sur la ligne A avant démarrage.", url:"", fileName:"", date:"2026-04-14", addedAt:null, addedBy:null },
+            { id:"EV-004", type:"enregistrement", refKind:null, refId:null, title:"Contrôle de production du 14/04/2026", description:"Enregistrement du contrôle de production réalisé le 14/04/2026.", url:"", fileName:"", date:"2026-04-14", addedAt:null, addedBy:null },
+          ], analyse:null, decision:null, historique:[] },
       ],
-      parties:[ {name:"Thomas Petit", role:"Audité", questionIds:["AUD-003-Q1"], echeance:"2026-04-12", status:"complete"} ],
+      parties:[ {name:"Thomas Petit", role:"Audité", questionIds:["AUD-003-Q1","AUD-003-Q2"], echeance:"2026-04-12", status:"complete"} ],
       findings:[
         {id:"C-003", type:"ecart", text:"Absence de traçabilité de l'étalonnage de la sonde de température sur une période.", requirementId:"REQ-019", processId:"PROC-004", questionId:"AUD-003-Q1", gravite:"majeure", cause:"", riskId:"RISK-003", ncEventId:null, actionId:"ACT-003"},
       ] },
@@ -730,6 +740,69 @@ const AUDIT_WORKFLOW_STEPS = ["planifie","preparation","en_cours","analyse","syn
 const AUDIT_WORKFLOW_LABELS = ["Planifié","Préparation","En cours","Analyse","Synthèse","À valider","Validé","Clôturé"];
 function isAuditEcart(f){ return f.type==="ecart" || f.type==="nc_majeure"; }
 
+/* ---------- Attendus des exigences (synthèses internes, rédigées avec nos propres mots) ----------
+   Un « attendu » décrit ce qu'il faut pouvoir démontrer pour une exigence. Le mécanisme est indépendant du
+   référentiel : toute exigence (historique ISO 9001 via DB.requirements, ou importée via DB.customExigences)
+   peut porter { synthese, attendus:[{id,label,keywords,evidenceTypes,suggestion}] }.
+   - keywords : racines de mots (sans accent, minuscules) cherchées dans la pratique décrite et les métadonnées des preuves ;
+   - evidenceTypes : types de documents Qonnect qui suffisent à eux seuls (si rattachés au processus audité).
+   Ces données de démonstration sont appliquées par normalizeDocuments() aux exigences qui n'en ont pas encore. */
+const SEED_ATTENDUS = {
+  "REQ-010": { synthese:"L'organisation planifie ses activités opérationnelles, définit comment elles sont maîtrisées (conditions, critères, ressources) et conserve des traces montrant qu'elles se déroulent comme prévu.",
+    attendus:[
+      { id:"A1", label:"Planification des activités", keywords:["planifi","programm","ordonnanc","planning","commande"], evidenceTypes:["processus"], suggestion:"Fiche de processus, planning ou programme de production" },
+      { id:"A2", label:"Maîtrise des conditions de réalisation (paramètres, réglages, instructions)", keywords:["parametr","reglage","instruction","mode operatoire","fabrication","condition"], evidenceTypes:["mode_operatoire","instruction"], suggestion:"Mode opératoire ou instruction de travail applicable" },
+      { id:"A3", label:"Contrôles associés aux activités", keywords:["controle","verifi","inspection","surveillance"], evidenceTypes:[], suggestion:"Enregistrement de contrôle ou compte rendu de vérification" },
+      { id:"A4", label:"Critères d'acceptation ou de maîtrise définis et suivis", keywords:["critere","acceptation","tolerance","seuil","specification","valeur cible"], evidenceTypes:[], suggestion:"Document ou enregistrement précisant les critères d'acceptation et leur suivi" },
+      { id:"A5", label:"Informations conservées démontrant la réalisation", keywords:["enregistr","registre","releve","dossier de production","trace"], evidenceTypes:["enregistrement"], suggestion:"Enregistrement, registre ou dossier de production" } ] },
+  "REQ-012": { synthese:"La production ou la prestation est réalisée dans des conditions maîtrisées : informations disponibles, moyens adaptés, suivi, identification et traçabilité, prévention des erreurs.",
+    attendus:[
+      { id:"A1", label:"Informations de réalisation disponibles (instructions, spécifications)", keywords:["instruction","mode operatoire","specification","procedure","fabrication"], evidenceTypes:["mode_operatoire","instruction","procedure"], suggestion:"Instruction ou mode opératoire" },
+      { id:"A2", label:"Surveillance et mesure pendant la réalisation", keywords:["controle","mesure","surveillance","indicateur","verifi"], evidenceTypes:[], suggestion:"Enregistrement de contrôle ou indicateur de suivi" },
+      { id:"A3", label:"Identification et traçabilité", keywords:["tracabil","identifi","lot","numero de serie","etiquet"], evidenceTypes:[], suggestion:"Enregistrement de traçabilité" },
+      { id:"A4", label:"Prévention des erreurs humaines", keywords:["erreur","detrompeur","formation","habilitation","competence"], evidenceTypes:[], suggestion:"Preuve de formation ou dispositif de prévention" } ] },
+  "REQ-013": { synthese:"Les éléments de sortie non conformes sont identifiés, isolés, traités et leur traitement est conservé.",
+    attendus:[
+      { id:"A1", label:"Identification et isolement des éléments non conformes", keywords:["identifi","isol","quarantaine","non-conform","non conform"], evidenceTypes:[], suggestion:"Procédure ou enregistrement d'identification" },
+      { id:"A2", label:"Décision de traitement (reprise, dérogation, rebut)", keywords:["traitement","reprise","derogation","rebut","decision"], evidenceTypes:["procedure"], suggestion:"Procédure de traitement des non-conformités" },
+      { id:"A3", label:"Enregistrements conservés", keywords:["registre","enregistr","trace"], evidenceTypes:["enregistrement"], suggestion:"Registre des non-conformités" } ] },
+  "REQ-011": { synthese:"Les processus, produits et services fournis par des tiers sont maîtrisés : critères de sélection, évaluation, suivi des performances et communication des exigences.",
+    attendus:[
+      { id:"A1", label:"Critères de sélection et de qualification des fournisseurs", keywords:["selection","qualification","critere","homologation"], evidenceTypes:["procedure"], suggestion:"Procédure ou grille de qualification" },
+      { id:"A2", label:"Évaluation périodique des fournisseurs", keywords:["evaluation","evalue","notation","performance"], evidenceTypes:["formulaire"], suggestion:"Formulaire ou enregistrement d'évaluation" },
+      { id:"A3", label:"Contrôle des produits ou services reçus", keywords:["reception","controle","verifi","livraison"], evidenceTypes:["mode_operatoire"], suggestion:"Mode opératoire ou enregistrement de contrôle à réception" } ] },
+  "REQ-018": { synthese:"Le type et l'étendue de la maîtrise exercée sur les prestataires externes sont proportionnés à leur impact sur la conformité et prévoient des dispositions en cas de défaillance.",
+    attendus:[
+      { id:"A1", label:"Niveau de maîtrise défini selon la criticité du prestataire", keywords:["criticite","niveau","risque","dependance","proportion"], evidenceTypes:[], suggestion:"Cartographie ou classification des fournisseurs" },
+      { id:"A2", label:"Exigences transmises au prestataire", keywords:["exigence","cahier des charges","contrat","specification","convention"], evidenceTypes:[], suggestion:"Contrat ou cahier des charges" },
+      { id:"A3", label:"Dispositions en cas de défaillance (alternative, continuité)", keywords:["alternative","diversification","continuite","plan","second fournisseur"], evidenceTypes:[], suggestion:"Plan d'action ou de continuité" } ] },
+  "REQ-019": { synthese:"Les ressources de surveillance et de mesure sont adaptées, entretenues et, lorsque la traçabilité des mesures l'exige, étalonnées ou vérifiées avec conservation des preuves.",
+    attendus:[
+      { id:"A1", label:"Équipements de mesure identifiés", keywords:["equipement","sonde","instrument","appareil","identifi"], evidenceTypes:[], suggestion:"Liste ou inventaire des équipements de mesure" },
+      { id:"A2", label:"Étalonnage ou vérification à intervalles définis", keywords:["etalonn","verification","calibr","intervalle","periodicite"], evidenceTypes:[], suggestion:"Certificat d'étalonnage ou plan de vérification" },
+      { id:"A3", label:"Traçabilité des résultats conservée", keywords:["certificat","tracabil","enregistr","registre"], evidenceTypes:["enregistrement"], suggestion:"Certificats et enregistrements d'étalonnage" } ] },
+  "REQ-009": { synthese:"Les informations documentées nécessaires sont créées, mises à jour, approuvées, diffusées et protégées selon des règles définies.",
+    attendus:[
+      { id:"A1", label:"Règles de création, approbation et diffusion", keywords:["creation","validation","approbation","diffusion","nommage"], evidenceTypes:["procedure"], suggestion:"Procédure de gestion documentaire" },
+      { id:"A2", label:"Révision et mise à jour dans les délais", keywords:["revision","revis","mise a jour","echeance","delai"], evidenceTypes:[], suggestion:"Registre ou suivi des révisions" },
+      { id:"A3", label:"Maîtrise des versions en vigueur", keywords:["version","en vigueur","obsolete","archiv"], evidenceTypes:[], suggestion:"Liste maîtrisée des documents en vigueur" } ] },
+  "REQ-008": { synthese:"Les compétences nécessaires sont déterminées, acquises ou développées, évaluées, et des preuves en sont conservées.",
+    attendus:[
+      { id:"A1", label:"Compétences nécessaires déterminées", keywords:["besoin","cartograph","competence requise","referentiel de competence","poste"], evidenceTypes:[], suggestion:"Cartographie ou référentiel de compétences" },
+      { id:"A2", label:"Formation ou développement des compétences", keywords:["formation","plan de formation","habilitation"], evidenceTypes:[], suggestion:"Plan de formation ou attestations" },
+      { id:"A3", label:"Évaluation de l'efficacité et conservation des preuves", keywords:["evaluation","efficacite","attestation","entretien","registre"], evidenceTypes:[], suggestion:"Évaluations à chaud/à froid, registre des habilitations" } ] },
+  "REQ-015": { synthese:"Des audits internes sont planifiés et réalisés à intervalles prévus, avec critères et périmètre définis, résultats rapportés et actions menées sans retard injustifié.",
+    attendus:[
+      { id:"A1", label:"Programme et planification des audits", keywords:["programme","planifi","planning","plan d'audit"], evidenceTypes:["formulaire"], suggestion:"Programme ou plan d'audit" },
+      { id:"A2", label:"Critères, périmètre et objectivité des auditeurs", keywords:["critere","perimetre","objectiv","impartial","competence"], evidenceTypes:[], suggestion:"Plan d'audit mentionnant critères et périmètre" },
+      { id:"A3", label:"Rapport et suivi des actions", keywords:["rapport","constat","action","suivi"], evidenceTypes:["enregistrement"], suggestion:"Rapport d'audit et suivi des actions" } ] },
+  "REQ-017": { synthese:"Face à une non-conformité, l'organisation réagit, analyse les causes, met en œuvre des actions, vérifie leur efficacité et conserve les informations.",
+    attendus:[
+      { id:"A1", label:"Réaction et maîtrise immédiate", keywords:["reaction","correction","contenir","immediat","traitement"], evidenceTypes:[], suggestion:"Fiche de traitement de la non-conformité" },
+      { id:"A2", label:"Analyse des causes", keywords:["cause","analyse","5 pourquoi","ishikawa"], evidenceTypes:[], suggestion:"Analyse de causes documentée" },
+      { id:"A3", label:"Vérification de l'efficacité des actions", keywords:["efficacite","verification","cloture","suivi"], evidenceTypes:[], suggestion:"Preuve de vérification d'efficacité" } ] },
+};
+
 function normalizeDocuments(){
   DB.documents.forEach(d=>{
     d.requirementIds = d.requirementIds || [];
@@ -798,6 +871,34 @@ function normalizeDocuments(){
       if(typeof f.riskId==="undefined") f.riskId = null;
       if(typeof f.ncEventId==="undefined") f.ncEventId = null;
     });
+    /* Questions d'audit — nouveau parcours (pratique → preuves → analyse → décision).
+       Tous les champs sont optionnels : un audit créé avant cette évolution se charge sans perte.
+       - pratique : description de la pratique réelle. Ancien « commentaire / réponse » repris tel quel.
+         `commentaire` reste un miroir de `pratique` pour que d'anciens lecteurs continuent de fonctionner.
+       - preuves : preuves typées, par RÉFÉRENCE (jamais de copie) ; `preuveIds` reste la liste des documents référencés.
+       - analyse : dernière analyse Qonnect (aide à l'évaluation, jamais une décision).
+       - decision : évaluation finale de l'auditeur ; `statut` en reste la valeur courante.
+       - historique : journal de traçabilité de la question. */
+    (a.questions||[]).forEach(q=>{
+      if(typeof q.pratique==="undefined") q.pratique = q.commentaire || "";
+      q.preuveIds = q.preuveIds || [];
+      if(!Array.isArray(q.preuves)){
+        q.preuves = q.preuveIds.map(id=>{ const d=(DB.documents||[]).find(x=>x.id===id);
+          return { id:"EV-"+id, type:"document_qonnect", refKind:"document", refId:id, title:d?d.title:id, description:"", url:"", fileName:"", addedAt:null, addedBy:null, migrated:true }; });
+      }
+      if(typeof q.analyse==="undefined") q.analyse = null;
+      if(typeof q.decision==="undefined"){
+        q.decision = (q.statut && q.statut!=="non_evalue")
+          ? { status:q.statut, source:"historique", proposedStatus:null, comment:"", decidedAt:null, decidedBy:null, analysisAt:null }
+          : null;
+      }
+      if(!Array.isArray(q.historique)) q.historique = [];
+    });
+  });
+  /* Attendus des exigences : on complète sans jamais écraser ce qui a été saisi. */
+  (DB.requirements||[]).forEach(r=>{
+    const seed = SEED_ATTENDUS[r.id];
+    if(seed && !r.attendus){ r.attendus = JSON.parse(JSON.stringify(seed.attendus)); r.synthese = r.synthese || seed.synthese; }
   });
 }
 function loadDB(){
