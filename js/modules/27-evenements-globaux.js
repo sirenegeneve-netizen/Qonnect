@@ -184,17 +184,6 @@ function initGlobalEvents(){
       }
       return;
     }
-    const saveQEl = e.target.closest("[data-save-question]");
-    if(saveQEl){
-      const payload = JSON.parse(saveQEl.getAttribute("data-save-question"));
-      const a = getAudit(payload.auditId);
-      const q = findBy(a.questions, payload.questionId);
-      q.statut = document.getElementById("q-statut").value;
-      q.commentaire = document.getElementById("q-comment").value.trim();
-      q.preuveIds = [...document.querySelectorAll(".q-preuve-cb:checked")].map(c=>c.value);
-      saveDB(); toast("Réponse enregistrée"); navigate(`audits/${payload.auditId}/grille/${payload.qIdx}`);
-      return;
-    }
     const genQEl = e.target.closest("[data-generate-questions]");
     if(genQEl){
       const a = getAudit(genQEl.getAttribute("data-generate-questions"));

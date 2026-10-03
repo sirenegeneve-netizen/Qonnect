@@ -162,19 +162,26 @@ function openAuditWizard(presets){
   openModal({title:"Nouvel audit", wide:true, bodyHtml:bodyForStep(), footHtml:stepFoot(), onMount:(o)=>mount(o)});
 }
 
-function openConstatForm(auditId, existing){
+function openConstatForm(auditId, existing, presets){
   const audit = getAudit(auditId);
-  openModal({title: existing?"Modifier le constat":"Ajouter un constat", wide:true,
+  /* base : valeurs initiales du formulaire — le constat existant, ou un préremplissage issu d'une question d'audit (modifiable). */
+  const base = existing || presets || null;
+  const reqIds = (audit.criteres&&audit.criteres.requirementIds||[]).slice();
+  if(base && base.requirementId && !reqIds.includes(base.requirementId)) reqIds.push(base.requirementId);
+  const preuveRefs = presets && presets.preuveRefs ? presets.preuveRefs : [];
+  openModal({title: existing?"Modifier le constat":(presets?"Créer un constat à partir de la question":"Ajouter un constat"), wide:true,
     bodyHtml:`
-      <div class="field"><label>Type de constat</label><select id="qf-type">${Object.entries(LABELS.constatType).map(([v,l])=>`<option value="${v}" ${existing&&existing.type===v?"selected":""}>${l.e} ${l.l}</option>`).join("")}</select></div>
-      <div class="field"><label>Fait constaté <span class="req">*</span></label><textarea id="qf-text">${esc(existing?existing.text:"")}</textarea></div>
+      ${presets?`<div class="aq-callout" style="margin-top:0;margin-bottom:12px;">Constat prérempli à partir de l'analyse et de l'évaluation de l'auditeur. Modifiez librement avant de l'enregistrer : rien n'est créé tant que vous ne validez pas.</div>`:""}
+      <div class="field"><label>Type de constat</label><select id="qf-type">${Object.entries(LABELS.constatType).map(([v,l])=>`<option value="${v}" ${base&&base.type===v?"selected":""}>${l.e} ${l.l}</option>`).join("")}</select></div>
+      <div class="field"><label>Fait constaté <span class="req">*</span></label><textarea id="qf-text">${esc(base?base.text:"")}</textarea></div>
       <div class="field-row">
-        <div class="field"><label>Exigence concernée</label><select id="qf-req"><option value="">—</option>${(audit.criteres&&audit.criteres.requirementIds||[]).map(rid=>{const ex=resolveExigence(rid); return ex?`<option value="${rid}" ${existing&&existing.requirementId===rid?"selected":""}>${esc(ex.ref)} — ${esc(ex.label)}</option>`:"";}).join("")}</select></div>
-        <div class="field" id="qf-gravite-wrap"><label>Niveau de gravité</label><select id="qf-gravite"><option value="mineure">Mineure</option><option value="majeure">Majeure</option><option value="critique">Critique</option></select></div>
+        <div class="field"><label>Exigence concernée</label><select id="qf-req"><option value="">—</option>${reqIds.map(rid=>{const ex=resolveExigence(rid); return ex?`<option value="${rid}" ${base&&base.requirementId===rid?"selected":""}>${esc(ex.ref)} — ${esc(ex.label)}</option>`:"";}).join("")}</select></div>
+        <div class="field" id="qf-gravite-wrap"><label>Niveau de gravité</label><select id="qf-gravite">${Object.entries(LABELS.constatGravite).map(([v,l])=>`<option value="${v}" ${base&&base.gravite===v?"selected":""}>${l}</option>`).join("")}</select></div>
       </div>
-      <div class="field"><label>Cause potentielle (si déjà identifiée)</label><textarea id="qf-cause" placeholder="L'analyse de cause approfondie se fait dans le module NC/CAPA">${esc(existing?existing.cause:"")}</textarea></div>
-      <div class="field"><label>Risque associé</label><select id="qf-risk"><option value="">—</option>${DB.risks.map(r=>`<option value="${r.id}" ${existing&&existing.riskId===r.id?"selected":""}>${esc(r.name)}</option>`).join("")}</select></div>`,
-    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">${existing?"Enregistrer":"Ajouter"}</button>`,
+      <div class="field"><label>Cause potentielle (si déjà identifiée)</label><textarea id="qf-cause" placeholder="L'analyse de cause approfondie se fait dans le module NC/CAPA">${esc(base?base.cause:"")}</textarea></div>
+      <div class="field"><label>Risque associé</label><select id="qf-risk"><option value="">—</option>${DB.risks.map(r=>`<option value="${r.id}" ${existing&&existing.riskId===r.id?"selected":""}>${esc(r.name)}</option>`).join("")}</select></div>
+      ${preuveRefs.length?`<div class="field"><label>Preuves associées (reprises de la question)</label><div class="aq-pick">${preuveRefs.map(p=>`<label><input type="checkbox" class="qf-ev-cb" value="${esc(p.evidenceId)}" checked><div><div class="cell-title">${esc(p.title)}</div><div class="text-xs">${esc(getEvidenceType(p.type).label)} · ${esc(p.evidenceId)}</div></div></label>`).join("")}</div><div class="hint">Les preuves sont référencées, pas copiées.</div></div>`:""}`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="qf-submit">${existing?"Enregistrer":(presets?"Créer le constat":"Ajouter")}</button>`,
     onMount:(o)=>{
       const typeSel = o.querySelector("#qf-type");
       const toggleGravite = ()=> o.querySelector("#qf-gravite-wrap").style.display = (typeSel.value==="ecart"||typeSel.value==="nc_majeure")?"block":"none";
@@ -184,7 +191,13 @@ function openConstatForm(auditId, existing){
         if(!text){ toast("Merci de décrire le constat","⚠️"); return; }
         const payload = { type:typeSel.value, text, requirementId:o.querySelector("#qf-req").value||null, cause:o.querySelector("#qf-cause").value.trim(), riskId:o.querySelector("#qf-risk").value||null, gravite:(typeSel.value==="ecart"||typeSel.value==="nc_majeure")?o.querySelector("#qf-gravite").value:null };
         if(existing){ Object.assign(existing, payload); }
-        else{ audit.findings.push({ id:"C-"+String(Date.now()).slice(-6), ...payload, processId:audit.processId, questionId:null, ncEventId:null, actionId:null }); }
+        else{
+          const keep = new Set([...o.querySelectorAll(".qf-ev-cb:checked")].map(c=>c.value));
+          const link = presets ? { questionId:presets.questionId||null, source:"question_audit", analysisAt:presets.analysisAt||null, preuveRefs:preuveRefs.filter(p=>keep.has(p.evidenceId)) } : { questionId:null };
+          const finding = { id:"C-"+String(Date.now()).slice(-6), ...payload, processId:audit.processId, ncEventId:null, actionId:null, ...link };
+          audit.findings.push(finding);
+          if(presets && presets.questionId){ const pq = findBy(audit.questions, presets.questionId); if(pq) logQuestionEvent(pq, "constat", "Constat créé : "+finding.id+" ("+(LABELS.constatType[finding.type]?LABELS.constatType[finding.type].l:finding.type)+")"); }
+        }
         saveDB(); closeModal(); toast(existing?"Constat mis à jour":"Constat ajouté"); render();
       });
     }
@@ -206,9 +219,8 @@ function openQuestionAddForm(auditId){
     onMount:(o)=>{ o.querySelector("#qf-submit").addEventListener("click", ()=>{
       const question = o.querySelector("#qf-question").value.trim();
       if(!question){ toast("Merci de saisir la question","⚠️"); return; }
-      audit.questions.push({ id:"Q-"+Math.random().toString(36).slice(2,8), question, requirementId:null, processId:o.querySelector("#qf-process").value||audit.processId,
-        critere:o.querySelector("#qf-critere").value.trim(), preuveAttendue:o.querySelector("#qf-preuve-attendue").value.trim(), responsableInterroge:o.querySelector("#qf-resp").value.trim(),
-        statut:"non_evalue", commentaire:"", preuveIds:[] });
+      audit.questions.push(newAuditQuestion({ question, requirementId:null, processId:o.querySelector("#qf-process").value||audit.processId,
+        critere:o.querySelector("#qf-critere").value.trim(), preuveAttendue:o.querySelector("#qf-preuve-attendue").value.trim(), responsableInterroge:o.querySelector("#qf-resp").value.trim() }));
       saveDB(); closeModal(); toast("Question ajoutée"); navigate(`audits/${auditId}/grille/${audit.questions.length-1}`);
     });}
   });
