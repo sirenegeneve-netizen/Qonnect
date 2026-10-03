@@ -88,9 +88,44 @@ function normalizeAnalysisResult(raw){
     justification: str(raw.justification,"justification"),
     additionalEvidenceSuggested: arr(raw.additionalEvidenceSuggested,"additionalEvidenceSuggested"),
     justificationPoints: arr(raw.justificationPoints,"justificationPoints"),
+    narrative: str(raw.narrative,"narrative"),
     limits: arr(raw.limits,"limits"),
     coverage: raw.coverage && typeof raw.coverage==="object" ? { covered:+raw.coverage.covered||0, total:+raw.coverage.total||0 } : null,
   };
+}
+
+/* Statut proposé + synthèse + points de justification, DÉDUITS des attendus couverts / manquants.
+   Partagé par tous les moteurs : un moteur (règles ou IA) établit quels attendus sont démontrés et par quelles preuves ;
+   c'est ce code, déterministe et lisible, qui en tire la proposition — le moteur ne « décide » jamais du statut. */
+function composeAnalysisOutcome(input, covered, missing){
+  const ex = input.exigence || {};
+  const total = (ex.attendus||[]).length;
+  const preuves = input.preuves || [];
+  const practiceEmpty = !String(input.pratique||"").trim();
+  const label = ex.ref ? ("l'exigence "+ex.ref) : "la question";
+  let proposed, summary, points = [];
+  if(!total){
+    proposed = "a_verifier";
+    summary = "Aucun attendu n'est défini pour "+label+" : Qonnect ne peut pas mettre les éléments fournis en regard de l'exigence.";
+    points.push("Aucun attendu n'est renseigné sur l'exigence ni de « preuve attendue » sur la question.");
+  } else if(practiceEmpty && !preuves.length){
+    proposed = "a_verifier";
+    summary = "Aucun élément (ni pratique décrite, ni preuve) n'a été fourni pour "+label+".";
+    points.push("La pratique n'est pas décrite et aucune preuve n'est référencée.");
+  } else if(covered.length===total){
+    proposed = "conforme";
+    summary = "Les éléments fournis démontrent l'ensemble des attendus identifiés pour "+label+" ("+covered.map(c=>c.label.toLowerCase()).join(", ")+").";
+  } else if(covered.length>0){
+    proposed = "partiellement_conforme";
+    summary = "Les éléments fournis démontrent "+covered.length+" attendu(s) sur "+total+" pour "+label+" : "+covered.map(c=>c.label.toLowerCase()).join(" ; ")+". "
+            + missing.length+" élément(s) reste(nt) insuffisamment démontré(s) : "+missing.map(m=>m.label.toLowerCase()).join(" ; ")+".";
+  } else {
+    proposed = "a_verifier";
+    summary = "Aucun des "+total+" attendus de "+label+" n'est démontré par les éléments fournis. Cela ne vaut pas constat de non-conformité : les preuves peuvent exister sans avoir été référencées.";
+  }
+  covered.forEach(c=> points.push("Démontré — "+c.label+" (preuve : "+c.evidence.map(h=>h.title).join(", ")+")."));
+  missing.forEach(m=> points.push("Non démontré — "+m.label+" : "+m.reason));
+  return { proposed, summary, points };
 }
 
 /* ---- Moteur local à règles (provisoire) ---- */
@@ -100,6 +135,7 @@ const LOCAL_RULES_ENGINE = {
   kind:"rules",
   isAI:false,
   version:"1.0",
+  allowedProposals:["conforme","partiellement_conforme","a_verifier"],
   disclaimer:"Ce n'est pas une analyse par intelligence artificielle. Qonnect rapproche des mots-clés entre les attendus de l'exigence, la pratique décrite et le titre, la description et le type des preuves. Il ne lit pas le sens des documents : toute conclusion doit être relue par l'auditeur.",
   analyze(input){
     const ex = input.exigence || {};
@@ -155,30 +191,9 @@ const LOCAL_RULES_ENGINE = {
     });
 
     const total = attendus.length;
-    const label = ex.ref ? ("l'exigence "+ex.ref) : "la question";
     const limits = [ this.disclaimer ];
-    let proposed, summary, points = [];
-    if(!total){
-      proposed = "a_verifier";
-      summary = "Aucun attendu n'est défini pour "+label+" : Qonnect ne peut pas mettre les éléments fournis en regard de l'exigence.";
-      points.push("Aucun attendu n'est renseigné sur l'exigence ni de « preuve attendue » sur la question.");
-    } else if(!practice.trim() && !preuves.length){
-      proposed = "a_verifier";
-      summary = "Aucun élément (ni pratique décrite, ni preuve) n'a été fourni pour "+label+".";
-      points.push("La pratique n'est pas décrite et aucune preuve n'est référencée.");
-    } else if(covered.length===total){
-      proposed = "conforme";
-      summary = "Les éléments fournis démontrent l'ensemble des attendus identifiés pour "+label+" ("+covered.map(c=>c.label.toLowerCase()).join(", ")+").";
-    } else if(covered.length>0){
-      proposed = "partiellement_conforme";
-      summary = "Les éléments fournis démontrent "+covered.length+" attendu(s) sur "+total+" pour "+label+" : "+covered.map(c=>c.label.toLowerCase()).join(" ; ")+". "
-              + missing.length+" élément(s) reste(nt) insuffisamment démontré(s) : "+missing.map(m=>m.label.toLowerCase()).join(" ; ")+".";
-    } else {
-      proposed = "a_verifier";
-      summary = "Aucun des "+total+" attendus de "+label+" n'est démontré par les éléments fournis. Cela ne vaut pas constat de non-conformité : les preuves peuvent exister sans avoir été référencées.";
-    }
-    covered.forEach(c=> points.push("Démontré — "+c.label+" (preuve : "+c.evidence.map(h=>h.title).join(", ")+")."));
-    missing.forEach(m=> points.push("Non démontré — "+m.label+" : "+m.reason));
+    const outcome = composeAnalysisOutcome(input, covered, missing);
+    const proposed = outcome.proposed, summary = outcome.summary, points = outcome.points;
     if(input.exigence && input.exigence.attendusSource==="preuve_attendue") limits.push("Aucun attendu n'est défini sur l'exigence : l'analyse repose sur la « preuve attendue » indiquée dans la question.");
     if(proposed==="conforme") limits.push("Une proposition « Conforme » signifie que chaque attendu est rapproché d'au moins une preuve ; elle ne vérifie pas la qualité ni le contenu réel des preuves.");
 
@@ -324,16 +339,18 @@ function logQuestionEvent(q, action, detail){
 }
 
 /* Lance l'analyse (asynchrone pour accepter un moteur IA). Enregistre le résultat sur la question, sans toucher au statut final. */
-async function runQuestionAnalysis(auditId, questionId){
+async function runQuestionAnalysis(auditId, questionId, options){
   const audit = getAudit(auditId);
   const q = audit && findBy(audit.questions, questionId);
   if(!q) throw new Error("Question introuvable.");
   const engine = getActiveAnalysisEngine();
   const input = buildAnalysisInput(audit, q);
-  const raw = await engine.analyze(input);
+  const raw = await engine.analyze(input, options||{});
   const result = normalizeAnalysisResult(raw);
-  if(engine.kind==="rules" && !ANALYSIS_ALLOWED_PROPOSALS.includes(result.proposedStatus))
-    throw new Error("Le moteur à règles ne peut proposer que : conforme, partiellement conforme ou à vérifier.");
+  /* Un moteur local (règles ou modèle embarqué) ne peut pas proposer « non conforme » ni « non applicable » : c'est un jugement d'auditeur. */
+  const allowed = engine.allowedProposals || (engine.kind==="rules" ? ANALYSIS_ALLOWED_PROPOSALS : null);
+  if(allowed && !allowed.includes(result.proposedStatus))
+    throw new Error("Ce moteur d'analyse ne peut proposer que : "+allowed.map(x=>(LABELS.questionStatus[x]||{l:x}).l.toLowerCase()).join(", ")+".");
   q.analyse = {
     engine:{ id:engine.id, label:engine.label, kind:engine.kind, isAI:!!engine.isAI, version:engine.version, disclaimer:engine.disclaimer||"" },
     analyzedAt:new Date().toISOString(), analyzedBy:currentActor(),
