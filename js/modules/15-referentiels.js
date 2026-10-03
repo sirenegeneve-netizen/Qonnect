@@ -371,6 +371,9 @@ function openExigenceEditForm(refId, exigenceId){
       </div>
       <div class="field"><label>Intitulé <span class="req">*</span></label><input type="text" id="ex-title" value="${esc(isLegacy?entity.label:entity.title)}"></div>
       ${!isLegacy?`<div class="field"><label>Description</label><textarea id="ex-desc">${esc(entity.description||"")}</textarea></div>`:""}
+      <div class="field"><label>Résumé de l'attendu (rédigé avec vos mots)</label><textarea id="ex-synthese" placeholder="Que doit-on pouvoir démontrer pour cette exigence ?">${esc(entity.synthese||"")}</textarea></div>
+      <div class="field"><label>Éléments à pouvoir démontrer (attendus)</label><textarea id="ex-attendus" style="min-height:110px;" placeholder="Un attendu par ligne :&#10;Libellé | mots-clés séparés par des virgules | preuve suggérée">${esc(attendusToLines(entity.attendus))}</textarea>
+        <div class="hint">Utilisés par l'analyse Qonnect des audits. Format : <em>Libellé | mots-clés | preuve suggérée</em> (mots-clés et preuve facultatifs). Rédigez une synthèse : ne recopiez pas le texte protégé d'une norme.</div></div>
       <div class="field"><label>Documents associés (preuves)</label><div style="max-height:130px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
         ${DB.documents.filter(d=>d.status!=="obsolete").map(d=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="ex-doc-cb" value="${d.id}" ${currentDocIds.includes(d.id)?"checked":""} style="width:auto;"> ${esc(d.title)}</label>`).join("")}
       </div></div>
@@ -399,6 +402,9 @@ function openExigenceEditForm(refId, exigenceId){
           entity.ref = refTxt; entity.title = title; entity.description = o.querySelector("#ex-desc").value.trim();
           entity.processIds = processId ? [processId] : []; entity.docIds = docIds; entity.riskIds = riskIds; entity.auditIds = auditIds;
         }
+        entity.synthese = o.querySelector("#ex-synthese").value.trim();
+        const parsed = linesToAttendus(o.querySelector("#ex-attendus").value, entity.attendus);
+        entity.attendus = parsed;
         saveDB(); closeModal(); toast("Exigence mise à jour"); navigate(`referentiels/${refId}/exigences`);
       });
       o.querySelector("#ex-delete").addEventListener("click", ()=>{
@@ -410,6 +416,21 @@ function openExigenceEditForm(refId, exigenceId){
       });
     }
   });
+}
+
+/* Attendus d'une exigence <-> texte éditable (« Libellé | mots-clés | preuve suggérée », un par ligne). Générique : valable pour tout référentiel. */
+function attendusToLines(list){
+  return (list||[]).map(a=>[a.label, (a.keywords||[]).join(", "), a.suggestion||""].join(" | ").replace(/( \| )+$/,"")).join("\n");
+}
+function linesToAttendus(text, previous){
+  const prev = previous||[];
+  return String(text||"").split("\n").map(l=>l.trim()).filter(Boolean).map((line,i)=>{
+    const [label, kw, sug] = line.split("|").map(x=>(x||"").trim());
+    const old = prev.find(p=>p.label===label);
+    let keywords = (kw||"").split(",").map(k=>k.trim()).filter(Boolean);
+    if(!keywords.length) keywords = keywordStems(label);
+    return { id: old?old.id:"A"+(i+1), label, keywords, evidenceTypes: old?(old.evidenceTypes||[]):[], suggestion: sug||(old?old.suggestion:"")||"" };
+  }).filter(a=>a.label);
 }
 
 /* ---------- Assistant IA spécialisé Référentiels ---------- */
