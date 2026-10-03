@@ -748,6 +748,57 @@ function isAuditEcart(f){ return f.type==="ecart" || f.type==="nc_majeure"; }
    - evidenceTypes : types de documents Qonnect qui suffisent à eux seuls (si rattachés au processus audité).
    Ces données de démonstration sont appliquées par normalizeDocuments() aux exigences qui n'en ont pas encore. */
 const SEED_ATTENDUS = {
+  "REQ-001": { synthese:"L'organisation identifie les enjeux externes et internes qui influencent sa capacité à atteindre les résultats attendus, et les suit dans le temps.",
+    attendus:[
+      { id:"A1", label:"Enjeux externes et internes identifiés", keywords:["enjeu","contexte","swot","pestel","afom","environnement"], evidenceTypes:[], suggestion:"Analyse de contexte (SWOT, PESTEL…) à jour" },
+      { id:"A2", label:"Suivi et revue périodique des enjeux", keywords:["revue","mise a jour","periodique","suivi","revise"], evidenceTypes:[], suggestion:"Compte rendu de revue de l'analyse de contexte" } ] },
+  "REQ-002": { synthese:"Les parties intéressées pertinentes et leurs besoins et attentes sont déterminés et suivis.",
+    attendus:[
+      { id:"A1", label:"Parties intéressées pertinentes identifiées", keywords:["partie interessee","parties interessees","client","partenaire","autorite","cartograph"], evidenceTypes:[], suggestion:"Cartographie des parties intéressées" },
+      { id:"A2", label:"Besoins et attentes déterminés", keywords:["besoin","attente","exigence","enquete","satisfaction"], evidenceTypes:[], suggestion:"Tableau des besoins et attentes" },
+      { id:"A3", label:"Suivi de l'évolution", keywords:["revue","suivi","mise a jour","evolution"], evidenceTypes:[], suggestion:"Trace d'une revue périodique" } ] },
+  "REQ-003": { synthese:"La direction démontre son leadership : elle s'implique, oriente les priorités, met à disposition les ressources et promeut l'amélioration.",
+    attendus:[
+      { id:"A1", label:"Implication de la direction dans le système", keywords:["direction","engagement","pilotage","implication","revue de direction"], evidenceTypes:[], suggestion:"Compte rendu de revue de direction ou décisions" },
+      { id:"A2", label:"Orientation client prise en compte", keywords:["client","satisfaction","reclamation","enquete"], evidenceTypes:[], suggestion:"Suivi de la satisfaction client" },
+      { id:"A3", label:"Ressources mises à disposition et amélioration promue", keywords:["ressource","budget","moyen","amelioration"], evidenceTypes:[], suggestion:"Décisions de la direction sur les ressources" } ] },
+  "REQ-004": { synthese:"Une politique qualité adaptée au contexte est établie, communiquée, comprise et tenue à disposition.",
+    attendus:[
+      { id:"A1", label:"Politique qualité établie et approuvée", keywords:["politique"], evidenceTypes:["politique"], suggestion:"Politique qualité approuvée par la direction" },
+      { id:"A2", label:"Politique communiquée et comprise", keywords:["communic","diffusion","affich","sensibilis","comprise"], evidenceTypes:[], suggestion:"Preuve de diffusion ou de sensibilisation" },
+      { id:"A3", label:"Politique revue périodiquement", keywords:["revue","revis","mise a jour","version"], evidenceTypes:[], suggestion:"Trace de revue de la politique" } ] },
+  "REQ-005": { synthese:"Les risques et opportunités susceptibles d'affecter les résultats sont identifiés, évalués et traités par des actions dont l'efficacité est évaluée.",
+    attendus:[
+      { id:"A1", label:"Risques et opportunités identifiés", keywords:["risque","opportunite","identifi","cartograph"], evidenceTypes:[], suggestion:"Registre des risques et opportunités" },
+      { id:"A2", label:"Évaluation et priorisation", keywords:["evaluation","criticite","cotation","probabilite","gravite","priorit"], evidenceTypes:[], suggestion:"Cotation ou criticité des risques" },
+      { id:"A3", label:"Actions de traitement planifiées", keywords:["action","plan d'action","traitement","maitrise"], evidenceTypes:[], suggestion:"Plan d'actions de traitement" },
+      { id:"A4", label:"Efficacité des actions évaluée", keywords:["efficacite","verification","suivi","reevaluation"], evidenceTypes:[], suggestion:"Revue d'efficacité des actions" } ] },
+  "REQ-006": { synthese:"Des objectifs qualité mesurables sont fixés aux fonctions et processus concernés, avec un plan précisant qui fait quoi, avec quels moyens et quand.",
+    attendus:[
+      { id:"A1", label:"Objectifs mesurables définis", keywords:["objectif","cible","indicateur","mesurable"], evidenceTypes:[], suggestion:"Tableau des objectifs et indicateurs" },
+      { id:"A2", label:"Planification : responsable, moyens, échéance", keywords:["responsable","echeance","delai","planifi","moyen","pilote"], evidenceTypes:[], suggestion:"Plan d'atteinte des objectifs" },
+      { id:"A3", label:"Suivi de l'atteinte", keywords:["suivi","atteinte","resultat","tableau de bord","revue"], evidenceTypes:[], suggestion:"Tableau de bord de suivi" } ] },
+  "REQ-007": { synthese:"Les ressources nécessaires (personnes, infrastructures, environnement de travail, connaissances) sont déterminées et fournies.",
+    attendus:[
+      { id:"A1", label:"Besoins en ressources déterminés", keywords:["besoin","ressource","effectif","budget","moyen"], evidenceTypes:[], suggestion:"Analyse des besoins en ressources" },
+      { id:"A2", label:"Infrastructures et environnement de travail maintenus", keywords:["infrastructure","maintenance","equipement","locaux","environnement de travail"], evidenceTypes:[], suggestion:"Plan de maintenance ou enregistrements d'entretien" },
+      { id:"A3", label:"Connaissances organisationnelles gérées", keywords:["connaissance","capitalis","retour d'experience","savoir"], evidenceTypes:[], suggestion:"Dispositif de capitalisation des connaissances" } ] },
+  "REQ-014": { synthese:"Ce qui doit être surveillé et mesuré est déterminé, les résultats sont analysés et la performance du système est évaluée, y compris la satisfaction des clients.",
+    attendus:[
+      { id:"A1", label:"Éléments à surveiller et méthodes définis", keywords:["indicateur","surveillance","mesure","methode","frequence"], evidenceTypes:[], suggestion:"Liste des indicateurs avec méthode et fréquence" },
+      { id:"A2", label:"Satisfaction des clients suivie", keywords:["satisfaction","client","reclamation","enquete"], evidenceTypes:[], suggestion:"Enquête ou suivi des réclamations" },
+      { id:"A3", label:"Résultats analysés et évalués", keywords:["analyse","tendance","evaluation","resultat","revue"], evidenceTypes:[], suggestion:"Analyse des données de performance" } ] },
+  "REQ-016": { synthese:"La direction revoit le système à intervalles planifiés et conserve des décisions relatives aux opportunités d'amélioration et aux besoins de changement.",
+    attendus:[
+      { id:"A1", label:"Revue planifiée à intervalles définis", keywords:["revue de direction","planifi","periodicite","semestr","annuel"], evidenceTypes:[], suggestion:"Planning des revues de direction" },
+      { id:"A2", label:"Éléments d'entrée examinés", keywords:["element d'entree","donnees","indicateur","audit","non-conformite","resultat"], evidenceTypes:[], suggestion:"Dossier de préparation de la revue" },
+      { id:"A3", label:"Décisions et actions consignées", keywords:["decision","action","compte rendu","compte-rendu","conclusion"], evidenceTypes:[], suggestion:"Compte rendu avec décisions" } ] },
+  "REQ-020": { synthese:"Les exigences relatives aux produits et services sont déterminées, revues avant engagement, et les changements sont maîtrisés et communiqués.",
+    attendus:[
+      { id:"A1", label:"Communication avec les clients", keywords:["communication","client","information","reclamation"], evidenceTypes:[], suggestion:"Modalités de communication client" },
+      { id:"A2", label:"Exigences déterminées (clients, légales et réglementaires)", keywords:["exigence","cahier des charges","reglementaire","legal","specification"], evidenceTypes:[], suggestion:"Recueil des exigences" },
+      { id:"A3", label:"Revue avant engagement", keywords:["revue","commande","contrat","devis","faisabilite","validation"], evidenceTypes:[], suggestion:"Enregistrement de la revue de commande" },
+      { id:"A4", label:"Changements d'exigences maîtrisés", keywords:["modification","changement","avenant","mise a jour"], evidenceTypes:[], suggestion:"Trace de prise en compte des changements" } ] },
   "REQ-010": { synthese:"L'organisation planifie ses activités opérationnelles, définit comment elles sont maîtrisées (conditions, critères, ressources) et conserve des traces montrant qu'elles se déroulent comme prévu.",
     attendus:[
       { id:"A1", label:"Planification des activités", keywords:["planifi","programm","ordonnanc","planning","commande"], evidenceTypes:["processus"], suggestion:"Fiche de processus, planning ou programme de production" },
