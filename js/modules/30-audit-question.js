@@ -169,7 +169,7 @@ function aqCardPreuves(a, q, locked){
 
 /* ---------- Étape 4 — Analyse Qonnect ---------- */
 function aqEngineBadge(engine){
-  return engine.isAI ? badgeRaw("info","Analyse par IA — "+engine.label) : badgeRaw("warning","Moteur à règles — provisoire");
+  return engine.isAI ? badgeRaw("info", engine.local ? "IA locale — aucune donnée envoyée" : "Analyse par IA — "+engine.label) : badgeRaw("warning","Moteur à règles — provisoire");
 }
 function aqCardAnalyse(a, q, state, locked){
   const engine = q.analyse ? q.analyse.engine : getActiveAnalysisEngine();
@@ -177,7 +177,7 @@ function aqCardAnalyse(a, q, state, locked){
   let body = "";
   if(state==="none"){
     body = `<p class="text-sm">Après l'enregistrement de la pratique et des preuves, Qonnect met vos éléments en regard de l'exigence : ce qui est démontré, ce qui manque, et pourquoi. Cette analyse est une <strong>aide à l'évaluation</strong> ; elle n'a aucune valeur de décision.</p>
-      ${!locked?`<div class="aq-actions"><button class="btn btn-primary" data-aq-action="analyse" ${canRun?"":"disabled"}>🔎 Analyser les éléments</button></div>${canRun?"":`<p class="text-xs mt-2">Décrivez la pratique ou ajoutez au moins une preuve pour lancer l'analyse.</p>`}`:""}
+      ${!locked?`<div class="aq-actions"><button class="btn btn-primary" data-aq-action="analyse" ${canRun?"":"disabled"}>🔎 Analyser les éléments</button></div>${engine.local && typeof LOCAL_LLM_STATE!=="undefined" && LOCAL_LLM_STATE.status!=="ready" ? `<p class="text-xs mt-2">L'IA locale n'est pas encore chargée : le premier lancement télécharge le modèle (voir Administration → Moteur d'analyse des audits).</p>`:""}${canRun?"":`<p class="text-xs mt-2">Décrivez la pratique ou ajoutez au moins une preuve pour lancer l'analyse.</p>`}`:""}
       <div class="aq-callout warn">${esc(engine.disclaimer||"")}</div>`;
   } else {
     const an = q.analyse, r = an.result;
@@ -187,12 +187,13 @@ function aqCardAnalyse(a, q, state, locked){
       <p class="text-xs">Analyse réalisée le ${esc(aqFmtDateTime(an.analyzedAt))} par ${esc(an.engine.label)} (v${esc(an.engine.version)})</p>
       <details class="aq-details" open><summary>Éléments identifiés</summary>
         <div class="mt-2">
-          ${covered.map(c=>`<div class="aq-line"><span class="aq-mark ok">✓</span><div><div class="cell-title">${esc(c.label)}</div><div class="text-sm">Preuve : ${c.evidence.map(h=>esc(h.title)).join(" ; ")}</div><div class="text-xs">Rapprochement : ${c.evidence.map(h=>esc(h.via)+(h.terms&&h.terms.length?" (« "+esc(h.terms.join(", "))+" »)":"")).join(" ; ")}</div></div></div>`).join("")}
+          ${covered.map(c=>`<div class="aq-line"><span class="aq-mark ok">✓</span><div><div class="cell-title">${esc(c.label)}</div><div class="text-sm">Preuve : ${c.evidence.map(h=>esc(h.title)).join(" ; ")}</div><div class="text-xs">Rapprochement : ${c.evidence.map(h=>esc(h.via)+(h.terms&&h.terms.length?" (« "+esc(h.terms.join(", "))+" »)":"")).join(" ; ")}</div>${c.reason?`<div class="text-xs">Raisonnement du modèle : ${esc(c.reason)}</div>`:""}</div></div>`).join("")}
           ${missing.map(m=>`<div class="aq-line"><span class="aq-mark ko">⚠</span><div><div class="cell-title">Élément à compléter — ${esc(m.label)}</div><div class="text-sm">${esc(m.reason)}</div></div></div>`).join("")}
           ${!covered.length && !missing.length ? `<p class="text-sm">Aucun attendu n'a pu être évalué.</p>`:""}
         </div>
       </details>
       <div class="mt-4"><div class="aq-fact"><div class="k">Synthèse de l'analyse</div><div class="v">${esc(r.analysisSummary)}</div></div></div>
+      ${r.narrative?`<div class="mt-2"><div class="aq-fact"><div class="k">Commentaire du modèle (à relire)</div><div class="v">${esc(r.narrative)}</div></div></div>`:""}
       ${r.coverage && r.coverage.total ? `<p class="text-xs mt-2">Information secondaire : ${r.coverage.covered} attendu(s) sur ${r.coverage.total} rapproché(s) d'au moins une preuve. Ce n'est pas un taux de conformité ; la justification ci-dessus fait foi.</p>`:""}
       ${r.evidenceAssessment.length?`<details class="aq-details"><summary>Évaluation des preuves (${r.evidenceAssessment.length})</summary><div class="mt-2">
         ${r.evidenceAssessment.map(e=>`<div class="aq-line"><span class="aq-mark ${e.relevance==="pertinente"?"ok":"ko"}">${e.relevance==="pertinente"?"✓":"?"}</span><div><div class="cell-title">${esc(e.title)}</div><div class="text-sm">${esc(e.note)}</div>${(e.warnings||[]).map(w=>`<div class="text-xs" style="color:#8a5a05;">⚠ ${esc(w)}</div>`).join("")}</div></div>`).join("")}
@@ -467,7 +468,12 @@ document.addEventListener("click", async e=>{
   if(action==="analyse"){
     if(!aqCapturePratique(a,q)) return;
     btn.disabled = true; btn.textContent = "Analyse en cours…";
-    try{ await runQuestionAnalysis(a.id, q.id); toast("Analyse terminée — proposition à valider par l'auditeur"); }
+    const onProgress = (st)=>{
+      if(!btn.isConnected) return;
+      btn.textContent = st.status==="analyzing" ? "Analyse en cours…"
+        : "Chargement du modèle… "+Math.round((st.progress||0)*100)+" %";
+    };
+    try{ await runQuestionAnalysis(a.id, q.id, { onProgress }); toast("Analyse terminée — proposition à valider par l'auditeur"); }
     catch(err){ console.error(err); toast("L'analyse a échoué : "+(err&&err.message?err.message:"erreur inconnue"),"⚠️"); }
     render();
     return;

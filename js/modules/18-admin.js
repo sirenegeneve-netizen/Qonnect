@@ -11,6 +11,7 @@ function pageAdmin(){
       <p class="text-sm mt-2">Référentiel actif : ${DB.referentiels.find(r=>r.active)?.name || "—"}</p>
       <p class="text-sm mt-2">Utilisateurs : 12 (démonstration)</p>
     </div>
+    ${typeof adminAnalysisEngineCard==="function" ? adminAnalysisEngineCard() : ""}
     <div class="card">
       <h3 class="mb-2">Données du prototype</h3>
       <p class="text-sm mb-2">Toutes les données sont stockées localement dans votre navigateur (localStorage). Aucune donnée n'est envoyée à un serveur.</p>
