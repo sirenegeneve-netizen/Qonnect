@@ -367,8 +367,8 @@ const QONNECT_SEED = {
   changeSteps: ["Déclaré","Analyse d'impact","Risques","Plan d'action","Mise en œuvre","Vérification","Clôturé"],
 
   referentiels: [
-    { id:"ISO9001", name:"ISO 9001:2026", desc:"Systèmes de management de la qualité — Exigences", active:true,
-      version:"2026", importDate:"2026-01-05", author:"Claire Dubreuil", origin:"Import initial de la norme", versions:[{version:"2026", date:"2026-01-05", note:"Import initial — exigences simplifiées à des fins de démonstration."}] },
+    { id:"ISO9001", name:"ISO 9001:2015", desc:"Systèmes de management de la qualité — Exigences", active:true,
+      version:"2015", importDate:"2026-01-05", author:"Claire Dubreuil", origin:"Import initial de la norme", versions:[{version:"2015", date:"2026-01-05", note:"Import initial — exigences simplifiées à des fins de démonstration."}] },
     { id:"ISO13485", name:"ISO 13485", desc:"Dispositifs médicaux — Systèmes de management de la qualité", active:false,
       version:null, importDate:null, author:null, origin:null, versions:[] },
     { id:"ISO14001", name:"ISO 14001", desc:"Systèmes de management environnemental", active:false,
