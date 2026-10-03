@@ -460,6 +460,8 @@ table.dt tr:last-child td{border-bottom:none;}
 }
 @media(max-width:520px){
   .header-search{display:none;}
+  .header .chip{flex:0 1 auto;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .header-right{gap:var(--sp-2);}
 }
 
 .hidden{display:none !important;}
