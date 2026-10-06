@@ -160,7 +160,7 @@ const LOCAL_RULES_ENGINE = {
           const t = matchTerms(e.fields[f], att.keywords);
           if(t.length){ t.forEach(x=>{ if(!terms.includes(x)) terms.push(x); }); if(!field) field = f; }
         });
-        if(terms.length){ hits.push({ evidenceId:e.p.id, title:e.p.title, via:"mot-clé", terms, field }); return; }
+        if(terms.length>=Math.max(1, att.minMatches||1)){ hits.push({ evidenceId:e.p.id, title:e.p.title, via:"mot-clé", terms, field }); return; }
         const typeOk = (att.evidenceTypes||[]).includes(e.meta.docType) && (!qProcess || !e.meta.processId || e.meta.processId===qProcess);
         if(typeOk) hits.push({ evidenceId:e.p.id, title:e.p.title, via:"type de document", terms:[e.meta.docTypeLabel||e.meta.docType], field:"type" });
       });
@@ -300,7 +300,8 @@ function resolveExigenceFull(requirementId){
   const src = legacy || custom || {};
   return { id:requirementId, ref:base.ref, title:legacy ? legacy.label : (custom ? custom.title : base.label), label:base.label,
     referentielId:base.referentielId, referentielName: ref ? ref.name : base.referentielId,
-    summary: src.synthese || "", attendus: Array.isArray(src.attendus) ? src.attendus : [] };
+    summary: src.synthese || "", attendus: Array.isArray(src.attendus) ? src.attendus : [],
+    chapter: src.chapter||null, objectif: src.objectif||null, statement: custom ? (custom.description||"") : "" };
 }
 
 /* Entrée complète de l'analyse (cf. cahier des charges, §10). */

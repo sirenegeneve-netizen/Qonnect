@@ -75,7 +75,7 @@ function getReferentielExigenceViews(refId){
   return own.map((e,idx)=>{
     const bundle = customExigenceBundle(e);
     const level = scoreCoverage(bundle);
-    return { id:e.id, ref:e.ref, rank:ranks[idx].rank, rankOf:ranks[idx].rankOf, title:e.title, description:e.description, sourceText:e.sourceText, type:e.type, legacy:false, bundle, level, process:bundle.process,
+    return { id:e.id, ref:e.ref, rank:ranks[idx].rank, rankOf:ranks[idx].rankOf, title:e.title, description:e.description, sourceText:e.sourceText, type:e.type, chapter:e.chapter||null, objectif:e.objectif||null, criticite:e.criticite||null, legacy:false, bundle, level, process:bundle.process,
       updatedAt: bundle.docs.reduce((max,d)=> d.date>max?d.date:max, "") };
   });
 }
@@ -150,6 +150,65 @@ function parseCriteriaStructure(text){
   return { exigences, chapters:chapterList };
 }
 
+/* Structure numérotée telle qu'un PDF en tableau la restitue (HAS) :
+     Chapitre 1 : La personne
+     1.1 - Objectif (peut tenir sur plusieurs lignes, y compris plusieurs phrases)
+     1.1.1 - Critère (peut être coupé sur plusieurs lignes)
+   Les intitulés de thèmes, en-têtes de colonnes (« Objectifs Critères ») et pieds de page sont ignorés.
+   Le niveau « critère » est le niveau numéroté le plus profond ; le niveau juste au-dessus est l'objectif. */
+function parseNumberedCriteria(text){
+  const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const ITEM = /^(\d+(?:\.\d+){1,3})\s*[-–—]\s+(.+)$/;
+  const depthOf = ref => ref.split(".").length-1;
+  const depthCount = {};
+  lines.forEach(l=>{ const m = l.match(ITEM); if(m){ const d = depthOf(m[1]); depthCount[d] = (depthCount[d]||0)+1; } });
+  const depths = Object.keys(depthCount).map(Number).filter(d=>depthCount[d]>=2).sort((a,b)=>a-b);
+  if(!depths.length) return null;
+  const critDepth = depths[depths.length-1];
+  if(depthCount[critDepth]<2) return null;
+  const objDepth = critDepth>1 && depthCount[critDepth-1] ? critDepth-1 : null;
+
+  const endsPunct = /[.;:!?»”]$/;
+  const connective = /\b(et|ou|de|du|des|d'|la|le|les|l'|à|au|aux|en|que|qui|pour|par|sur|avec|dans|son|sa|ses|leur|leurs|ce|cette|ces)$/i;
+  const chapters = [];
+  let chap = { ref:"", title:"" }, obj = null, cur = null, target = null;
+  const out = [];
+  lines.forEach(line=>{
+    let m;
+    if((m = line.match(CHAP_HEAD_RE))){ chap = { ref:m[2], title:(m[3]||"").trim() }; if(!chapters.includes(m[2])) chapters.push(m[2]); obj = cur = target = null; return; }
+    if((m = line.match(ITEM))){
+      const d = depthOf(m[1]);
+      if(d===critDepth){ cur = { ref:m[1], text:m[2].trim(), chapter:chap, obj }; out.push(cur); target = cur; return; }
+      if(objDepth && d===objDepth){ obj = { ref:m[1], text:m[2].trim() }; cur = null; target = obj; return; }
+      target = null; return;
+    }
+    /* Ligne sans numéro : suite d'un objectif (toute la cellule précède ses critères), ou suite d'un critère coupé. Sinon : bruit, ignoré. */
+    if(target && target===obj && !cur){ if(obj.text.length<400) obj.text += " "+line; return; }
+    if(target && target===cur){
+      const prev = cur.text;
+      if(!endsPunct.test(prev) && (/^[a-zà-ÿ(]/.test(line) || /,$/.test(prev) || connective.test(prev))) cur.text += " "+line;
+    }
+  });
+  if(out.length<2) return null;
+  const clip = (t,n)=>{ if(t.length<=n) return t; const cut = t.slice(0,n-1); const i = cut.lastIndexOf(" "); return (i>n*0.6 ? cut.slice(0,i) : cut).trimEnd()+"…"; };
+  const clean = t => t.replace(/\s+/g," ").trim();
+  const stemsOf = out.map(c=> typeof keywordStems==="function" ? keywordStems(c.text) : []);
+  /* Mots présents dans une grande part des critères (« personne », « accompagnée »…) : ils ne distinguent rien, on les écarte des mots-clés. */
+  const df = {}; stemsOf.forEach(st=>st.forEach(w=>{ df[w] = (df[w]||0)+1; }));
+  const common = new Set(out.length>=8 ? Object.keys(df).filter(w=>df[w]/out.length>0.3) : []);
+  const exigences = out.map((c,i)=>{
+    const description = clean(c.text);
+    const keywords = stemsOf[i].filter(w=>!common.has(w));
+    const e = { ref:c.ref, title:clip(description,90), description, sourceText:description, type:"critere",
+      chapter:c.chapter.ref ? { ref:c.chapter.ref, title:c.chapter.title } : null,
+      objectif:c.obj ? { ref:c.obj.ref, title:clip(clean(c.obj.text),300) } : null,
+      attendus:[ { id:"A1", label:clip(description,200), keywords, minMatches: keywords.length>=4 ? Math.min(3, Math.ceil(keywords.length/3)) : 1, evidenceTypes:[], suggestion:"" } ] };
+    return e;
+  });
+  const chapterList = chapters.length ? chapters : [...new Set(out.map(c=>c.ref.split(".")[0]))];
+  return { exigences, chapters:chapterList, numbered:true };
+}
+
 /* Dernier recours : aucun « doit » ni structure par critères. Chaque phrase significative d'un chapitre devient un critère à relire. */
 function parseSentencesFallback(text){
   const chapterRe = /^(\d+(?:\.\d+){0,3})\s+(.{3,90})$/;
@@ -170,8 +229,14 @@ function parseSentencesFallback(text){
 function parseReferentielText(text, mode){
   mode = mode || "auto";
   if(mode!=="obligations"){
-    const st = parseCriteriaStructure(text);
-    if(st){ annotateRanks(st.exigences); return { chapters:st.chapters, exigences:st.exigences.slice(0,MAX_IMPORTED_EXIGENCES), truncated:Math.max(0,st.exigences.length-MAX_IMPORTED_EXIGENCES), duplicatesRemoved:0, ignored:0, rawConvient:0, mode:"criteres" }; }
+    let st = parseCriteriaStructure(text);
+    if(!st){
+      /* Structure numérotée (1.1 - … / 1.1.1 - …) : en détection automatique, on ne la retient que si elle domine nettement
+         les phrases à « doit » (un texte de norme numéroté ne doit pas être pris pour un référentiel par critères). */
+      const num = parseNumberedCriteria(text);
+      if(num && (mode==="criteres" || (num.exigences.length>=3 && num.exigences.length>parseObligations(text).exigences.length))) st = num;
+    }
+    if(st){ annotateRanks(st.exigences); return { chapters:st.chapters, exigences:st.exigences.slice(0,MAX_IMPORTED_EXIGENCES), truncated:Math.max(0,st.exigences.length-MAX_IMPORTED_EXIGENCES), duplicatesRemoved:0, ignored:0, rawConvient:0, mode:"criteres", numbered:!!st.numbered }; }
     if(mode==="criteres") return { chapters:[], exigences:[], truncated:0, duplicatesRemoved:0, ignored:0, rawConvient:0, mode:"criteres", notice:"Aucune structure par critères reconnue (il faut au moins deux lignes du type « Critère 1.1-01 … »)." };
   }
   const res = parseObligations(text);
@@ -292,7 +357,7 @@ function openReferentielImportModal(presets){
     const kpis = [[p.chapters.length, "Chapitres détectés"]];
     [["critere","Critères"],["exigence","Exigences"],["responsabilite","Responsabilités"],["preuve","Preuves attendues"],["recommandation","Recommandations"]].forEach(([t,l])=>{ if(count(t)||t==="exigence"&&p.mode==="obligations") kpis.push([count(t), l]); });
     if(attendusCount) kpis.push([attendusCount, "Éléments d'évaluation"]);
-    const modeNote = p.mode==="criteres" ? (p.exigences.length ? "Référentiel lu <strong>par critères</strong> : chaque critère devient une exigence, et ses éléments d'évaluation deviennent les <strong>attendus</strong> utilisés par l'analyse des audits."+(p.exigences.some(e=>e.criticite)?"":"") : "")
+    const modeNote = p.mode==="criteres" ? (p.exigences.length ? "Référentiel lu <strong>par critères</strong>"+(p.numbered?" (chapitres › objectifs › critères numérotés)":"")+" : chaque critère devient une exigence, rattachée à son objectif et à son chapitre. "+(p.exigences.some(e=>(e.attendus||[]).length>1)?"Les éléments d'évaluation deviennent les <strong>attendus</strong> utilisés par l'analyse des audits.":"Le critère lui-même sert d'<strong>attendu</strong> pour l'analyse des audits (modifiable avec ✏️). Une aide à la compréhension et à l'application est proposée pour chaque critère.") : "")
       : p.mode==="phrases" ? "⚠️ Aucun « doit » ni structure par critères n'a été reconnu. Qonnect a retenu <strong>chaque phrase significative</strong> comme critère : c'est une lecture approximative, à relire et à nettoyer (✏️ pour modifier ou supprimer). Pour un meilleur résultat, vérifiez que les lignes « Critère … » et « Éléments d'évaluation » figurent dans le texte, ou choisissez le type « Par critères »." : "";
     return `
       <div class="grid mb-2" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));">
@@ -389,7 +454,7 @@ function openReferentielImportModal(presets){
         const links = linkExigenceToSMQ(e.title+" "+e.description);
         DB.customExigences.push({ id:"CEX-"+ref.id+"-"+i+"-"+String(Date.now()).slice(-4), referentielId:ref.id,
           ref:e.ref, title:e.title, description:e.description, sourceText:e.sourceText, type:e.type, ...links,
-          ...(e.attendus ? { attendus:e.attendus } : {}), ...(e.criticite ? { criticite:e.criticite } : {}) });
+          ...(e.attendus ? { attendus:e.attendus } : {}), ...(e.criticite ? { criticite:e.criticite } : {}), ...(e.chapter ? { chapter:e.chapter } : {}), ...(e.objectif ? { objectif:e.objectif } : {}) });
       });
       ref.version = state.meta.version; ref.importDate = new Date().toISOString().slice(0,10); ref.origin = state.meta.origin;
       ref.versions.push({version:state.meta.version, date:new Date().toISOString().slice(0,10), note:diffNote, diff:diffDetail});
@@ -651,6 +716,7 @@ function refTabVue(ref, score){
 }
 
 function refTabExigences(ref, score){
+  if(score.views.some(v=>v.objectif||v.chapter)) return refTabExigencesGrouped(ref, score);
   return dataTable(
     [ {label:"Exigence", render:v=>`<div class="cell-title">${esc(exigenceLabel(v))} — ${esc(v.title)}</div>${exigenceExcerpt(v,110)?`<div class="text-xs">${esc(exigenceExcerpt(v,110))}</div>`:""}`},
       {label:"Niveau", render:v=>badge(LABELS.exigenceCoverage[v.level])},
@@ -664,6 +730,29 @@ function refTabExigences(ref, score){
   );
 }
 
+/* Référentiel par critères : affichage Chapitre › Objectif › Critères (même structure que le document, simplifiée). */
+function refTabExigencesGrouped(ref, score){
+  const cols = [
+    {label:"Critère", render:v=>`<div class="cell-title">${esc(v.ref)} — ${esc(v.description||v.title)}</div>${v.criticite?`<div class="text-xs">${esc(v.criticite)}</div>`:""}`},
+    {label:"Niveau", render:v=>badge(LABELS.exigenceCoverage[v.level])},
+    {label:"Preuves", render:v=>v.bundle.docs.length+" doc(s)"},
+    {label:"", render:v=>`<button class="btn btn-secondary btn-sm" data-edit-exigence='${jsonAttr({refId:ref.id, exigenceId:v.id})}'>✏️</button>`} ];
+  const chapters = [];
+  score.views.forEach(v=>{
+    const ck = v.chapter ? v.chapter.ref : "";
+    let c = chapters.find(x=>x.key===ck); if(!c){ c = { key:ck, title:v.chapter?v.chapter.title:"", objs:[] }; chapters.push(c); }
+    const ok = v.objectif ? v.objectif.ref : "";
+    let o = c.objs.find(x=>x.key===ok); if(!o){ o = { key:ok, title:v.objectif?v.objectif.title:"", views:[] }; c.objs.push(o); }
+    o.views.push(v);
+  });
+  return `<p class="text-sm mb-2">${score.total} critère(s) · ${chapters.length} chapitre(s). Cliquez sur un critère pour voir l'aide à la compréhension et à l'application.</p>`+chapters.map(c=>`
+    <h3 class="mt-4 mb-2">${c.key?"Chapitre "+esc(c.key)+(c.title?" — "+esc(c.title):""):"Critères"}</h3>
+    ${c.objs.map(o=>`<div class="card mb-2">
+      ${o.key?`<div class="cell-title mb-2">Objectif ${esc(o.key)} — ${esc(o.title)}</div>`:""}
+      ${dataTable(cols, o.views, {rowRoute:v=>`referentiels/${ref.id}/exigences/${v.id}`})}
+    </div>`).join("")}`).join("");
+}
+
 function refExigenceDetail(ref, v){
   const reasons = coverageReasons(v.bundle);
   const fournisseursConcernes = v.bundle.processes.length ? DB.fournisseurs.filter(f=>(f.processIds||[]).some(pid=>v.bundle.processes.some(p=>p.id===pid))) : [];
@@ -673,8 +762,10 @@ function refExigenceDetail(ref, v){
     <div>
       <div class="card mb-2">
         <div class="flex justify-between items-center">${badge(LABELS.exigenceCoverage[v.level])}${badgeRaw("neutral", LABELS.exigenceType[v.type]||v.type)}</div>
+        ${v.chapter||v.objectif?`<p class="text-xs mt-2">${v.chapter?"Chapitre "+esc(v.chapter.ref)+(v.chapter.title?" — "+esc(v.chapter.title):""):""}${v.chapter&&v.objectif?" › ":""}${v.objectif?"Objectif "+esc(v.objectif.ref)+" — "+esc(v.objectif.title):""}</p>`:""}
         <h1 class="mt-2">${esc(exigenceLabel(v))} — ${esc(v.title)}</h1>
         ${v.sourceText?`<p class="text-sm mt-4" style="color:var(--text-primary);line-height:1.7;">« ${esc(v.sourceText)} »</p>`:""}
+        ${!v.legacy && typeof criterionHelpHtml==="function" ? criterionHelpHtml(v.description||v.title, {open:true}) : ""}
       </div>
       <div class="card mb-2">
         <h3 class="mb-2">Pourquoi ce niveau ?</h3>

@@ -134,7 +134,7 @@ function openAuditWizard(presets){
     }
     if(state.step===6){
       const genBtn = o.querySelector("#wiz-generate-plan");
-      if(genBtn) genBtn.addEventListener("click", ()=>{ state.questions = generateAuditQuestions(state.processIds, state.referentielIds); refresh(o); });
+      if(genBtn) genBtn.addEventListener("click", ()=>{ state.questions = generateAuditQuestions(state.processIds, state.referentielIds, { requirementIds:state.requirementIds }); refresh(o); });
     }
     const prevBtn = o.querySelector("#wiz-prev"); if(prevBtn) prevBtn.addEventListener("click", ()=>{ captureStepValues(o); state.step--; refresh(o); });
     const nextBtn = o.querySelector("#wiz-next"); if(nextBtn) nextBtn.addEventListener("click", ()=>{

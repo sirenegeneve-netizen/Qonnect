@@ -102,6 +102,7 @@ function aqCardExigence(a, q, idx, total){
       ${ex?badgeRaw("info", ex.referentielName)+badgeRaw("neutral", ex.ref):badgeRaw("neutral", q.critere||"Hors référentiel")}
       ${aqStatusBadge(q.statut||"non_evalue", true)}
     </div>
+    ${ex&&(ex.chapter||ex.objectif)?`<p class="text-xs mt-2">${ex.chapter?"Chapitre "+esc(ex.chapter.ref)+(ex.chapter.title?" — "+esc(ex.chapter.title):""):""}${ex.chapter&&ex.objectif?" › ":""}${ex.objectif?"Objectif "+esc(ex.objectif.ref)+" — "+esc(ex.objectif.title):""}</p>`:""}
     ${ex?`<div class="cell-title mt-2" style="font-size:16px;">${esc(ex.title)}</div>`:""}
     <p class="aq-question">« ${esc(q.question)} »</p>
     <div class="aq-facts">
@@ -115,6 +116,7 @@ function aqCardExigence(a, q, idx, total){
     ${ex&&ex.summary?`<div class="mt-4"><div class="aq-fact"><div class="k">Résumé de l'attendu</div><div class="v">${esc(ex.summary)}</div></div></div>`:""}
     ${attendus.length && input.exigence.attendusSource==="exigence" ? `<details class="aq-details"><summary>Éléments à pouvoir démontrer (${attendus.length})</summary><ul style="margin:8px 0 0 18px;padding:0;font-size:13px;">${attendus.map(x=>`<li>${esc(x.label)}</li>`).join("")}</ul><p class="text-xs mt-2">Synthèse interne rédigée par Qonnect — pas un extrait de la norme.</p></details>`:""}
     ${attendusNote?`<div class="aq-callout warn">${esc(attendusNote)}</div>`:""}
+    ${ex && ex.statement && typeof criterionHelpHtml==="function" ? criterionHelpHtml(ex.statement) : ""}
   </div>`;
 }
 
