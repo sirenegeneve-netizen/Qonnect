@@ -356,7 +356,11 @@ function openReferentielImportModal(presets){
     const attendusCount = p.exigences.reduce((n,e)=>n+(e.attendus?e.attendus.length:0),0);
     const kpis = [[p.chapters.length, "Chapitres détectés"]];
     [["critere","Critères"],["exigence","Exigences"],["responsabilite","Responsabilités"],["preuve","Preuves attendues"],["recommandation","Recommandations"]].forEach(([t,l])=>{ if(count(t)||t==="exigence"&&p.mode==="obligations") kpis.push([count(t), l]); });
-    if(attendusCount) kpis.push([attendusCount, "Éléments d'évaluation"]);
+    if(attendusCount){
+      /* Les « éléments d'évaluation » ne sont de vrais éléments que lorsque le document les liste ; sinon le critère lui-même sert d'attendu. */
+      const derived = p.exigences.filter(e=>e.attendus && e.attendus.length===1 && e.attendus[0].minMatches!==undefined).length === p.exigences.filter(e=>e.attendus).length;
+      kpis.push([attendusCount, derived ? "Attendus (1 par critère)" : "Éléments d'évaluation"]);
+    }
     const modeNote = p.mode==="criteres" ? (p.exigences.length ? "Référentiel lu <strong>par critères</strong>"+(p.numbered?" (chapitres › objectifs › critères numérotés)":"")+" : chaque critère devient une exigence, rattachée à son objectif et à son chapitre. "+(p.exigences.some(e=>(e.attendus||[]).length>1)?"Les éléments d'évaluation deviennent les <strong>attendus</strong> utilisés par l'analyse des audits.":"Le critère lui-même sert d'<strong>attendu</strong> pour l'analyse des audits (modifiable avec ✏️). Une aide à la compréhension et à l'application est proposée pour chaque critère.") : "")
       : p.mode==="phrases" ? "⚠️ Aucun « doit » ni structure par critères n'a été reconnu. Qonnect a retenu <strong>chaque phrase significative</strong> comme critère : c'est une lecture approximative, à relire et à nettoyer (✏️ pour modifier ou supprimer). Pour un meilleur résultat, vérifiez que les lignes « Critère … » et « Éléments d'évaluation » figurent dans le texte, ou choisissez le type « Par critères »." : "";
     return `

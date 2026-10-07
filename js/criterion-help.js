@@ -74,7 +74,11 @@ function buildCriterionHelp(text){
   const raw = String(text||"").replace(/\s+/g," ").trim();
   const n = chNorm(raw);
   const subject = CRITERION_SUBJECTS.find(s=>s.re.test(n)) || null;
-  const themes = CRITERION_THEMES.filter(t=>t.re.test(n)).slice(0,2);
+  /* Thèmes classés par nombre de mots reconnus : le thème dominant passe en premier (« sensibilisés et formés à la connaissance des droits »
+     relève d'abord des compétences, pas de l'information). On ne garde un second thème que s'il pèse autant que le premier. */
+  const scored = CRITERION_THEMES.map((t,i)=>({ t, i, c:(n.match(new RegExp(t.re.source,"g"))||[]).length })).filter(x=>x.c>0)
+    .sort((a,b)=>b.c-a.c || a.i-b.i);
+  const themes = scored.filter(x=>x.c===(scored[0]&&scored[0].c)).slice(0,2).map(x=>x.t);
   const src = themes.length ? themes : [CRITERION_DEFAULT];
   const comprendre = src.map(t=>t.comprendre).join(" ");
   return {
