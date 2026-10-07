@@ -39,12 +39,29 @@ function auditRuleBasedAnalysis(a){
   if(!bullets.length) bullets.push({fact:"Aucune récurrence détectée entre cet audit et les audits précédents de ce processus.", analysis:"Sur la base des données actuellement disponibles."});
   return bullets;
 }
-function generateAuditQuestions(processIds, referentielIds){
+/* Exigences d'un référentiel pertinentes pour des processus audités.
+   Pour un référentiel importé dont aucune exigence n'est reliée à ces processus (cas courant des critères HAS, qui parlent de parcours
+   patient plus que de processus), on propose les exigences du référentiel rattachées au premier processus audité, au lieu de n'en proposer aucune. */
+function auditRelevantViews(refId, processIds){
+  const all = getReferentielExigenceViews(refId);
+  const linked = all.filter(v=>v.process && processIds.includes(v.process.id));
+  const proc = getProcess(processIds[0]);
+  if(linked.length || !all.length || !proc || all.every(v=>v.legacy)) return { views:linked, unlinked:false };
+  return { views:all.map(v=>Object.assign({}, v, { process:proc, unlinked:true })), unlinked:true };
+}
+/* opts.existing : questions déjà présentes (on ne repropose pas les mêmes exigences : « Générer plus » donne le lot suivant).
+   opts.requirementIds : exigences choisies comme critères d'audit — des questions sont alors générées pour celles-ci. */
+function generateAuditQuestions(processIds, referentielIds, opts){
+  opts = opts || {};
+  const done = new Set((opts.existing||[]).map(q=>q.requirementId).filter(Boolean));
+  const chosen = new Set(opts.requirementIds||[]);
   const qs = [];
   (referentielIds && referentielIds.length ? referentielIds : ["ISO9001"]).forEach(refId=>{
     const order = {non_couvert:0,partiellement:1,a_renforcer:2,maitrise:3,optimise:4};
-    const views = getReferentielExigenceViews(refId).filter(v=>v.process && processIds.includes(v.process.id)).sort((a,b)=>order[a.level]-order[b.level]);
-    views.slice(0,5).forEach(v=>{
+    let views = auditRelevantViews(refId, processIds).views.filter(v=>!done.has(v.id));
+    const picked = views.filter(v=>chosen.has(v.id));
+    views = (picked.length ? picked : views).sort((a,b)=>order[a.level]-order[b.level]);
+    views.slice(0, picked.length ? 20 : 5).forEach(v=>{
       qs.push(newAuditQuestion({ question:`Comment cette exigence est-elle mise en œuvre et comment pouvez-vous démontrer son application dans le processus ${v.process.name} ?`,
         requirementId:v.id, processId:v.process.id, critere:v.ref, preuveAttendue:"Procédure, enregistrement ou indicateur associé", responsableInterroge:v.process.pilot }));
     });
@@ -56,7 +73,7 @@ function generateAuditQuestions(processIds, referentielIds){
     const priorNc = DB.events.filter(e=>e.processId===pid && e.type==="non_conformite")[0];
     if(priorNc) qs.push(newAuditQuestion({ question:`L'action corrective suite à « ${priorNc.title} » est-elle efficace ?`, requirementId:null, processId:pid, critere:priorNc.ref, preuveAttendue:"Preuve de vérification d'efficacité", responsableInterroge:p?p.pilot:"" }));
   });
-  return qs.slice(0,10);
+  return qs.slice(0,25);
 }
 
 /* ---------- Tableau de bord & programme ---------- */

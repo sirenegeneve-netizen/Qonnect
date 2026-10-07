@@ -188,7 +188,7 @@ function initGlobalEvents(){
     if(genQEl){
       const a = getAudit(genQEl.getAttribute("data-generate-questions"));
       const existingTexts = new Set(a.questions.map(q=>q.question));
-      const fresh = generateAuditQuestions(a.processIds&&a.processIds.length?a.processIds:[a.processId], a.referentielIds).filter(q=>!existingTexts.has(q.question));
+      const fresh = generateAuditQuestions(a.processIds&&a.processIds.length?a.processIds:[a.processId], a.referentielIds, { existing:a.questions }).filter(q=>q.requirementId || !existingTexts.has(q.question));
       a.questions.push(...fresh);
       saveDB(); toast(fresh.length+" question(s) générée(s)"); render();
       return;

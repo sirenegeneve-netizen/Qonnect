@@ -72,11 +72,14 @@ function openAuditWizard(presets){
     </div>`;
   }
   function step5Html(){
-    const relevantViews = state.processIds.length ? (state.referentielIds.length?state.referentielIds:["ISO9001"]).flatMap(refId=>getReferentielExigenceViews(refId).filter(v=>v.process && state.processIds.includes(v.process.id))) : [];
+    const relevantInfo = state.processIds.length ? (state.referentielIds.length?state.referentielIds:["ISO9001"]).map(refId=>auditRelevantViews(refId, state.processIds)) : [];
+    const relevantViews = relevantInfo.flatMap(r=>r.views);
+    const anyUnlinked = relevantInfo.some(r=>r.unlinked);
     const relevantDocs = state.processIds.length ? DB.documents.filter(d=>d.status!=="obsolete" && state.processIds.includes(d.processId)) : [];
     return stepper()+`
     <div class="step-title">Étape 5/6 — Critères d'audit</div>
     <p class="text-sm mb-2">Qonnect propose les exigences pertinentes selon le périmètre sélectionné.</p>
+    ${anyUnlinked?`<div class="aq-callout" style="margin-top:0;margin-bottom:12px;">Aucune exigence de ce référentiel n'est reliée aux processus choisis : toutes ses exigences sont proposées. Vous pouvez les relier à un processus depuis Référentiels (✏️) pour affiner.</div>`:""}
     <div class="field" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;">
       ${relevantViews.length?relevantViews.map(v=>`<label class="flex items-center gap-2 mt-2"><input type="checkbox" class="wiz-req-cb" value="${v.id}" ${state.requirementIds.includes(v.id)?"checked":""} style="width:auto;"> ${esc(exigenceLabel(v))} — ${esc(v.title)}${exigenceExcerpt(v,90)?" : "+esc(exigenceExcerpt(v,90)):""} ${badge(LABELS.exigenceCoverage[v.level])}</label>`).join(""):`<p class="text-sm">Sélectionnez un processus et un référentiel pour voir les exigences suggérées.</p>`}
     </div>
@@ -131,7 +134,7 @@ function openAuditWizard(presets){
     }
     if(state.step===6){
       const genBtn = o.querySelector("#wiz-generate-plan");
-      if(genBtn) genBtn.addEventListener("click", ()=>{ state.questions = generateAuditQuestions(state.processIds, state.referentielIds); refresh(o); });
+      if(genBtn) genBtn.addEventListener("click", ()=>{ state.questions = generateAuditQuestions(state.processIds, state.referentielIds, { requirementIds:state.requirementIds }); refresh(o); });
     }
     const prevBtn = o.querySelector("#wiz-prev"); if(prevBtn) prevBtn.addEventListener("click", ()=>{ captureStepValues(o); state.step--; refresh(o); });
     const nextBtn = o.querySelector("#wiz-next"); if(nextBtn) nextBtn.addEventListener("click", ()=>{

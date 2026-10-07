@@ -189,6 +189,7 @@ const REF_AI_VERBS = [
 function refAiGuideFor(v){
   const text = (v.description||v.title||"");
   if(v.type==="responsabilite") return { produit:"désigner nommément la personne responsable (fiche de poste, fiche processus, organigramme)", preuve:"document qui nomme le responsable et son périmètre" };
+  if(v.type==="critere") return { produit:"décrire la pratique réelle et démontrer chacun des éléments d'évaluation du critère", preuve:"preuves rattachées à chaque élément d'évaluation (enregistrements, observations, entretiens)" };
   if(v.type==="recommandation") return { produit:"appliquer la recommandation si elle est pertinente, sinon noter la raison de ne pas le faire", preuve:"mention dans le document concerné ou décision consignée" };
   const hit = REF_AI_VERBS.find(x=>x.re.test(text));
   return hit || { produit:"une réponse formalisée dans votre SMQ", preuve:"un document ou un enregistrement associé à l'exigence" };
