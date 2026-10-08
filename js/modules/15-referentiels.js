@@ -75,7 +75,7 @@ function getReferentielExigenceViews(refId){
   return own.map((e,idx)=>{
     const bundle = customExigenceBundle(e);
     const level = scoreCoverage(bundle);
-    return { id:e.id, ref:e.ref, rank:ranks[idx].rank, rankOf:ranks[idx].rankOf, title:e.title, description:e.description, sourceText:e.sourceText, type:e.type, chapter:e.chapter||null, objectif:e.objectif||null, criticite:e.criticite||null, legacy:false, bundle, level, process:bundle.process,
+    return { id:e.id, ref:e.ref, rank:ranks[idx].rank, rankOf:ranks[idx].rankOf, title:e.title, description:e.description, sourceText:e.sourceText, type:e.type, chapter:e.chapter||null, chapterRef:e.chapterRef||null, chapterTitle:e.chapterTitle||null, objectif:e.objectif||null, criticite:e.criticite||null, legacy:false, bundle, level, process:bundle.process,
       updatedAt: bundle.docs.reduce((max,d)=> d.date>max?d.date:max, "") };
   });
 }
@@ -259,6 +259,20 @@ function parseObligations(text){
   const listItemRe = /^(?:[a-z]\)|\d{1,2}\)|[-–—•·▪●])\s+/i;
   const endsSentenceRe = /[.;:!?»”]$/;
   const connectiveRe = /\b(et|ou|de|du|des|d'|la|le|les|l'|à|au|aux|en|que|qui|pour|par|sur|avec|dans|son|sa|ses|leur|leurs|ce|cette|ces)$/i;
+  /* Titre de chapitre : numéroté (« 2.1 Gouvernance ») ou annexe (« Annexe A : … »). Une ligne de table des matières
+     (points de conduite, numéro de page) ou une phrase complète (point final, liste numérotée « 16 Le fournisseur… ») n'en est pas un. */
+  const annexRe = /^Annexe\s+([A-Z0-9]{1,3})\b\s*[:\-–—]?\s*(.{0,90})$/i;
+  const tocRe = /(\.{4,}|…{2,}|(?:\.\s){4,})/;
+  const blockHeadRe = /\b(doit|doivent|shall|must|devrait|devraient|il convient)\b/i;
+  function headingOf(line){
+    if(tocRe.test(line)) return "toc";
+    const a = line.match(annexRe);
+    if(a && !blockHeadRe.test(line)) return { ref:"Annexe "+a[1].toUpperCase(), title:(a[2]||"").trim() };
+    const m = line.match(chapterRe);
+    if(!m || blockHeadRe.test(line) || /[.;:!?]$/.test(line)) return null;
+    if(!m[1].includes(".") && (m[2].split(/\s+/).length>8 || +m[1]>12)) return null;
+    return { ref:m[1], title:m[2] };
+  }
   let currentRef = "", currentTitle = "";
   let buf = "", bufRef = "", bufTitle = "";
   const exigences = [];
@@ -278,7 +292,7 @@ function parseObligations(text){
       if(softRe.test(sentence) && (!hardRe.test(sentence) || /^(?:\W*)(il convient|il est recommandé|\w+\s+devrait)/i.test(sentence))) type = "recommandation";
       else if(/preuve|enregistrement|trace|document[ée]/i.test(sentence)) type = "preuve";
       else if(/responsab/i.test(sentence)) type = "responsabilite";
-      exigences.push({ ref: bufRef || "—", title: (bufTitle || sentence.slice(0,60)).slice(0,90), description: sentence, sourceText: sentence, type });
+      exigences.push({ ref: bufRef || "—", title: (bufTitle || sentence.slice(0,60)).slice(0,90), description: sentence, sourceText: sentence, type, chapterRef: bufRef||"", chapterTitle: bufTitle||"" });
     });
   }
   /* Une ligne prolonge la précédente si celle-ci ne se termine pas par une ponctuation de fin de phrase
@@ -291,8 +305,9 @@ function parseObligations(text){
 
   const rawConvient = (text.replace(/\s+/g," ").match(/\bil convient\b/gi)||[]).length;
   lines.forEach(line=>{
-    const m = line.match(chapterRe);
-    if(m && !reqWordsRe.test(line)){ flush(); currentRef = m[1]; currentTitle = m[2]; return; }
+    const h = headingOf(line);
+    if(h==="toc") return;
+    if(h){ flush(); currentRef = h.ref; currentTitle = h.title; return; }
     if(buf && continues(buf, line)){
       buf = /-$/.test(buf) && /^[a-zà-ÿ]/.test(line) ? buf.slice(0,-1)+line : buf+" "+line;
     }else{
@@ -308,6 +323,21 @@ function parseObligations(text){
   const kept = deduped.slice(0, MAX_IMPORTED_EXIGENCES);
   annotateRanks(kept);
   return { chapters: [...new Set(kept.map(e=>e.ref))], exigences: kept, truncated: Math.max(0, deduped.length-kept.length), duplicatesRemoved: exigences.length-deduped.length, ignored, rawConvient };
+}
+/* Chapitre d'une exigence importée, quel que soit le mode de lecture (obligations, critères simples, critères numérotés). */
+function chapterParts(e){
+  if(!e) return { ref:"", title:"" };
+  if(e.chapter && typeof e.chapter==="object") return { ref:e.chapter.ref||"", title:e.chapter.title||"" };
+  if(e.chapterRef || e.chapterTitle) return { ref:e.chapterRef||"", title:e.chapterTitle||"" };
+  if(typeof e.chapter==="string" && e.chapter) return { ref:e.chapter, title:"" };
+  const m = String(e.ref||"").match(/^(\d+(?:\.\d+)*)\s*-\s*\d+$/);   /* « 1.1-01 » → rubrique 1.1 */
+  return m ? { ref:m[1], title:"" } : { ref:"", title:"" };
+}
+function chapterKey(e){ const c = chapterParts(e); return (c.ref+" "+c.title).trim(); }
+function chapterCellHtml(e){
+  const c = chapterParts(e);
+  if(!c.ref && !c.title) return `<span class="text-xs">—</span>`;
+  return `<strong>${esc(c.ref)}</strong>${c.title?`<span class="text-xs" style="display:block;font-weight:400;max-width:200px;white-space:normal;">${esc(c.title)}</span>`:""}`;
 }
 function linkExigenceToSMQ(text){
   const low = text.toLowerCase();
@@ -344,11 +374,11 @@ function openReferentielImportModal(presets){
   }
   function step1Foot(){ return `<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="imp-analyze">🧠 Analyser le document</button>`; }
   function exigenceRowHtml(e){
-    return `<div class="rel-link"><span class="rel-name"><strong>${esc(exigenceLabel(e))}</strong> — ${esc(e.title)}${exigenceExcerpt(e,160)?`<span class="text-xs" style="display:block;color:var(--muted,#64748b);font-weight:400;">${esc(exigenceExcerpt(e,160))}</span>`:""}</span>${badgeRaw("info", LABELS.exigenceType[e.type])}</div>`;
+    return `<tr><td style="white-space:nowrap;vertical-align:top;">${chapterCellHtml(e)}</td><td><strong>${esc(exigenceLabel(e))}</strong> — ${esc(e.title)}${exigenceExcerpt(e,160)?`<span class="text-xs" style="display:block;color:var(--muted,#64748b);font-weight:400;">${esc(exigenceExcerpt(e,160))}</span>`:""}</td><td style="vertical-align:top;">${badgeRaw("info", LABELS.exigenceType[e.type])}</td></tr>`;
   }
-  function previewListHtml(filter){
-    const list = state.parsed.exigences.filter(e=> !filter || filter==="all" || e.type===filter);
-    return list.length ? list.map(exigenceRowHtml).join("") : `<p class="text-sm">Aucun élément de ce type dans le document.</p>`;
+  function previewListHtml(filter, chap){
+    const list = state.parsed.exigences.filter(e=> (!filter || filter==="all" || e.type===filter) && (!chap || chap==="all" || chapterKey(e)===chap));
+    return list.length ? `<table class="data-table"><thead><tr><th>Chapitre</th><th>Élément</th><th>Type</th></tr></thead><tbody>${list.map(exigenceRowHtml).join("")}</tbody></table>` : `<p class="text-sm">Aucun élément ne correspond à ces filtres.</p>`;
   }
   function step2Html(){
     const p = state.parsed;
@@ -374,7 +404,12 @@ function openReferentielImportModal(presets){
       ${p.ignored?`<p class="text-xs mb-2">${p.ignored} phrase(s) qui expliquent le vocabulaire de la norme (« doit » indique une exigence…) ont été ignorées : ce ne sont pas des exigences.</p>`:""}
       ${p.rawConvient?`<p class="text-xs mb-2">Contrôle : « il convient » apparaît ${p.rawConvient} fois dans le texte lu ; ${count("recommandation")} recommandation(s) retenue(s), ${p.ignored} phrase(s) de vocabulaire ignorée(s)${p.duplicatesRemoved?" et "+p.duplicatesRemoved+" doublon(s) regroupé(s)":""}. Si l'écart vous surprend, utilisez le filtre « Tout » pour vérifier que la phrase n'est pas rangée dans un autre type.</p>`:`<p class="text-xs mb-2">Contrôle : l'expression « il convient » n'apparaît pas dans le texte lu. Si votre document en contient, le PDF a peut-être été mal lu (essayez la version Word).</p>`}
       ${p.truncated?`<p class="text-sm mb-2">⚠️ ${p.truncated} exigence(s) au-delà de la limite de ${MAX_IMPORTED_EXIGENCES} n'ont pas été retenues.</p>`:""}
-      <div class="field" style="max-width:320px;"><label>Afficher</label>
+      <div class="field-row"><div class="field"><label>Chapitre</label>
+        <select id="imp-chapter">
+          <option value="all">Tous les chapitres</option>
+          ${[...new Set(p.exigences.map(chapterKey))].map(k=>`<option value="${esc(k)}">${esc(k||"Sans chapitre")} (${p.exigences.filter(e=>chapterKey(e)===k).length})</option>`).join("")}
+        </select></div>
+      <div class="field"><label>Afficher</label>
         <select id="imp-filter">
           <option value="all">Tout (${p.exigences.length})</option>
           ${count("critere")?`<option value="critere">Critères (${count("critere")})</option>`:""}
@@ -382,7 +417,7 @@ function openReferentielImportModal(presets){
           <option value="responsabilite">Responsabilités (${count("responsabilite")})</option>
           <option value="preuve">Preuves attendues (${count("preuve")})</option>
           <option value="recommandation">Recommandations (${count("recommandation")})</option>
-        </select></div>
+        </select></div></div>
       <div id="imp-preview-list" style="max-height:340px;overflow-y:auto;">${previewListHtml("all")}</div>
       ${!p.exigences.length?`<p class="text-sm mt-2">⚠️ Aucune exigence détectée. Vérifiez le type de référentiel choisi : « à obligations » cherche « doit », « doivent », « shall » ; « par critères » cherche des lignes comme « Critère 1.1-01 » suivies d'« Éléments d'évaluation ».</p>`:""}
     `;
@@ -420,8 +455,10 @@ function openReferentielImportModal(presets){
   }
   function mountStep2(o){
     o.querySelector("#imp-back").addEventListener("click", ()=> renderStep(o,1));
-    const filterEl = o.querySelector("#imp-filter");
-    if(filterEl) filterEl.addEventListener("change", ()=>{ o.querySelector("#imp-preview-list").innerHTML = previewListHtml(filterEl.value); });
+    const filterEl = o.querySelector("#imp-filter"), chapEl = o.querySelector("#imp-chapter");
+    const refresh = ()=>{ o.querySelector("#imp-preview-list").innerHTML = previewListHtml(filterEl?filterEl.value:"all", chapEl?chapEl.value:"all"); };
+    if(filterEl) filterEl.addEventListener("change", refresh);
+    if(chapEl) chapEl.addEventListener("change", refresh);
     const confirmBtn = o.querySelector("#imp-confirm");
     if(confirmBtn) confirmBtn.addEventListener("click", ()=>{
       let ref = existingRef;
@@ -458,7 +495,7 @@ function openReferentielImportModal(presets){
         const links = linkExigenceToSMQ(e.title+" "+e.description);
         DB.customExigences.push({ id:"CEX-"+ref.id+"-"+i+"-"+String(Date.now()).slice(-4), referentielId:ref.id,
           ref:e.ref, title:e.title, description:e.description, sourceText:e.sourceText, type:e.type, ...links,
-          ...(e.attendus ? { attendus:e.attendus } : {}), ...(e.criticite ? { criticite:e.criticite } : {}), ...(e.chapter ? { chapter:e.chapter } : {}), ...(e.objectif ? { objectif:e.objectif } : {}) });
+          ...(e.attendus ? { attendus:e.attendus } : {}), ...(e.criticite ? { criticite:e.criticite } : {}), ...(e.chapter ? { chapter:e.chapter } : {}), ...(e.chapterRef ? { chapterRef:e.chapterRef } : {}), ...(e.chapterTitle ? { chapterTitle:e.chapterTitle } : {}), ...(e.objectif ? { objectif:e.objectif } : {}) });
       });
       ref.version = state.meta.version; ref.importDate = new Date().toISOString().slice(0,10); ref.origin = state.meta.origin;
       ref.versions.push({version:state.meta.version, date:new Date().toISOString().slice(0,10), note:diffNote, diff:diffDetail});
@@ -722,7 +759,8 @@ function refTabVue(ref, score){
 function refTabExigences(ref, score){
   if(score.views.some(v=>v.objectif||v.chapter)) return refTabExigencesGrouped(ref, score);
   return dataTable(
-    [ {label:"Exigence", render:v=>`<div class="cell-title">${esc(exigenceLabel(v))} — ${esc(v.title)}</div>${exigenceExcerpt(v,110)?`<div class="text-xs">${esc(exigenceExcerpt(v,110))}</div>`:""}`},
+    [ {label:"Chapitre", render:v=>chapterCellHtml(v)},
+      {label:"Exigence", render:v=>`<div class="cell-title">${esc(exigenceLabel(v))} — ${esc(v.title)}</div>${exigenceExcerpt(v,110)?`<div class="text-xs">${esc(exigenceExcerpt(v,110))}</div>`:""}`},
       {label:"Niveau", render:v=>badge(LABELS.exigenceCoverage[v.level])},
       {label:"Preuves", render:v=>v.bundle.docs.length+" doc(s)"},
       {label:"Risques", render:v=>v.bundle.risksOpen.length},
