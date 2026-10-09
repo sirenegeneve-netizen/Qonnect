@@ -325,9 +325,62 @@ function parseCodedCatalogue(text){
 }
 const tocRe0 = /(\.{4,}|…{2,}|(?:\.\s){4,})/;
 
+/* Résultats attendus à codes (NIST CSF 2.0…) : « GOVERN (GV): … » › « • Organizational Context (GV.OC): … » › « o GV.OC-01: … ».
+   Chaque sous-catégorie devient un critère ; la fonction est son chapitre, la catégorie son objectif ; le texte du résultat sert d'attendu. */
+function parseOutcomeCodes(text){
+  const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const bulletRe = /^(?:[o•▪◦●·-]\s+)/;
+  const subRe = /^(?:[o•▪◦●·-]\s*)?([A-Z]{2})\.([A-Z]{2})-(\d{2})\s*:\s*(\S.*)$/;
+  const catRe = /^(?:[o•▪◦●·-]\s*)?([A-Z][^():]{2,70}?)\s*\(([A-Z]{2})\.([A-Z]{2})\)\s*:\s*(\S.*)$/;
+  const funcRe = /^([A-Z][A-Za-z]{2,20})\s*\(([A-Z]{2})\)\s*:\s*(\S.*)$/;
+  const noiseRe = /^(NIST CSWP \d+\b.*|[A-Z][a-z]+ \d{1,2}, \d{4}|\d{1,3}|Page \d+.*)$/;
+  const isStruct = l => subRe.test(l) || catRe.test(l) || funcRe.test(l);
+  let subs = 0; lines.forEach(l=>{ if(subRe.test(l)) subs++; });
+  if(subs<8) return null;
+  const funcs = {}, cats = {}, out = [];
+  let cur = null, last = null, brk = false; /* last = élément en cours de lecture (suite de ligne) */
+  const append = (o, l)=>{ o.text = (o.text+" "+l).replace(/\s+/g," ").trim(); };
+  lines.forEach(l=>{
+    if(noiseRe.test(l)){ brk = true; return; }
+    const afterBreak = brk; brk = false;
+    let m;
+    if((m = l.match(subRe))){
+      const fn = m[1], cat = m[1]+"."+m[2];
+      cur = { ref:fn+"."+m[2]+"-"+m[3], fn, cat, text:m[4].trim() }; out.push(cur); last = cur; return;
+    }
+    if((m = l.match(catRe)) && (bulletRe.test(l) || funcs[m[2]])){
+      const key = m[2]+"."+m[3]; cats[key] = cats[key] || { ref:key, title:m[1].trim(), text:m[4].trim() }; last = cats[key]; cur = null; return;
+    }
+    if((m = l.match(funcRe)) && !bulletRe.test(l)){
+      funcs[m[2]] = funcs[m[2]] || { ref:m[2], title:m[1][0]+m[1].slice(1).toLowerCase(), text:m[3].trim() }; last = funcs[m[2]]; cur = null; return;
+    }
+    if(last && /^(Tiers?|Profiles?|Figure|Table|Appendix|Annex)\b/i.test(l)){ last = null; return; }
+    if(last && !isStruct(l) && l.length>2){
+      /* suite d'une ligne uniquement tant que le bloc se poursuit (même paragraphe) : on s'arrête dès qu'un paragraphe étranger apparaît */
+      if(last===cur && (afterBreak ? /^[a-zà-ÿ(]/.test(l) : true) && last.text.length+l.length<400) append(last, l);
+      else if(last!==cur && (last.text && !/[.]$/.test(last.text) && l.length>20 && /^[a-zà-ÿ(]/.test(l))) append(last, l);
+      else last = null;
+    }
+  });
+  /* En-têtes « • Policy (GV.PO): … » absents de la liste : on retombe sur le code de la catégorie. */
+  const stem = t => (typeof keywordStems==="function" ? keywordStems(t) : String(t).toLowerCase().split(/\W+/).filter(w=>w.length>4));
+  const seen = new Set();
+  const exigences = out.filter(o=>{ if(seen.has(o.ref)) return false; seen.add(o.ref); return true; }).map(o=>{
+    const f = funcs[o.fn], c = cats[o.cat];
+    const kw = stem(o.text);
+    return { ref:o.ref, title:o.text.length>90 ? o.text.slice(0,89)+"…" : o.text, description:o.text, sourceText:o.text, type:"critere",
+      chapter: f ? { ref:f.ref, title:f.title } : { ref:o.fn, title:"" },
+      objectif: c ? { ref:c.ref, title:c.title } : { ref:o.cat, title:"" },
+      attendus:[{ id:"A1", label:o.text.length>200 ? o.text.slice(0,199)+"…" : o.text, keywords:kw, minMatches: kw.length>=4 ? Math.min(3, Math.ceil(kw.length/3)) : 1, evidenceTypes:[], suggestion:"" }] };
+  });
+  return { exigences, chapters:[...new Set(exigences.map(e=>e.chapter.ref))], functions:Object.keys(funcs).length, categories:Object.keys(cats).length };
+}
+
 function parseReferentielText(text, mode){
   mode = mode || "auto";
   if(mode==="auto" || mode==="catalogue" || mode==="criteres"){
+    const oc = parseOutcomeCodes(text);
+    if(oc){ annotateRanks(oc.exigences); return { chapters:oc.chapters, exigences:oc.exigences.slice(0,MAX_IMPORTED_EXIGENCES), truncated:0, duplicatesRemoved:0, ignored:0, rawConvient:0, mode:"criteres", numbered:true, outcomes:true, nbFunctions:oc.functions, nbCategories:oc.categories }; }
     const cat = parseCodedCatalogue(text);
     if(cat){ annotateRanks(cat.exigences); return { chapters:cat.chapters, exigences:cat.exigences.slice(0,MAX_IMPORTED_EXIGENCES), truncated:0, duplicatesRemoved:0, ignored:0, rawConvient:0, mode:"criteres", coded:true, checklistCount:cat.checklistCount }; }
     if(mode==="catalogue") return { chapters:[], exigences:[], truncated:0, duplicatesRemoved:0, ignored:0, rawConvient:0, mode:"criteres", notice:"Aucun catalogue à codes reconnu (il faut au moins trois lignes du type « GOV-1.1 Titre » sous un en-tête « No Exigence Catégorie »)." };
@@ -511,7 +564,7 @@ function openReferentielImportModal(presets){
       const derived = p.exigences.filter(e=>e.attendus && e.attendus.length===1 && e.attendus[0].minMatches!==undefined).length === p.exigences.filter(e=>e.attendus).length;
       kpis.push([attendusCount, derived ? "Attendus (1 par critère)" : "Éléments d'évaluation"]);
     }
-    const modeNote = p.coded ? "Référentiel lu comme un <strong>catalogue à codes</strong> : chaque code (GOV-1.1, KVP-2.1…) devient un critère rattaché à son chapitre, avec son explication. "+(p.checklistCount?"Les "+p.checklistCount+" points de la <strong>checklist de l'annexe</strong> deviennent les attendus de chaque critère (analyse des audits).":"Le critère lui-même sert d'attendu.") : p.mode==="criteres" ? (p.exigences.length ? "Référentiel lu <strong>par critères</strong>"+(p.numbered?" (chapitres › objectifs › critères numérotés)":"")+" : chaque critère devient une exigence, rattachée à son objectif et à son chapitre. "+(p.exigences.some(e=>(e.attendus||[]).length>1)?"Les éléments d'évaluation deviennent les <strong>attendus</strong> utilisés par l'analyse des audits.":"Le critère lui-même sert d'<strong>attendu</strong> pour l'analyse des audits (modifiable avec ✏️). Une aide à la compréhension et à l'application est proposée pour chaque critère.") : "")
+    const modeNote = p.outcomes ? "Référentiel lu comme un <strong>cadre à résultats attendus</strong> (type NIST CSF) : "+p.nbFunctions+" fonction(s) › "+p.nbCategories+" catégorie(s) › "+p.exigences.length+" sous-catégorie(s). Chaque sous-catégorie (GV.OC-01…) devient un critère, rattaché à sa fonction (chapitre) et à sa catégorie (objectif) ; son énoncé sert d'<strong>attendu</strong> pour l'analyse des audits (modifiable avec ✏️)." : p.coded ? "Référentiel lu comme un <strong>catalogue à codes</strong> : chaque code (GOV-1.1, KVP-2.1…) devient un critère rattaché à son chapitre, avec son explication. "+(p.checklistCount?"Les "+p.checklistCount+" points de la <strong>checklist de l'annexe</strong> deviennent les attendus de chaque critère (analyse des audits).":"Le critère lui-même sert d'attendu.") : p.mode==="criteres" ? (p.exigences.length ? "Référentiel lu <strong>par critères</strong>"+(p.numbered?" (chapitres › objectifs › critères numérotés)":"")+" : chaque critère devient une exigence, rattachée à son objectif et à son chapitre. "+(p.exigences.some(e=>(e.attendus||[]).length>1)?"Les éléments d'évaluation deviennent les <strong>attendus</strong> utilisés par l'analyse des audits.":"Le critère lui-même sert d'<strong>attendu</strong> pour l'analyse des audits (modifiable avec ✏️). Une aide à la compréhension et à l'application est proposée pour chaque critère.") : "")
       : p.mode==="phrases" ? "⚠️ Aucun « doit » ni structure par critères n'a été reconnu. Qonnect a retenu <strong>chaque phrase significative</strong> comme critère : c'est une lecture approximative, à relire et à nettoyer (✏️ pour modifier ou supprimer). Pour un meilleur résultat, vérifiez que les lignes « Critère … » et « Éléments d'évaluation » figurent dans le texte, ou choisissez le type « Par critères »." : "";
     return `
       <div class="grid mb-2" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));">
