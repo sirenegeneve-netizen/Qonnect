@@ -226,8 +226,112 @@ function parseSentencesFallback(text){
   return out;
 }
 
+/* Catalogue à codes (H+, par exemple) : « GOV-1.1 Gestion de la qualité… », sans « doit ». Chaque code devient un critère rattaché à son
+   chapitre ; la checklist d'une annexe (« Le fournisseur de prestations … Oui / Non ») fournit les attendus de chaque critère. */
+function parseCodedCatalogue(text){
+  const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const headRe = /^([A-Z]{2,4})\s*-\s*(\d+)\s*\.\s*(\d+)\s+(.{3,})$/;
+  const tableHeadRe = /^N\s?o\s+Exigence\b/i;
+  const hasTableHeads = lines.some(l=>tableHeadRe.test(l));
+  const noiseRe = /^(H\+ Die Sp|Guide de H\+|Page \d+ ?\/ ?\d+$)/i;
+  const markRe = /🗹|☑|Critère\s+oblig\.?|Critère\s+facult\.?|\(\s*(?:CQ|QV)\s*\)/gi;
+  const chapRe = /^(\d)\.(\d)\s+(\S.{2,80})$/;
+  const fixSpacing = t => t.replace(/(\p{L}{2,}) ([bcdfghjklmnpqrstuvwxz]) (?=\p{L}{3,})/gu, "$1$2").replace(/\b(\p{L}) (rocessus|estion|ouvernance)\b/gu, "$1$2").replace(/(\p{L}) - (?=\p{Ll})/gu,"$1-").replace(/\s+/g," ").trim();
+  const heads = [];
+  lines.forEach((l,i)=>{
+    const m = l.match(headRe);
+    if(!m || /^Explications/i.test(m[4])) return;
+    if(hasTableHeads && !(i>0 && tableHeadRe.test(lines[i-1]))) return;
+    heads.push({ i, code:m[1], ref:m[1]+"-"+m[2]+"."+m[3], rest:m[4] });
+  });
+  if(heads.length<3) return null;
+
+  /* chapitre courant pour chaque ligne */
+  const chapAt = new Array(lines.length).fill(null); let curChap = null;
+  lines.forEach((l,i)=>{ const c = l.match(chapRe); if(c && !/[.;:]$/.test(l) && !headRe.test(l)) curChap = { ref:c[1]+"."+c[2], title:fixSpacing(c[3]) }; chapAt[i] = curChap; });
+
+  const annexIdx = lines.findIndex(l=>/^Annexe\s+A\b/i.test(l) && l.length<90 && !tocRe0.test(l));
+  const bodyEndRe = /^(Références\b|Annexe\s+[A-Z]\b)/i;
+  const sentences = [];
+  const exigences = heads.map((h,k)=>{
+    const next = k+1<heads.length ? heads[k+1].i : lines.length;
+    const win = lines.slice(h.i, h.i+5).join(" ");
+    const crit = /🗹\s*Critère\s+oblig/i.test(win) ? "Critère obligatoire" : /🗹\s*Critère\s+facult/i.test(win) ? "Critère facultatif" : "";
+    const qual = (win.match(/\(\s*(CQ|QV)\s*\)/i)||[])[1];
+    let title = h.rest.replace(markRe,"").replace(/\s+/g," ").trim(), start = h.i+1;
+    if(/[-­]$/.test(title) && lines[start]){ const w = lines[start].replace(markRe,"").trim().split(/\s+/)[0]||""; title = title.slice(0,-1)+w; }
+    const body = [];
+    for(let j=h.i+1;j<next;j++){
+      const raw = lines[j];
+      if(bodyEndRe.test(raw)) break;
+      if(chapRe.test(raw) && !/[.;:]$/.test(raw) && chapAt[j] && chapAt[j]!==chapAt[h.i]) break;
+      if(noiseRe.test(raw) || tableHeadRe.test(raw)) continue;
+      let t = raw.replace(markRe,"").replace(/\s+/g," ").trim();
+      if(j===h.i+1 && /^(sirables|[a-zé]+\s*)$/i.test(t) && t.split(" ").length<=2 && /[-­]$/.test(h.rest.replace(markRe,"").trim())) t = t.split(" ").slice(1).join(" ");
+      if(t) body.push(t);
+    }
+    const full = body.join("\n").replace(/([\p{L}])-\n([\p{Ll}])/gu,"$1$2").replace(/\n/g," ").replace(/\s+/g," ").trim();
+    const parts = full.split(/(?<=[.!?])\s+(?=[A-ZÀ-Ý])/);
+    let description = ""; for(const s of parts){ if((description+" "+s).length>450 && description) break; description = (description+" "+s).trim(); if(description.split(/(?<=[.!?])\s/).length>=2) break; }
+    const ch = chapAt[h.i];
+    return { ref:h.ref, code:h.code, title:fixSpacing(title), description:description||fixSpacing(title), sourceText:full.slice(0,3000)||fixSpacing(title), type:"critere",
+      chapter: ch ? { ref:ch.ref, title:ch.title } : null, criticite: crit ? crit+(qual?" ("+qual.toUpperCase()+")":"") : null };
+  });
+
+  /* Checklist de l'annexe A : « 1 Le fournisseur de prestations … Oui / Non / Pas pertinent », groupée par rubrique */
+  const checklist = [];
+  if(annexIdx>=0){
+    let section = "", item = null, stripNext = false;
+    const itemRe = /^(\d{1,2})\s+(Le |La |Les |L['’])/;
+    const endIdx = lines.findIndex((l,i)=>i>annexIdx && /^Annexe\s+B\b/i.test(l));
+    const stop = endIdx>0 ? endIdx : lines.length;
+    for(let j=annexIdx+1;j<stop;j++){
+      let l = lines[j];
+      if(noiseRe.test(l) || /^(o|N)$/.test(l) || /^N\s?o?\s+Critère de l/i.test(l) || /^Les e\s?xigence/i.test(l) || /^point s?\s+suivants/i.test(l)) continue;
+      const im = l.match(itemRe);
+      if(im){ item = { n:+im[1], section, text:"" }; checklist.push(item); l = l.replace(/^\d{1,2}\s+/,""); stripNext = false; }
+      else if(!item || (!/\bOui \/ Non\b/.test(l) && /^[A-ZÀ-Ý][^.]{2,40}$/.test(l) && !/^(pertinent)$/i.test(l) && item.closed)){ section = fixSpacing(l); item = null; continue; }
+      if(!item) continue;
+      if(/Oui \/ Non \/ Pas/.test(l)){ l = l.replace(/\s*Oui \/ Non \/ Pas\s*/,""); stripNext = true; item.markSeen = true; }
+      else if(stripNext){ l = l.replace(/\s+pertinent\s*$/,"").replace(/^pertinent\s*$/,""); stripNext = false; item.closed = true; }
+      if(l) item.text += (item.text?" ":"")+l;
+    }
+    checklist.forEach(c=>{ c.text = fixSpacing(c.text.replace(/\s+pertinent\s*$/,"")).replace(/\s+([.,;:])/g,"$1"); });
+  }
+  const stem = t => (typeof keywordStems==="function" ? keywordStems(t) : String(t).toLowerCase().split(/\W+/).filter(w=>w.length>4));
+  const clipT = (t,n)=> t.length>n ? t.slice(0,n-1)+"…" : t;
+  /* rubriques de la checklist → préfixe de code, dans l'ordre d'apparition (GOV, KVP, PRM, RIM) */
+  const prefixes = [...new Set(exigences.map(e=>e.code))];
+  const sections = [...new Set(checklist.map(c=>c.section))];
+  const prefixOf = sec => sections.length===prefixes.length ? prefixes[sections.indexOf(sec)] : null;
+  const byCode = {};
+  checklist.forEach(c=>{
+    const px = prefixOf(c.section);
+    const cands = px ? exigences.filter(e=>e.code===px) : exigences;
+    const cs = stem(c.text);
+    let best = cands[0], bestScore = -1;
+    cands.forEach(e=>{ const es = new Set(stem(e.title+" "+e.description)), ts = new Set(stem(e.title)); const sc = cs.filter(w=>es.has(w)).length + 2*cs.filter(w=>ts.has(w)).length; if(sc>bestScore){ bestScore = sc; best = e; } });
+    if(best) (byCode[best.ref] = byCode[best.ref]||[]).push(c);
+  });
+  exigences.forEach(e=>{
+    const items = byCode[e.ref]||[];
+    const mk = (label,i)=>{ const kw = stem(label); return { id:"A"+(i+1), label:clipT(label,200), keywords:kw, minMatches: kw.length>=4 ? Math.min(3, Math.ceil(kw.length/3)) : 1, evidenceTypes:[], suggestion:"" }; };
+    e.attendus = (items.length ? items.map(c=>c.text) : [e.description]).map(mk);
+    e.fromChecklist = items.length>0;
+    delete e.code;
+  });
+  const chapters = [...new Set(exigences.map(e=>e.chapter?e.chapter.ref:"—"))];
+  return { exigences, chapters, coded:true, checklistCount:checklist.length };
+}
+const tocRe0 = /(\.{4,}|…{2,}|(?:\.\s){4,})/;
+
 function parseReferentielText(text, mode){
   mode = mode || "auto";
+  if(mode==="auto" || mode==="catalogue" || mode==="criteres"){
+    const cat = parseCodedCatalogue(text);
+    if(cat){ annotateRanks(cat.exigences); return { chapters:cat.chapters, exigences:cat.exigences.slice(0,MAX_IMPORTED_EXIGENCES), truncated:0, duplicatesRemoved:0, ignored:0, rawConvient:0, mode:"criteres", coded:true, checklistCount:cat.checklistCount }; }
+    if(mode==="catalogue") return { chapters:[], exigences:[], truncated:0, duplicatesRemoved:0, ignored:0, rawConvient:0, mode:"criteres", notice:"Aucun catalogue à codes reconnu (il faut au moins trois lignes du type « GOV-1.1 Titre » sous un en-tête « No Exigence Catégorie »)." };
+  }
   if(mode!=="obligations"){
     let st = parseCriteriaStructure(text);
     if(!st){
@@ -365,6 +469,7 @@ function openReferentielImportModal(presets){
           <option value="auto">Détection automatique (recommandé)</option>
           <option value="obligations">À obligations — « doit », « il convient de »… (ISO, normes)</option>
           <option value="criteres">Par critères et éléments d'évaluation — sans « doit » (HAS, ANQ…)</option>
+          <option value="catalogue">Catalogue à codes — « GOV-1.1 Titre » + checklist (H+…)</option>
         </select>
         <div class="hint">Un référentiel formulé par critères (« Critère 1.1-01 », « Éléments d'évaluation ») ne contient pas de « doit » : choisissez le deuxième ou le troisième type si la détection automatique ne convient pas.</div></div>
       <div class="field"><label>Fichier (PDF, Word .docx, .txt ou .html — lecture automatique)</label><input type="file" id="imp-file" accept=".pdf,.docx,.txt,.html,.htm,.md"></div>
@@ -391,7 +496,7 @@ function openReferentielImportModal(presets){
       const derived = p.exigences.filter(e=>e.attendus && e.attendus.length===1 && e.attendus[0].minMatches!==undefined).length === p.exigences.filter(e=>e.attendus).length;
       kpis.push([attendusCount, derived ? "Attendus (1 par critère)" : "Éléments d'évaluation"]);
     }
-    const modeNote = p.mode==="criteres" ? (p.exigences.length ? "Référentiel lu <strong>par critères</strong>"+(p.numbered?" (chapitres › objectifs › critères numérotés)":"")+" : chaque critère devient une exigence, rattachée à son objectif et à son chapitre. "+(p.exigences.some(e=>(e.attendus||[]).length>1)?"Les éléments d'évaluation deviennent les <strong>attendus</strong> utilisés par l'analyse des audits.":"Le critère lui-même sert d'<strong>attendu</strong> pour l'analyse des audits (modifiable avec ✏️). Une aide à la compréhension et à l'application est proposée pour chaque critère.") : "")
+    const modeNote = p.coded ? "Référentiel lu comme un <strong>catalogue à codes</strong> : chaque code (GOV-1.1, KVP-2.1…) devient un critère rattaché à son chapitre, avec son explication. "+(p.checklistCount?"Les "+p.checklistCount+" points de la <strong>checklist de l'annexe</strong> deviennent les attendus de chaque critère (analyse des audits).":"Le critère lui-même sert d'attendu.") : p.mode==="criteres" ? (p.exigences.length ? "Référentiel lu <strong>par critères</strong>"+(p.numbered?" (chapitres › objectifs › critères numérotés)":"")+" : chaque critère devient une exigence, rattachée à son objectif et à son chapitre. "+(p.exigences.some(e=>(e.attendus||[]).length>1)?"Les éléments d'évaluation deviennent les <strong>attendus</strong> utilisés par l'analyse des audits.":"Le critère lui-même sert d'<strong>attendu</strong> pour l'analyse des audits (modifiable avec ✏️). Une aide à la compréhension et à l'application est proposée pour chaque critère.") : "")
       : p.mode==="phrases" ? "⚠️ Aucun « doit » ni structure par critères n'a été reconnu. Qonnect a retenu <strong>chaque phrase significative</strong> comme critère : c'est une lecture approximative, à relire et à nettoyer (✏️ pour modifier ou supprimer). Pour un meilleur résultat, vérifiez que les lignes « Critère … » et « Éléments d'évaluation » figurent dans le texte, ou choisissez le type « Par critères »." : "";
     return `
       <div class="grid mb-2" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));">
@@ -402,7 +507,7 @@ function openReferentielImportModal(presets){
       <p class="text-xs mb-2">Total : ${p.exigences.length} élément(s) retenu(s).</p>
       ${p.duplicatesRemoved?`<p class="text-xs mb-2">${p.duplicatesRemoved} phrase(s) identique(s) répétée(s) dans le même chapitre ont été regroupées (en-têtes ou pieds de page par exemple).</p>`:""}
       ${p.ignored?`<p class="text-xs mb-2">${p.ignored} phrase(s) qui expliquent le vocabulaire de la norme (« doit » indique une exigence…) ont été ignorées : ce ne sont pas des exigences.</p>`:""}
-      ${p.rawConvient?`<p class="text-xs mb-2">Contrôle : « il convient » apparaît ${p.rawConvient} fois dans le texte lu ; ${count("recommandation")} recommandation(s) retenue(s), ${p.ignored} phrase(s) de vocabulaire ignorée(s)${p.duplicatesRemoved?" et "+p.duplicatesRemoved+" doublon(s) regroupé(s)":""}. Si l'écart vous surprend, utilisez le filtre « Tout » pour vérifier que la phrase n'est pas rangée dans un autre type.</p>`:`<p class="text-xs mb-2">Contrôle : l'expression « il convient » n'apparaît pas dans le texte lu. Si votre document en contient, le PDF a peut-être été mal lu (essayez la version Word).</p>`}
+      ${p.coded?"":p.rawConvient?`<p class="text-xs mb-2">Contrôle : « il convient » apparaît ${p.rawConvient} fois dans le texte lu ; ${count("recommandation")} recommandation(s) retenue(s), ${p.ignored} phrase(s) de vocabulaire ignorée(s)${p.duplicatesRemoved?" et "+p.duplicatesRemoved+" doublon(s) regroupé(s)":""}. Si l'écart vous surprend, utilisez le filtre « Tout » pour vérifier que la phrase n'est pas rangée dans un autre type.</p>`:`<p class="text-xs mb-2">Contrôle : l'expression « il convient » n'apparaît pas dans le texte lu. Si votre document en contient, le PDF a peut-être été mal lu (essayez la version Word).</p>`}
       ${p.truncated?`<p class="text-sm mb-2">⚠️ ${p.truncated} exigence(s) au-delà de la limite de ${MAX_IMPORTED_EXIGENCES} n'ont pas été retenues.</p>`:""}
       <div class="field-row"><div class="field"><label>Chapitre</label>
         <select id="imp-chapter">
