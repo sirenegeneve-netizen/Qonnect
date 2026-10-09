@@ -75,7 +75,7 @@ function getReferentielExigenceViews(refId){
   return own.map((e,idx)=>{
     const bundle = customExigenceBundle(e);
     const level = scoreCoverage(bundle);
-    return { id:e.id, ref:e.ref, rank:ranks[idx].rank, rankOf:ranks[idx].rankOf, title:e.title, description:e.description, sourceText:e.sourceText, type:e.type, chapter:e.chapter||null, chapterRef:e.chapterRef||null, chapterTitle:e.chapterTitle||null, objectif:e.objectif||null, criticite:e.criticite||null, legacy:false, bundle, level, process:bundle.process,
+    return { id:e.id, ref:e.ref, rank:ranks[idx].rank, rankOf:ranks[idx].rankOf, title:e.title, description:e.description, sourceText:e.sourceText, type:e.type, chapter:e.chapter||null, chapterRef:e.chapterRef||null, chapterTitle:e.chapterTitle||null, original:e.original||null, objectif:e.objectif||null, criticite:e.criticite||null, legacy:false, bundle, level, process:bundle.process,
       updatedAt: bundle.docs.reduce((max,d)=> d.date>max?d.date:max, "") };
   });
 }
@@ -485,6 +485,21 @@ function openReferentielImportModal(presets){
     const list = state.parsed.exigences.filter(e=> (!filter || filter==="all" || e.type===filter) && (!chap || chap==="all" || chapterKey(e)===chap));
     return list.length ? `<table class="data-table"><thead><tr><th>Chapitre</th><th>Élément</th><th>Type</th></tr></thead><tbody>${list.map(exigenceRowHtml).join("")}</tbody></table>` : `<p class="text-sm">Aucun élément ne correspond à ces filtres.</p>`;
   }
+  function translationBlockHtml(){
+    const p = state.parsed;
+    if(!p.exigences.length) return "";
+    const translated = p.exigences.some(e=>e.original);
+    const english = !translated && looksEnglish(state.text);
+    const showingFr = p.exigences.some(e=>e.lang==="fr");
+    if(!translated && !english && !state.showTranslate) return `<p class="text-xs mb-2"><a href="#" id="imp-show-translate">🌐 Le document est dans une autre langue ? Le traduire en français</a></p>`;
+    return `<div class="aq-callout" style="margin-top:0;margin-bottom:12px;" id="imp-translate-box">
+      ${translated ? `<div>🌐 <strong>${showingFr?"Traduction française affichée":"Texte d'origine affiché"}</strong> — le texte d'origine est conservé avec chaque exigence.</div>`
+        : `<div>🌐 <strong>${english?"Ce document semble être en anglais.":"Traduction en français."}</strong> Qonnect peut le traduire avec l'IA locale : le texte ne quitte pas votre ordinateur. Le modèle se télécharge la première fois (plusieurs centaines de Mo), puis la traduction prend quelques minutes. Elle est à relire, notamment pour les termes normatifs.</div>`}
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        ${translated ? `<button class="btn btn-secondary btn-sm" id="imp-toggle-lang">${showingFr?"Voir le texte d'origine":"Voir la traduction"}</button>` : `<button class="btn btn-primary btn-sm" id="imp-translate">🌐 Traduire en français (IA locale)</button>`}
+        <span class="text-xs" id="imp-translate-status"></span>
+      </div></div>`;
+  }
   function step2Html(){
     const p = state.parsed;
     const count = t => p.exigences.filter(e=>e.type===t).length;
@@ -509,6 +524,7 @@ function openReferentielImportModal(presets){
       ${p.ignored?`<p class="text-xs mb-2">${p.ignored} phrase(s) qui expliquent le vocabulaire de la norme (« doit » indique une exigence…) ont été ignorées : ce ne sont pas des exigences.</p>`:""}
       ${p.coded?"":p.rawConvient?`<p class="text-xs mb-2">Contrôle : « il convient » apparaît ${p.rawConvient} fois dans le texte lu ; ${count("recommandation")} recommandation(s) retenue(s), ${p.ignored} phrase(s) de vocabulaire ignorée(s)${p.duplicatesRemoved?" et "+p.duplicatesRemoved+" doublon(s) regroupé(s)":""}. Si l'écart vous surprend, utilisez le filtre « Tout » pour vérifier que la phrase n'est pas rangée dans un autre type.</p>`:`<p class="text-xs mb-2">Contrôle : l'expression « il convient » n'apparaît pas dans le texte lu. Si votre document en contient, le PDF a peut-être été mal lu (essayez la version Word).</p>`}
       ${p.truncated?`<p class="text-sm mb-2">⚠️ ${p.truncated} exigence(s) au-delà de la limite de ${MAX_IMPORTED_EXIGENCES} n'ont pas été retenues.</p>`:""}
+      ${translationBlockHtml()}
       <div class="field-row"><div class="field"><label>Chapitre</label>
         <select id="imp-chapter">
           <option value="all">Tous les chapitres</option>
@@ -564,6 +580,29 @@ function openReferentielImportModal(presets){
     const refresh = ()=>{ o.querySelector("#imp-preview-list").innerHTML = previewListHtml(filterEl?filterEl.value:"all", chapEl?chapEl.value:"all"); };
     if(filterEl) filterEl.addEventListener("change", refresh);
     if(chapEl) chapEl.addEventListener("change", refresh);
+    function rerenderTranslation(){
+      const box = o.querySelector("#imp-translate-box") || o.querySelector("#imp-show-translate");
+      const holder = box ? (box.id==="imp-show-translate" ? box.parentElement : box) : null;
+      if(holder){ const tmp = document.createElement("div"); tmp.innerHTML = translationBlockHtml(); holder.replaceWith(...tmp.childNodes); }
+      refresh(); bindTranslation();
+    }
+    function bindTranslation(){
+      const show = o.querySelector("#imp-show-translate");
+      if(show) show.addEventListener("click", ev=>{ ev.preventDefault(); state.showTranslate = true; rerenderTranslation(); });
+      const tbtn = o.querySelector("#imp-translate"), status = o.querySelector("#imp-translate-status");
+      if(tbtn) tbtn.addEventListener("click", async ()=>{
+        tbtn.disabled = true; status.textContent = "Préparation du modèle…";
+        try{
+          const r = await translateExigences(state.parsed.exigences, s=>{ if(status && s) status.textContent = (s.text||"") + (typeof s.progress==="number" && s.status==="loading" ? " ("+Math.round(s.progress*100)+" %)" : ""); });
+          if(!r.translated){ status.textContent = "Aucun texte n'a pu être traduit. Réessayez ou changez de modèle (Administration)."; tbtn.disabled = false; return; }
+          toast(r.translated+" exigence(s) traduite(s)"+(r.failed?" — "+r.failed+" texte(s) laissé(s) en anglais":""));
+          rerenderTranslation();
+        }catch(err){ status.textContent = "⚠️ "+(err&&err.message?err.message:err); tbtn.disabled = false; }
+      });
+      const tg = o.querySelector("#imp-toggle-lang");
+      if(tg) tg.addEventListener("click", ()=>{ const fr = state.parsed.exigences.some(e=>e.lang==="fr"); setExigencesLanguage(state.parsed.exigences, fr?"original":"fr"); rerenderTranslation(); });
+    }
+    bindTranslation();
     const confirmBtn = o.querySelector("#imp-confirm");
     if(confirmBtn) confirmBtn.addEventListener("click", ()=>{
       let ref = existingRef;
@@ -600,7 +639,7 @@ function openReferentielImportModal(presets){
         const links = linkExigenceToSMQ(e.title+" "+e.description);
         DB.customExigences.push({ id:"CEX-"+ref.id+"-"+i+"-"+String(Date.now()).slice(-4), referentielId:ref.id,
           ref:e.ref, title:e.title, description:e.description, sourceText:e.sourceText, type:e.type, ...links,
-          ...(e.attendus ? { attendus:e.attendus } : {}), ...(e.criticite ? { criticite:e.criticite } : {}), ...(e.chapter ? { chapter:e.chapter } : {}), ...(e.chapterRef ? { chapterRef:e.chapterRef } : {}), ...(e.chapterTitle ? { chapterTitle:e.chapterTitle } : {}), ...(e.objectif ? { objectif:e.objectif } : {}) });
+          ...(e.attendus ? { attendus:e.attendus } : {}), ...(e.criticite ? { criticite:e.criticite } : {}), ...(e.chapter ? { chapter:e.chapter } : {}), ...(e.chapterRef ? { chapterRef:e.chapterRef } : {}), ...(e.chapterTitle ? { chapterTitle:e.chapterTitle } : {}), ...(e.objectif ? { objectif:e.objectif } : {}), ...(e.original && e.lang==="fr" ? { original:e.original, lang:"fr", sourceLang:e.sourceLang||"en" } : {}) });
       });
       ref.version = state.meta.version; ref.importDate = new Date().toISOString().slice(0,10); ref.origin = state.meta.origin;
       ref.versions.push({version:state.meta.version, date:new Date().toISOString().slice(0,10), note:diffNote, diff:diffDetail});
@@ -911,7 +950,9 @@ function refExigenceDetail(ref, v){
         <div class="flex justify-between items-center">${badge(LABELS.exigenceCoverage[v.level])}${badgeRaw("neutral", LABELS.exigenceType[v.type]||v.type)}</div>
         ${v.chapter||v.objectif?`<p class="text-xs mt-2">${v.chapter?"Chapitre "+esc(v.chapter.ref)+(v.chapter.title?" — "+esc(v.chapter.title):""):""}${v.chapter&&v.objectif?" › ":""}${v.objectif?"Objectif "+esc(v.objectif.ref)+" — "+esc(v.objectif.title):""}</p>`:""}
         <h1 class="mt-2">${esc(exigenceLabel(v))} — ${esc(v.title)}</h1>
-        ${v.sourceText?`<p class="text-sm mt-4" style="color:var(--text-primary);line-height:1.7;">« ${esc(v.sourceText)} »</p>`:""}
+        ${v.original ? `<p class="text-sm mt-4" style="color:var(--text-primary);line-height:1.7;">« ${esc(v.description||v.title)} »</p>
+          <details class="mt-2"><summary class="text-xs">🌐 Traduit de l'anglais par l'IA locale — voir le texte d'origine</summary><p class="text-sm mt-2" style="color:var(--text-secondary);line-height:1.7;">« ${esc(v.sourceText||"")} »</p><p class="text-xs mt-2">La traduction est à relire ; modifiez-la avec ✏️ si besoin.</p></details>`
+          : v.sourceText?`<p class="text-sm mt-4" style="color:var(--text-primary);line-height:1.7;">« ${esc(v.sourceText)} »</p>`:""}
         ${!v.legacy && typeof criterionHelpHtml==="function" ? criterionHelpHtml(v.description||v.title, {open:true}) : ""}
       </div>
       <div class="card mb-2">
