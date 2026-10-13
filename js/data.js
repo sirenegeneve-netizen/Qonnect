@@ -868,6 +868,13 @@ function normalizeDocuments(){
   if(!DB.trainings) DB.trainings = [];
   if(!DB.documentTemplates) DB.documentTemplates = JSON.parse(JSON.stringify(QONNECT_SEED.documentTemplates));
   if(!DB.customExigences) DB.customExigences = [];
+  /* Migration : les rapprochements automatiques faits à l'import (avant « liens à valider ») deviennent des suggestions et ne comptent plus dans le niveau. */
+  DB.customExigences.forEach(e=>{
+    if(e.linksV2) return;
+    const had = (e.docIds||[]).length + (e.processIds||[]).length + (e.riskIds||[]).length;
+    if(had){ e.suggested = { processIds:e.processIds||[], docIds:e.docIds||[], riskIds:e.riskIds||[] }; e.processIds = []; e.docIds = []; e.riskIds = []; }
+    e.linksV2 = true;
+  });
   if(!DB.competences) DB.competences = JSON.parse(JSON.stringify(QONNECT_SEED.competences));
   if(!DB.postes) DB.postes = JSON.parse(JSON.stringify(QONNECT_SEED.postes));
   if(!DB.habilitations) DB.habilitations = JSON.parse(JSON.stringify(QONNECT_SEED.habilitations));
