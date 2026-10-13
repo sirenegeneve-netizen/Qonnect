@@ -733,6 +733,10 @@ function openReferentielEditForm(refId){
     bodyHtml:`
       <div class="field"><label>Nom <span class="req">*</span></label><input type="text" id="ref-name" value="${esc(ref.name)}"></div>
       <div class="field"><label>Description</label><textarea id="ref-desc">${esc(ref.desc)}</textarea></div>
+      <div class="field"><label>Domaine <span class="text-xs">(facultatif)</span></label>
+        <input type="text" id="ref-domain" list="ref-domain-list" value="${esc(ref.domain||"")}" placeholder="Choisissez une catégorie ou saisissez la vôtre">
+        <datalist id="ref-domain-list">${refDomainChoices().map(d=>`<option value="${esc(d)}"></option>`).join("")}</datalist>
+        <div class="hint">Renseigné par vous uniquement : Qonnect ne le déduit jamais.</div></div>
       <div class="field-row">
         <div class="field"><label>Version</label><input type="text" id="ref-version" value="${esc(ref.version||"")}"></div>
         <div class="field"><label>Origine</label><input type="text" id="ref-origin" value="${esc(ref.origin||"")}"></div>
@@ -741,25 +745,70 @@ function openReferentielEditForm(refId){
     onMount:(o)=>{ o.querySelector("#ref-save").addEventListener("click", ()=>{
       const name = o.querySelector("#ref-name").value.trim();
       if(!name){ toast("Merci de saisir un nom","⚠️"); return; }
-      ref.name = name; ref.desc = o.querySelector("#ref-desc").value.trim();
-      ref.version = o.querySelector("#ref-version").value.trim()||null;
-      ref.origin = o.querySelector("#ref-origin").value.trim()||null;
-      saveDB(); closeModal(); toast("Référentiel mis à jour"); render();
+      /* Seuls les champs réellement modifiés sont écrits : ouvrir puis enregistrer sans rien changer ne touche à aucune donnée. */
+      const next = {
+        name, desc:o.querySelector("#ref-desc").value.trim(),
+        version:o.querySelector("#ref-version").value.trim(), origin:o.querySelector("#ref-origin").value.trim(),
+        domain:o.querySelector("#ref-domain").value.trim(),
+      };
+      const cur = { name:ref.name, desc:(ref.desc||"").trim(), version:ref.version||"", origin:ref.origin||"", domain:ref.domain||"" };
+      let changed = 0;
+      Object.keys(next).forEach(k=>{
+        if(next[k]===cur[k]) return;
+        changed++;
+        if(k==="name") ref.name = next.name;
+        else if(k==="desc") ref.desc = next.desc;
+        else if(k==="domain"){ if(next.domain) ref.domain = next.domain; else delete ref.domain; }
+        else ref[k] = next[k] || null;
+      });
+      if(changed){ saveDB(); toast("Référentiel mis à jour"); } else toast("Aucune modification");
+      closeModal(); render();
     });}
   });
 }
 
+/* Compteurs en lecture seule pour la confirmation de suppression : rien n'est modifié ici. */
+function referentielDeletionImpact(refId){
+  const custom = DB.customExigences.filter(e=>e.referentielId===refId);
+  const legacy = refId==="ISO9001" ? DB.requirements : [];
+  const ids = new Set([...custom.map(e=>e.id), ...legacy.map(r=>r.id)]);
+  const audits = DB.audits.filter(a=>(a.referentielIds||[]).includes(refId)
+    || ((a.criteres&&a.criteres.requirementIds)||[]).some(id=>ids.has(id))
+    || (a.questions||[]).some(q=>ids.has(q.requirementId))
+    || (a.findings||[]).some(f=>ids.has(f.requirementId)));
+  const questions = DB.audits.reduce((n,a)=>n+(a.questions||[]).filter(q=>ids.has(q.requirementId)).length, 0);
+  const findings = DB.audits.reduce((n,a)=>n+(a.findings||[]).filter(f=>ids.has(f.requirementId)).length, 0);
+  const docs = new Set();
+  custom.forEach(e=>(e.docIds||[]).forEach(d=>docs.add(d)));
+  DB.documents.forEach(d=>{ if((d.requirementIds||[]).some(id=>legacy.some(r=>r.id===id))) docs.add(d.id); });
+  const validated = custom.reduce((n,e)=>n+(e.docIds||[]).length+(e.processIds||[]).length+(e.riskIds||[]).length, 0);
+  return { exigences: custom.length+legacy.length, audits:audits.length, questions, findings, documents:docs.size, validated };
+}
 function deleteReferentiel(refId){
   const ref = getReferentiel(refId);
   if(!ref) return;
-  const nbExigences = DB.customExigences.filter(e=>e.referentielId===refId).length + (refId==="ISO9001"?DB.requirements.length:0);
-  confirmDialog(`Supprimer définitivement le référentiel « ${ref.name} » et ${nbExigences} exigence(s) associée(s) ? Cette action est irréversible.`, ()=>{
-    const wasActive = ref.active;
-    DB.referentiels = DB.referentiels.filter(r=>r.id!==refId);
-    DB.customExigences = DB.customExigences.filter(e=>e.referentielId!==refId);
-    if(refId==="ISO9001") DB.requirements = [];
-    if(wasActive && DB.referentiels.length) DB.referentiels[0].active = true;
-    saveDB(); toast("Référentiel supprimé"); navigate("referentiels");
+  const imp = referentielDeletionImpact(refId);
+  const line = (n, label)=>`<li class="text-sm mt-2"><strong>${n}</strong> ${esc(label)}</li>`;
+  openModal({ title:"Supprimer le référentiel",
+    bodyHtml:`<p>Supprimer définitivement le référentiel « <strong>${esc(ref.name)}</strong> » ? Cette action est irréversible.</p>
+      <p class="text-sm mt-2">Ce qui est concerné :</p>
+      <ul>
+        ${line(imp.exigences, "exigence(s) supprimée(s) avec le référentiel")}
+        ${line(imp.documents, "document(s) lié(s) à ces exigences (les documents eux-mêmes ne sont pas supprimés)")}
+        ${line(imp.validated, "lien(s) validé(s) avec documents, processus ou risques (perdus)")}
+        ${line(imp.audits, "audit(s) qui font référence à ce référentiel ou à ses exigences")}
+        ${line(imp.questions+imp.findings, "question(s) et constat(s) d'audit rattachés à ces exigences (ils resteront dans l'audit, sans exigence associée)")}
+      </ul>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-danger" id="ref-del-yes">Supprimer</button>`,
+    onMount:(o)=>{ o.querySelector("#ref-del-yes").addEventListener("click", ()=>{
+      closeModal();
+      const wasActive = ref.active;
+      DB.referentiels = DB.referentiels.filter(r=>r.id!==refId);
+      DB.customExigences = DB.customExigences.filter(e=>e.referentielId!==refId);
+      if(refId==="ISO9001") DB.requirements = [];
+      if(wasActive && DB.referentiels.length) DB.referentiels[0].active = true;
+      saveDB(); toast("Référentiel supprimé"); navigate("referentiels");
+    }); }
   });
 }
 
@@ -847,30 +896,129 @@ function linesToAttendus(text, previous){
 /* ---------- Assistant IA spécialisé Référentiels ---------- */
 const REF_AI_HISTORY = {};  /* La génération des réponses est dans 29-assistant-referentiel.js */
 /* ---------- Pages ---------- */
+/* ---------- Liste des référentiels (tableau) ----------
+   Affichage seul : lit DB.referentiels et les calculs existants (getReferentielExigenceViews / referentielScore) sans rien modifier.
+   Tri, recherche et filtres vivent en mémoire (REF_LIST_STATE) : ils ne sont ni enregistrés ni migrés. */
+const REF_DOMAIN_SUGGESTIONS = ["Qualité","Environnement","Santé et sécurité au travail","Sécurité de l'information / Cybersécurité","Santé et soins","Dispositifs médicaux","Réglementaire","Interne"];
+const REF_LIST_STATE = { q:"", status:"", domain:"", exig:"", maitrise:"", sort:"name", dir:"asc" };
+const REF_SORTS = [
+  { v:"name", l:"Nom (A → Z)", dir:"asc" }, { v:"name", l:"Nom (Z → A)", dir:"desc" },
+  { v:"domain", l:"Domaine", dir:"asc" }, { v:"version", l:"Version", dir:"asc" },
+  { v:"count", l:"Exigences (plus nombreuses d'abord)", dir:"desc" }, { v:"pct", l:"Maîtrise (plus élevée d'abord)", dir:"desc" },
+];
+function refDomainChoices(){
+  const used = DB.referentiels.map(r=>r.domain).filter(Boolean);
+  return [...new Set([...REF_DOMAIN_SUGGESTIONS, ...used])];
+}
+function refListData(){
+  return DB.referentiels.map(r=>{
+    const views = getReferentielExigenceViews(r.id);
+    const score = views.length ? referentielScore(r.id) : null;
+    return { r, count:views.length, pct: score ? score.pct : null };
+  });
+}
+function refCollator(a, b){ return String(a||"").localeCompare(String(b||""), "fr", { sensitivity:"base" }); }
+function refListRows(){
+  const st = REF_LIST_STATE;
+  const q = (typeof qnorm==="function" ? qnorm : t=>String(t).toLowerCase())(st.q.trim());
+  const norm = typeof qnorm==="function" ? qnorm : (t=>String(t).toLowerCase());
+  let rows = refListData().filter(x=>{
+    const r = x.r;
+    if(q && !norm([r.name, r.desc, r.domain, r.version].filter(Boolean).join(" ")).includes(q)) return false;
+    if(st.status==="actif" && !r.active) return false;
+    if(st.status==="inactif" && r.active) return false;
+    if(st.domain==="__none"){ if(r.domain) return false; } else if(st.domain && r.domain!==st.domain) return false;
+    if(st.exig==="avec" && !x.count) return false;
+    if(st.exig==="sans" && x.count) return false;
+    if(st.maitrise==="nd" && x.pct!==null) return false;
+    if(st.maitrise==="lt50" && !(x.pct!==null && x.pct<50)) return false;
+    if(st.maitrise==="50-79" && !(x.pct!==null && x.pct>=50 && x.pct<80)) return false;
+    if(st.maitrise==="gte80" && !(x.pct!==null && x.pct>=80)) return false;
+    return true;
+  });
+  const dir = st.dir==="desc" ? -1 : 1;
+  const emptyLast = (a, b, cmp)=>{ const ea = a===null||a===undefined||a==="", eb = b===null||b===undefined||b===""; if(ea&&eb) return 0; if(ea) return 1; if(eb) return -1; return cmp(a,b)*dir; };
+  rows.sort((x,y)=>{
+    let c = 0;
+    if(st.sort==="domain") c = emptyLast(x.r.domain, y.r.domain, refCollator);
+    else if(st.sort==="version") c = emptyLast(x.r.version, y.r.version, refCollator);
+    else if(st.sort==="count") c = emptyLast(x.count, y.count, (a,b)=>a-b);
+    else if(st.sort==="pct") c = emptyLast(x.pct, y.pct, (a,b)=>a-b);
+    else c = refCollator(x.r.name, y.r.name)*dir;
+    return c || refCollator(x.r.name, y.r.name);   /* à égalité : ordre alphabétique du nom */
+  });
+  return rows;
+}
+function refListTableHtml(){
+  const rows = refListRows();
+  const total = DB.referentiels.length;
+  const sortTh = (key, label)=>`<th><button type="button" class="ref-sort-btn" data-ref-sort="${key}" title="Trier par ${esc(label.toLowerCase())}">${esc(label)}${REF_LIST_STATE.sort===key?(REF_LIST_STATE.dir==="desc"?" ↓":" ↑"):""}</button></th>`;
+  if(!rows.length) return `<p class="text-xs mb-2" id="ref-list-count">0 référentiel sur ${total}</p><div class="card">${emptyState("📐","Aucun référentiel ne correspond","Modifiez la recherche ou les filtres.", `<button class="btn btn-secondary" data-ref-reset>Réinitialiser les filtres</button>`)}</div>`;
+  return `<p class="text-xs mb-2" id="ref-list-count">${rows.length===total?total+" référentiel(s)":rows.length+" référentiel(s) sur "+total}</p>
+  <div class="card card-flush table-wrap"><table class="dt" id="ref-list-table">
+    <thead><tr>${sortTh("name","Référentiel")}${sortTh("domain","Domaine")}${sortTh("version","Version")}${sortTh("count","Exigences")}${sortTh("pct","Maîtrise")}<th>Statut</th><th>Actions</th></tr></thead>
+    <tbody>${rows.map(x=>{
+      const r = x.r;
+      return `<tr>
+        <td data-label="Référentiel"><div class="cell-title">${x.count?`<a data-route="referentiels/${esc(r.id)}" style="cursor:pointer;">${esc(r.name)}</a>`:esc(r.name)}</div>${r.desc?`<div class="cell-sub">${esc(r.desc)}</div>`:""}</td>
+        <td data-label="Domaine">${r.domain?esc(r.domain):`<span class="text-xs">—</span>`}</td>
+        <td data-label="Version">${r.version?esc(r.version):`<span class="text-xs">—</span>`}</td>
+        <td data-label="Exigences">${x.count?x.count:`<span class="text-xs">Aucune importée</span>`}</td>
+        <td data-label="Maîtrise">${x.pct!==null?`<strong style="color:var(--primary);">${x.pct} %</strong>`:`<span class="text-xs">—</span>`}</td>
+        <td data-label="Statut">${r.active?badgeRaw("success","Actif"):badgeRaw("neutral","Inactif")}</td>
+        <td data-label="Actions"><div class="flex gap-2" style="flex-wrap:wrap;">
+          ${x.count?`<a class="btn btn-primary btn-sm" data-route="referentiels/${esc(r.id)}">Voir le détail</a>`:`<button class="btn btn-secondary btn-sm" data-open-referentiel-import data-preset-ref="${esc(r.id)}">Importer</button>`}
+          ${r.active?"":`<button class="btn btn-secondary btn-sm" data-select-ref="${esc(r.id)}">Activer</button>`}
+          <button class="btn btn-secondary btn-sm" data-edit-ref="${esc(r.id)}">✏️ Modifier</button>
+          <button class="btn btn-danger btn-sm" data-delete-ref="${esc(r.id)}">🗑 Supprimer</button>
+        </div></td>
+      </tr>`;
+    }).join("")}</tbody></table></div>`;
+}
+function applyReferentielFilters(){
+  const st = REF_LIST_STATE, g = id => document.getElementById(id);
+  if(g("f-ref-q")) st.q = g("f-ref-q").value;
+  if(g("f-ref-status")) st.status = g("f-ref-status").value;
+  if(g("f-ref-domain")) st.domain = g("f-ref-domain").value;
+  if(g("f-ref-exig")) st.exig = g("f-ref-exig").value;
+  if(g("f-ref-maitrise")) st.maitrise = g("f-ref-maitrise").value;
+  const sortSel = g("f-ref-sort");
+  if(sortSel){ const o = REF_SORTS[+sortSel.value] || REF_SORTS[0]; st.sort = o.v; st.dir = o.dir; }
+  const zone = g("ref-list-zone"); if(zone) zone.innerHTML = refListTableHtml();
+}
+function refListSortBy(key){
+  const st = REF_LIST_STATE;
+  if(st.sort===key) st.dir = st.dir==="asc" ? "desc" : "asc";
+  else { st.sort = key; st.dir = (key==="count"||key==="pct") ? "desc" : "asc"; }
+  const sortSel = document.getElementById("f-ref-sort");
+  if(sortSel){ const i = REF_SORTS.findIndex(o=>o.v===st.sort && o.dir===st.dir); sortSel.value = String(i>=0?i:0); }
+  const zone = document.getElementById("ref-list-zone"); if(zone) zone.innerHTML = refListTableHtml();
+}
+function refListReset(){
+  Object.assign(REF_LIST_STATE, { q:"", status:"", domain:"", exig:"", maitrise:"", sort:"name", dir:"asc" });
+  const zone = document.getElementById("ref-list-filters"); if(zone) zone.outerHTML = refListFiltersHtml();
+  const z = document.getElementById("ref-list-zone"); if(z) z.innerHTML = refListTableHtml();
+}
+function refListFiltersHtml(){
+  const st = REF_LIST_STATE;
+  const sel = (id, label, opts, cur)=>`<select id="${id}" data-filter="${id}" aria-label="${esc(label)}"><option value="">${esc(label)}</option>${opts.map(o=>`<option value="${esc(o.v)}" ${o.v===cur?"selected":""}>${esc(o.l)}</option>`).join("")}</select>`;
+  const sortIdx = Math.max(0, REF_SORTS.findIndex(o=>o.v===st.sort && o.dir===st.dir));
+  return `<div class="filters-bar" id="ref-list-filters">
+    <input type="text" id="f-ref-q" data-filter="f-ref-q" placeholder="🔎 Rechercher (nom, domaine, version…)" value="${esc(st.q)}" style="min-width:240px;flex:1;max-width:360px;" aria-label="Rechercher un référentiel">
+    ${sel("f-ref-status","Statut",[{v:"actif",l:"Actif"},{v:"inactif",l:"Inactif"}],st.status)}
+    ${sel("f-ref-domain","Domaine",[...refDomainChoices().filter(d=>DB.referentiels.some(r=>r.domain===d)).map(d=>({v:d,l:d})),{v:"__none",l:"Sans domaine"}],st.domain)}
+    ${sel("f-ref-exig","Exigences",[{v:"avec",l:"Avec exigences importées"},{v:"sans",l:"Sans exigence importée"}],st.exig)}
+    ${sel("f-ref-maitrise","Maîtrise",[{v:"lt50",l:"Moins de 50 %"},{v:"50-79",l:"50 à 79 %"},{v:"gte80",l:"80 % et plus"},{v:"nd",l:"Non disponible"}],st.maitrise)}
+    <select id="f-ref-sort" data-filter="f-ref-sort" aria-label="Trier par">${REF_SORTS.map((o,i)=>`<option value="${i}" ${i===sortIdx?"selected":""}>Trier : ${esc(o.l)}</option>`).join("")}</select>
+    <button class="btn btn-secondary btn-sm" data-ref-reset>Réinitialiser</button>
+  </div>`;
+}
 function pageReferentiels(){
   return `
   ${pageHeader("Référentiels","Le moteur de conformité de Qonnect — importez un référentiel, Qonnect en analyse la structure et calcule automatiquement votre niveau de maîtrise.",
     `<button class="btn btn-primary" data-open-referentiel-import>+ Importer un référentiel</button>`)}
-  <div class="grid grid-3">
-    ${DB.referentiels.map(r=>{
-      const views = getReferentielExigenceViews(r.id);
-      const score = views.length ? referentielScore(r.id) : null;
-      return `<div class="card ${r.active?'':'card-hover'}" ${r.active?'':`data-select-ref="${r.id}"`} style="${r.active?'border-color:var(--primary);':''}">
-        <div class="flex justify-between items-center">
-          <h3>${esc(r.name)}</h3>
-          ${r.active?badgeRaw("success","Actif"):""}
-        </div>
-        <p class="text-sm mt-2">${esc(r.desc)}</p>
-        ${score?`<div class="flex items-center gap-2 mt-4"><span class="text-sm" style="font-weight:700;color:var(--primary);">${score.pct}%</span><span class="text-xs">de maîtrise · ${score.total} exigence(s)</span></div>`:`<p class="text-xs mt-4">Aucune exigence importée pour le moment.</p>`}
-        <div class="flex gap-2 mt-4" style="flex-wrap:wrap;">
-          ${views.length?`<a class="btn btn-primary btn-sm" data-route="referentiels/${r.id}">Voir le détail</a>`:""}
-          ${r.active?"":`<button class="btn btn-secondary btn-sm" data-select-ref="${r.id}">Sélectionner</button>`}
-          <button class="btn btn-secondary btn-sm" data-edit-ref="${r.id}">✏️ Modifier</button>
-          <button class="btn btn-danger btn-sm" data-delete-ref="${r.id}">🗑 Supprimer</button>
-        </div>
-      </div>`;
-    }).join("")}
-  </div>`;
+  ${refListFiltersHtml()}
+  <div id="ref-list-zone">${refListTableHtml()}</div>`;
 }
 
 function referentielTabsHtml(ref, active){
