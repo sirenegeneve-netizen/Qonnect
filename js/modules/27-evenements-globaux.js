@@ -354,6 +354,9 @@ function initGlobalEvents(){
       toast("Export PDF simulé pour cette démonstration", "🖨");
       return;
     }
+    const refSortEl = e.target.closest("[data-ref-sort]");
+    if(refSortEl){ refListSortBy(refSortEl.getAttribute("data-ref-sort")); return; }
+    if(e.target.closest("[data-ref-reset]")){ refListReset(); return; }
     const editRefEl = e.target.closest("[data-edit-ref]");
     if(editRefEl){ openReferentielEditForm(editRefEl.getAttribute("data-edit-ref")); return; }
     const deleteRefEl = e.target.closest("[data-delete-ref]");
@@ -528,6 +531,7 @@ function initGlobalEvents(){
       if(zone==="act") applyActionFilters();
       if(zone==="comp") applyCompetenceMatrixFilters();
       if(zone==="frn") applyFournisseurFilters();
+      if(e.target.id.startsWith("f-ref")) applyReferentielFilters();
     }
   });
   document.addEventListener("change", (e)=>{
@@ -538,6 +542,7 @@ function initGlobalEvents(){
       if(zone==="act") applyActionFilters();
       if(zone==="comp") applyCompetenceMatrixFilters();
       if(zone==="frn") applyFournisseurFilters();
+      if(e.target.id.startsWith("f-ref")) applyReferentielFilters();
     }
     if(e.target.id==="review-picker"){ navigate("revue-direction/"+e.target.value); }
   });
