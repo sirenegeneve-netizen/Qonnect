@@ -21,6 +21,13 @@ function initGlobalEvents(){
     reader.readAsText(file);
   });
   document.addEventListener("click", (e)=>{
+    const linkEl = e.target.closest("[data-link-resolve]");
+    if(linkEl){
+      e.preventDefault();
+      const pl = JSON.parse(linkEl.getAttribute("data-link-resolve"));
+      resolveLinkSuggestion(pl.exigenceId, pl.kind, pl.id, pl.action);
+      return;
+    }
     const editExigenceEl = e.target.closest("[data-edit-exigence]");
     if(editExigenceEl){
       e.preventDefault();

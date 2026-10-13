@@ -37,7 +37,9 @@ function customExigenceBundle(e){
   processes.forEach(p=>{ DB.risks.filter(r=>r.processId===p.id && r.type==="risque" && r.status==="ouvert" && (r.level==="critique"||r.level==="eleve")).forEach(r=>{ if(!risksOpen.find(x=>x.id===r.id)) risksOpen.push(r); }); });
   const indicatorsBad = processes.flatMap(p=> DB.indicators.filter(i=>i.processId===p.id && i.status!=="vert"));
   const auditEcarts = audits.some(a=>a.findings.some(f=>isAuditEcart(f)) && a.status!=="cloture");
-  return {docs, audits, actionsOpen, actionsLate, risksOpen, indicatorsBad, auditEcarts, process:processes[0]||null, processes};
+  const sg = e.suggested || {};
+  const suggestedCount = (sg.docIds||[]).length + (sg.processIds||[]).length + (sg.riskIds||[]).length;
+  return {docs, audits, actionsOpen, actionsLate, risksOpen, indicatorsBad, auditEcarts, process:processes[0]||null, processes, suggestedCount, custom:true};
 }
 function scoreCoverage(bundle){
   if(!bundle.docs.length) return "non_couvert";
@@ -49,13 +51,16 @@ function scoreCoverage(bundle){
   score += bundle.indicatorsBad.length===0 ? 1 : 0;
   if(score<=1) return "partiellement";
   if(score<=3) return "a_renforcer";
+  /* Référentiel importé : « maîtrisée » exige aussi qu'un audit ait vérifié l'exigence — un document validé sans audit ne suffit pas. */
+  if(bundle.custom && !bundle.audits.length) return "a_renforcer";
   if(score<=5) return "maitrise";
   return "optimise";
 }
 function coverageReasons(bundle){
   const reasons = [];
-  reasons.push(bundle.docs.length ? `${bundle.docs.length} document(s) associé(s)` : "Aucun document associé — condition bloquante pour la couverture");
-  reasons.push(bundle.audits.length ? `${bundle.audits.length} audit(s) existant(s)`+(bundle.auditEcarts?" avec écart(s) non clôturé(s)":", sans écart ouvert") : "Aucun audit associé");
+  if(bundle.custom) reasons.push(bundle.docs.length ? `${bundle.docs.length} document(s) validé(s) comme preuve` : "Aucun document validé comme preuve — condition bloquante pour la couverture"+(bundle.suggestedCount?" ("+bundle.suggestedCount+" rapprochement(s) suggéré(s) en attente de votre validation, non comptés)":""));
+  else reasons.push(bundle.docs.length ? `${bundle.docs.length} document(s) associé(s)` : "Aucun document associé — condition bloquante pour la couverture");
+  reasons.push(bundle.audits.length ? `${bundle.audits.length} audit(s) existant(s)`+(bundle.auditEcarts?" avec écart(s) non clôturé(s)":", sans écart ouvert") : (bundle.custom && bundle.docs.length ? "Aucun audit associé — sans audit, l'exigence ne peut pas être « maîtrisée » (au mieux « à renforcer »)" : "Aucun audit associé"));
   reasons.push(bundle.actionsLate.length ? `${bundle.actionsLate.length} action(s) en retard` : (bundle.actionsOpen.length? `${bundle.actionsOpen.length} action(s) en cours, aucune en retard` : "Aucune action ouverte"));
   reasons.push(bundle.risksOpen.length ? `${bundle.risksOpen.length} risque(s) élevé(s) ou critique(s) ouvert(s)` : "Aucun risque élevé ouvert");
   if(bundle.indicatorsBad.length) reasons.push(`${bundle.indicatorsBad.length} indicateur(s) hors cible`);
@@ -496,13 +501,25 @@ function chapterCellHtml(e){
   if(!c.ref && !c.title) return `<span class="text-xs">—</span>`;
   return `<strong>${esc(c.ref)}</strong>${c.title?`<span class="text-xs" style="display:block;font-weight:400;max-width:200px;white-space:normal;">${esc(c.title)}</span>`:""}`;
 }
+/* Rapprochements SUGGÉRÉS avec le SMQ (documents, processus, risques) : ils ne comptent jamais dans le niveau de maîtrise tant qu'un utilisateur ne les a pas validés.
+   Les mots génériques (gestion, organisation, qualité…) sont ignorés et il faut au moins deux mots significatifs en commun. */
+const LINK_GENERIC_WORDS = ["gestion","organisation","organisme","systeme","qualite","risque","risques","processus","processus","document","documents","documentaire","management","entreprise","exigence","exigences","activite","activites","information","informations","mesures","mesure","niveau","objectifs","objectif","general","generale","responsable","responsables","pertinent","pertinents","appropri","etablie","etablis","communique","communiquee","comprise","compris","matiere","personne","personnes","prestations","fournisseur","fournisseurs","politique","procedure","procedures","process","ensemble","moyens","cadre","dispose","assure"];
+function linkStems(text){
+  const norm = typeof qnorm==="function" ? qnorm : (t=>String(t).toLowerCase());
+  const out = new Set();
+  norm(text).split(/[^a-z0-9]+/).forEach(w=>{ if(w.length>5 && !LINK_GENERIC_WORDS.includes(w)) out.add(w.slice(0,6)); });
+  return out;
+}
 function linkExigenceToSMQ(text){
-  const low = text.toLowerCase();
-  const words = low.split(/\s+/).filter(w=>w.length>5);
-  const processIds = DB.processes.filter(p=> low.includes(p.name.toLowerCase())).map(p=>p.id);
-  const docIds = DB.documents.filter(d=> d.status!=="obsolete" && words.some(w=>d.title.toLowerCase().includes(w))).slice(0,3).map(d=>d.id);
-  const riskIds = DB.risks.filter(r=> words.some(w=>r.name.toLowerCase().includes(w))).slice(0,3).map(r=>r.id);
-  return {processIds, docIds, riskIds, auditIds:[], indicatorIds:[], actionIds:[]};
+  const norm = typeof qnorm==="function" ? qnorm : (t=>String(t).toLowerCase());
+  const low = norm(text);
+  const mine = linkStems(text);
+  const common = label => { const theirs = linkStems(label); let n = 0; theirs.forEach(w=>{ if(mine.has(w)) n++; }); return { n, size:theirs.size }; };
+  const enough = c => c.n>=2 || (c.size>0 && c.size<=2 && c.n>=c.size);
+  const processIds = DB.processes.filter(p=> p.name && low.includes(norm(p.name))).map(p=>p.id);
+  const docIds = DB.documents.filter(d=> d.status!=="obsolete" && enough(common(d.title))).slice(0,3).map(d=>d.id);
+  const riskIds = DB.risks.filter(r=> enough(common(r.name))).slice(0,3).map(r=>r.id);
+  return {processIds, docIds, riskIds};
 }
 
 function openReferentielImportModal(presets){
@@ -572,7 +589,7 @@ function openReferentielImportModal(presets){
       </div>
       ${modeNote?`<div class="aq-callout ${p.mode==="phrases"?"warn":""}" style="margin-top:0;margin-bottom:12px;">${modeNote}</div>`:""}
       ${p.notice?`<p class="text-sm mb-2">⚠️ ${esc(p.notice)}</p>`:""}
-      <p class="text-xs mb-2">Total : ${p.exigences.length} élément(s) retenu(s).</p>
+      <p class="text-xs mb-2">Total : ${p.exigences.length} élément(s) retenu(s). Les rapprochements avec vos documents, processus et risques seront <strong>seulement suggérés</strong> : le niveau de maîtrise ne tient compte que de ce que vous validez.</p>
       ${p.duplicatesRemoved?`<p class="text-xs mb-2">${p.duplicatesRemoved} phrase(s) identique(s) répétée(s) dans le même chapitre ont été regroupées (en-têtes ou pieds de page par exemple).</p>`:""}
       ${p.ignored?`<p class="text-xs mb-2">${p.ignored} phrase(s) qui expliquent le vocabulaire de la norme (« doit » indique une exigence…) ont été ignorées : ce ne sont pas des exigences.</p>`:""}
       ${p.coded?"":p.rawConvient?`<p class="text-xs mb-2">Contrôle : « il convient » apparaît ${p.rawConvient} fois dans le texte lu ; ${count("recommandation")} recommandation(s) retenue(s), ${p.ignored} phrase(s) de vocabulaire ignorée(s)${p.duplicatesRemoved?" et "+p.duplicatesRemoved+" doublon(s) regroupé(s)":""}. Si l'écart vous surprend, utilisez le filtre « Tout » pour vérifier que la phrase n'est pas rangée dans un autre type.</p>`:`<p class="text-xs mb-2">Contrôle : l'expression « il convient » n'apparaît pas dans le texte lu. Si votre document en contient, le PDF a peut-être été mal lu (essayez la version Word).</p>`}
@@ -691,7 +708,7 @@ function openReferentielImportModal(presets){
       state.parsed.exigences.forEach((e,i)=>{
         const links = linkExigenceToSMQ(e.title+" "+e.description);
         DB.customExigences.push({ id:"CEX-"+ref.id+"-"+i+"-"+String(Date.now()).slice(-4), referentielId:ref.id,
-          ref:e.ref, title:e.title, description:e.description, sourceText:e.sourceText, type:e.type, ...links,
+          ref:e.ref, title:e.title, description:e.description, sourceText:e.sourceText, type:e.type, processIds:[], docIds:[], riskIds:[], auditIds:[], indicatorIds:[], actionIds:[], suggested:links, linksV2:true,
           ...(e.attendus ? { attendus:e.attendus } : {}), ...(e.criticite ? { criticite:e.criticite } : {}), ...(e.chapter ? { chapter:e.chapter } : {}), ...(e.chapterRef ? { chapterRef:e.chapterRef } : {}), ...(e.chapterTitle ? { chapterTitle:e.chapterTitle } : {}), ...(e.objectif ? { objectif:e.objectif } : {}), ...(e.original && e.lang==="fr" ? { original:e.original, lang:"fr", sourceLang:e.sourceLang||"en" } : {}) });
       });
       ref.version = state.meta.version; ref.importDate = new Date().toISOString().slice(0,10); ref.origin = state.meta.origin;
@@ -793,6 +810,8 @@ function openExigenceEditForm(refId, exigenceId){
         } else {
           entity.ref = refTxt; entity.title = title; entity.description = o.querySelector("#ex-desc").value.trim();
           entity.processIds = processId ? [processId] : []; entity.docIds = docIds; entity.riskIds = riskIds; entity.auditIds = auditIds;
+          entity.linksV2 = true;
+          if(entity.suggested){ entity.suggested = { processIds:(entity.suggested.processIds||[]).filter(x=>!entity.processIds.includes(x)), docIds:(entity.suggested.docIds||[]).filter(x=>!docIds.includes(x)), riskIds:(entity.suggested.riskIds||[]).filter(x=>!riskIds.includes(x)) }; }
         }
         entity.synthese = o.querySelector("#ex-synthese").value.trim();
         const parsed = linesToAttendus(o.querySelector("#ex-attendus").value, entity.attendus);
@@ -953,9 +972,13 @@ function refTabVue(ref, score){
   ${refSynthesisExtras(ref, score)}`;
 }
 
+function suggestedNoteHtml(refId){
+  const n = DB.customExigences.filter(e=>e.referentielId===refId).reduce((t,e)=>{ const sg=e.suggested||{}; return t+(sg.docIds||[]).length+(sg.processIds||[]).length+(sg.riskIds||[]).length; },0);
+  return n ? `<div class="aq-callout" style="margin-top:0;margin-bottom:12px;">🔗 <strong>${n} rapprochement(s) suggéré(s)</strong> avec vos documents, processus et risques attendent votre validation (dans la fiche de chaque exigence). Tant qu'ils ne sont pas validés, ils ne comptent pas dans le niveau de maîtrise.</div>` : "";
+}
 function refTabExigences(ref, score){
   if(score.views.some(v=>v.objectif||v.chapter)) return refTabExigencesGrouped(ref, score);
-  return dataTable(
+  return suggestedNoteHtml(ref.id)+dataTable(
     [ {label:"Chapitre", render:v=>chapterCellHtml(v)},
       {label:"Exigence", render:v=>`<div class="cell-title">${esc(exigenceLabel(v))} — ${esc(v.title)}</div>${exigenceExcerpt(v,110)?`<div class="text-xs">${esc(exigenceExcerpt(v,110))}</div>`:""}`},
       {label:"Niveau", render:v=>badge(LABELS.exigenceCoverage[v.level])},
@@ -984,7 +1007,7 @@ function refTabExigencesGrouped(ref, score){
     let o = c.objs.find(x=>x.key===ok); if(!o){ o = { key:ok, title:v.objectif?v.objectif.title:"", views:[] }; c.objs.push(o); }
     o.views.push(v);
   });
-  return `<p class="text-sm mb-2">${score.total} critère(s) · ${chapters.length} chapitre(s). Cliquez sur un critère pour voir l'aide à la compréhension et à l'application.</p>`+chapters.map(c=>`
+  return suggestedNoteHtml(ref.id)+`<p class="text-sm mb-2">${score.total} critère(s) · ${chapters.length} chapitre(s). Cliquez sur un critère pour voir l'aide à la compréhension et à l'application.</p>`+chapters.map(c=>`
     <h3 class="mt-4 mb-2">${c.key?"Chapitre "+esc(c.key)+(c.title?" — "+esc(c.title):""):"Critères"}</h3>
     ${c.objs.map(o=>`<div class="card mb-2">
       ${o.key?`<div class="cell-title mb-2">Objectif ${esc(o.key)} — ${esc(o.title)}</div>`:""}
@@ -992,6 +1015,38 @@ function refTabExigencesGrouped(ref, score){
     </div>`).join("")}`).join("");
 }
 
+const LINK_KINDS = {
+  docIds:{ target:"docIds", label:"Document", name:id=>{ const d=getDocument(id); return d ? d.title+(d.ref?" ("+d.ref+")":"") : null; } },
+  processIds:{ target:"processIds", label:"Processus", name:id=>{ const p=getProcess(id); return p ? p.name : null; } },
+  riskIds:{ target:"riskIds", label:"Risque", name:id=>{ const r=getRisk(id); return r ? r.name : null; } },
+};
+function suggestedLinksHtml(refId, v){
+  if(v.legacy) return "";
+  const e = getCustomExigence(v.id); const sg = (e && e.suggested) || {};
+  const rows = [];
+  Object.keys(LINK_KINDS).forEach(kind=> (sg[kind]||[]).forEach(id=>{ const nm = LINK_KINDS[kind].name(id); if(nm) rows.push({ kind, id, nm }); }));
+  if(!rows.length) return "";
+  const btn = (r, action, label, cls)=>`<button class="btn ${cls} btn-sm" data-link-resolve='${jsonAttr({exigenceId:v.id, kind:r.kind, id:r.id, action})}'>${label}</button>`;
+  return `<div class="card mb-2">
+    <h3 class="mb-2">Rapprochements suggérés — à valider</h3>
+    <p class="text-xs mb-2">Qonnect a repéré ces éléments par proximité de mots avec l'exigence. <strong>Ils ne comptent pas</strong> dans le niveau de maîtrise tant que vous ne les avez pas validés : validez seulement ce qui démontre réellement l'exigence.</p>
+    ${rows.map(r=>`<div class="rel-link"><span class="rel-name"><span class="text-xs" style="display:block;font-weight:400;">${LINK_KINDS[r.kind].label}</span>${esc(r.nm)}</span><span style="display:flex;gap:6px;">${btn(r,"validate","✔ Valider","btn-primary")}${btn(r,"ignore","Ignorer","btn-secondary")}</span></div>`).join("")}
+  </div>`;
+}
+function resolveLinkSuggestion(exigenceId, kind, id, action){
+  const e = getCustomExigence(exigenceId); if(!e || !LINK_KINDS[kind]) return;
+  e.suggested = e.suggested || {};
+  e.suggested[kind] = (e.suggested[kind]||[]).filter(x=>x!==id);
+  if(action==="validate"){
+    e[kind] = e[kind] || [];
+    if(!e[kind].includes(id)) e[kind].push(id);
+    e.linkMeta = e.linkMeta || {}; e.linkMeta[kind+":"+id] = { date:new Date().toISOString().slice(0,10), by:"Vous" };
+  }
+  saveDB();
+  toast(action==="validate" ? "Rapprochement validé — il compte désormais dans le niveau" : "Suggestion ignorée");
+  navigate("referentiels/"+e.referentielId+"/exigences/"+e.id);
+  if(typeof render==="function") try{ render(); }catch(err){}
+}
 function refExigenceDetail(ref, v){
   const reasons = coverageReasons(v.bundle);
   const fournisseursConcernes = v.bundle.processes.length ? DB.fournisseurs.filter(f=>(f.processIds||[]).some(pid=>v.bundle.processes.some(p=>p.id===pid))) : [];
@@ -1008,6 +1063,7 @@ function refExigenceDetail(ref, v){
           : v.sourceText?`<p class="text-sm mt-4" style="color:var(--text-primary);line-height:1.7;">« ${esc(v.sourceText)} »</p>`:""}
         ${!v.legacy && typeof criterionHelpHtml==="function" ? criterionHelpHtml(v.description||v.title, {open:true}) : ""}
       </div>
+      ${suggestedLinksHtml(ref.id, v)}
       <div class="card mb-2">
         <h3 class="mb-2">Pourquoi ce niveau ?</h3>
         <ul>${reasons.map(r=>`<li class="text-sm mt-2">${esc(r)}</li>`).join("")}</ul>
