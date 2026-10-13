@@ -66,6 +66,7 @@ function coverageReasons(bundle){
   if(bundle.indicatorsBad.length) reasons.push(`${bundle.indicatorsBad.length} indicateur(s) hors cible`);
   return reasons;
 }
+function getRetiredExigences(refId){ return DB.customExigences.filter(e=>e.referentielId===refId && e.status==="retired"); }
 function getReferentielExigenceViews(refId){
   if(refId==="ISO9001"){
     return DB.requirements.map(r=>{
@@ -75,7 +76,8 @@ function getReferentielExigenceViews(refId){
         updatedAt: bundle.docs.reduce((max,d)=> d.date>max?d.date:max, "") };
     });
   }
-  const own = DB.customExigences.filter(e=>e.referentielId===refId);
+  /* Les exigences « retirées » (disparues d'une nouvelle version) sont conservées avec leurs liens mais ne comptent ni dans les totaux ni dans le score. */
+  const own = DB.customExigences.filter(e=>e.referentielId===refId && e.status!=="retired");
   const ranks = annotateRanks(own.map(e=>({ref:e.ref})));
   return own.map((e,idx)=>{
     const bundle = customExigenceBundle(e);
@@ -522,9 +524,29 @@ function linkExigenceToSMQ(text){
   return {processIds, docIds, riskIds};
 }
 
+/* Identité durable d'une exigence : identifiant opaque, jamais déduit du contenu, jamais régénéré. */
+function newExigenceId(){
+  let id;
+  do{
+    const bytes = new Uint8Array(6);
+    if(typeof crypto!=="undefined" && crypto.getRandomValues) crypto.getRandomValues(bytes); else bytes.forEach((_,i)=>{ bytes[i] = Math.floor(Math.random()*256); });
+    id = "EXG-"+[...bytes].map(b=>b.toString(16).padStart(2,"0")).join("");
+  }while(DB.customExigences.some(e=>e.id===id));
+  return id;
+}
+
+function isoVersionBlockedModal(){
+  openModal({ title:"Mise à jour de version indisponible pour ISO 9001",
+    bodyHtml:`<p>La mise à jour de version est <strong>temporairement indisponible</strong> pour ISO 9001.</p>
+      <p class="text-sm mt-2">Ce référentiel historique utilise un modèle de données différent de celui des référentiels importés : importer une nouvelle version dessus écrirait des exigences que Qonnect n'afficherait pas, sans mettre à jour les exigences actuelles.</p>
+      <p class="text-sm mt-2">Sa migration fera l'objet d'une étape dédiée, avec des tests sur le tableau de bord, la page Contexte et la conformité. Vos données ISO 9001 actuelles ne sont pas modifiées.</p>
+      <p class="text-sm mt-2">En attendant, vous pouvez importer la nouvelle édition comme un référentiel à part, sous un nom distinct.</p>`,
+    footHtml:`<button class="btn btn-primary" data-close-modal>Compris</button>` });
+}
 function openReferentielImportModal(presets){
   presets = presets || {};
   const existingRef = presets.refId ? getReferentiel(presets.refId) : null;
+  if(existingRef && existingRef.id==="ISO9001"){ isoVersionBlockedModal(); return; }
   const state = { text:"", parsed:null, meta:{ name: existingRef?existingRef.name:"", version:"", origin:"" } };
 
   function step1Html(){
@@ -707,7 +729,10 @@ function openReferentielImportModal(presets){
       }
       state.parsed.exigences.forEach((e,i)=>{
         const links = linkExigenceToSMQ(e.title+" "+e.description);
-        DB.customExigences.push({ id:"CEX-"+ref.id+"-"+i+"-"+String(Date.now()).slice(-4), referentielId:ref.id,
+        const srcText = e.sourceText || e.description || e.title || "";
+        DB.customExigences.push({ id:newExigenceId(), referentielId:ref.id,
+          status:"active", introducedIn:state.meta.version||null, lastSeenIn:state.meta.version||null, contentHash:vmHash(srcText), idV2:true,
+          revisions:[{ version:state.meta.version||null, date:new Date().toISOString().slice(0,10), ref:e.ref, title:e.title, description:e.description, hash:vmHash(srcText), method:"import", by:"Vous" }],
           ref:e.ref, title:e.title, description:e.description, sourceText:e.sourceText, type:e.type, processIds:[], docIds:[], riskIds:[], auditIds:[], indicatorIds:[], actionIds:[], suggested:links, linksV2:true,
           ...(e.attendus ? { attendus:e.attendus } : {}), ...(e.criticite ? { criticite:e.criticite } : {}), ...(e.chapter ? { chapter:e.chapter } : {}), ...(e.chapterRef ? { chapterRef:e.chapterRef } : {}), ...(e.chapterTitle ? { chapterTitle:e.chapterTitle } : {}), ...(e.objectif ? { objectif:e.objectif } : {}), ...(e.original && e.lang==="fr" ? { original:e.original, lang:"fr", sourceLang:e.sourceLang||"en" } : {}) });
       });
@@ -857,9 +882,16 @@ function openExigenceEditForm(refId, exigenceId){
           entity.ref = refTxt; entity.label = title; entity.processId = processId;
           entity.extraDocIds = docIds; entity.extraRiskIds = riskIds; entity.extraAuditIds = auditIds;
         } else {
+          const prevContent = { ref:entity.ref, title:entity.title, description:entity.description };
           entity.ref = refTxt; entity.title = title; entity.description = o.querySelector("#ex-desc").value.trim();
           entity.processIds = processId ? [processId] : []; entity.docIds = docIds; entity.riskIds = riskIds; entity.auditIds = auditIds;
           entity.linksV2 = true;
+          /* Identité : l'id ne change jamais ; le nouveau contenu est ajouté à l'historique des révisions. */
+          if(entity.idV2 && (entity.ref!==prevContent.ref || entity.title!==prevContent.title || entity.description!==prevContent.description)){
+            const h = vmHash(entity.sourceText || entity.description || entity.title || "");
+            entity.contentHash = h;
+            entity.revisions = (entity.revisions||[]).concat([{ version:(getReferentiel(refId)||{}).version||null, date:new Date().toISOString().slice(0,10), ref:entity.ref, title:entity.title, description:entity.description, hash:h, method:"edition_manuelle", by:"Vous" }]);
+          }
           if(entity.suggested){ entity.suggested = { processIds:(entity.suggested.processIds||[]).filter(x=>!entity.processIds.includes(x)), docIds:(entity.suggested.docIds||[]).filter(x=>!docIds.includes(x)), riskIds:(entity.suggested.riskIds||[]).filter(x=>!riskIds.includes(x)) }; }
         }
         entity.synthese = o.querySelector("#ex-synthese").value.trim();
@@ -1013,10 +1045,35 @@ function refListFiltersHtml(){
     <button class="btn btn-secondary btn-sm" data-ref-reset>Réinitialiser</button>
   </div>`;
 }
+/* Rapport en LECTURE SEULE : références d'audit (critères, questions, constats) vers des exigences qui n'existent plus,
+   par exemple après une ancienne « nouvelle version » qui régénérait les identifiants. Rien n'est modifié ni réparé ici. */
+function findOrphanExigenceReferences(){
+  const exists = id => !!(findBy(DB.requirements, id) || getCustomExigence(id));
+  const out = [];
+  (DB.audits||[]).forEach(a=>{
+    ((a.criteres&&a.criteres.requirementIds)||[]).forEach(id=>{ if(id && !exists(id)) out.push({ auditId:a.id, auditTitle:a.title||a.id, kind:"critère d'audit", id }); });
+    (a.questions||[]).forEach(q=>{ if(q.requirementId && !exists(q.requirementId)) out.push({ auditId:a.id, auditTitle:a.title||a.id, kind:"question", id:q.requirementId }); });
+    (a.findings||[]).forEach(f=>{ if(f.requirementId && !exists(f.requirementId)) out.push({ auditId:a.id, auditTitle:a.title||a.id, kind:"constat", id:f.requirementId }); });
+  });
+  return out;
+}
+function identityBlockedHtml(){
+  return IDENTITY_MIGRATION_BLOCKED ? `<div class="aq-callout warn" style="margin-bottom:12px;">⚠️ ${esc(IDENTITY_MIGRATION_BLOCKED)}</div>` : "";
+}
+function orphanReportHtml(){
+  const orphans = findOrphanExigenceReferences();
+  if(!orphans.length) return "";
+  const audits = new Set(orphans.map(o=>o.auditId)).size;
+  return `<details class="aq-callout warn" style="margin-bottom:12px;" id="ref-orphan-report"><summary><strong>${orphans.length} référence(s) d'audit</strong> (${audits} audit(s)) pointent vers des exigences qui n'existent plus — voir le détail</summary>
+    <p class="text-xs mt-2">Cause probable : une ancienne mise à jour de version de référentiel a recréé les exigences avec de nouveaux identifiants. Rien n'a été modifié : ce rapport est en lecture seule. Ces références seront traitées lors de la stabilisation des identifiants.</p>
+    <ul>${orphans.slice(0,50).map(o=>`<li class="text-xs mt-2">${esc(o.auditTitle)} — ${esc(o.kind)} <code>${esc(o.id)}</code></li>`).join("")}${orphans.length>50?`<li class="text-xs mt-2">… et ${orphans.length-50} autre(s)</li>`:""}</ul></details>`;
+}
 function pageReferentiels(){
   return `
   ${pageHeader("Référentiels","Le moteur de conformité de Qonnect — importez un référentiel, Qonnect en analyse la structure et calcule automatiquement votre niveau de maîtrise.",
     `<button class="btn btn-primary" data-open-referentiel-import>+ Importer un référentiel</button>`)}
+  ${identityBlockedHtml()}
+  ${orphanReportHtml()}
   ${refListFiltersHtml()}
   <div id="ref-list-zone">${refListTableHtml()}</div>`;
 }
@@ -1267,7 +1324,9 @@ function refTabCartographie(ref, score){
 
 function refTabVersions(ref){
   return `
-  <div class="flex justify-between items-center mb-2"><span></span><button class="btn btn-primary btn-sm" data-open-referentiel-import data-preset-ref="${ref.id}" data-preset-newversion="1">+ Nouvelle version</button></div>
+  <div class="flex justify-between items-center mb-2"><span></span>${ref.id==="ISO9001"
+    ? `<button class="btn btn-secondary btn-sm" data-open-referentiel-import data-preset-ref="${ref.id}" data-preset-newversion="1" title="Temporairement indisponible pour ISO 9001">+ Nouvelle version (indisponible)</button>`
+    : `<button class="btn btn-primary btn-sm" data-open-referentiel-import data-preset-ref="${ref.id}" data-preset-newversion="1">+ Nouvelle version</button>`}</div>
   ${ref.versions.length? ref.versions.slice().reverse().map(v=>`<div class="card mb-2"><div class="flex justify-between items-center"><h3>Version ${esc(v.version)}</h3><span class="text-sm">${fmtDate(v.date)}</span></div>${v.note?`<p class="text-sm mt-2">${esc(v.note)}</p>`:""}${versionDiffHtml(v)}</div>`).join("") : `<div class="card">${emptyState("🕒","Aucune version","Aucun historique de version n'est disponible.")}</div>`}`;
 }
 
