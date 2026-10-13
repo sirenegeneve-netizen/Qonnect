@@ -854,6 +854,7 @@ const SEED_ATTENDUS = {
       { id:"A3", label:"Vérification de l'efficacité des actions", keywords:["efficacite","verification","cloture","suivi"], evidenceTypes:[], suggestion:"Preuve de vérification d'efficacité" } ] },
 };
 
+let IDENTITY_MIGRATION_BLOCKED = "";   /* message affiché si la migration des identifiants est reportée */
 function normalizeDocuments(){
   DB.documents.forEach(d=>{
     d.requirementIds = d.requirementIds || [];
@@ -875,6 +876,28 @@ function normalizeDocuments(){
     if(had){ e.suggested = { processIds:e.processIds||[], docIds:e.docIds||[], riskIds:e.riskIds||[] }; e.processIds = []; e.docIds = []; e.riskIds = []; }
     e.linksV2 = true;
   });
+  /* Étape 2 — identité stable des exigences importées : champs AJOUTÉS uniquement. Aucun identifiant n'est modifié, rien n'est supprimé.
+     Un instantané du stockage avant migration est conservé (qonnect_db_v1_avant_migration_ids) ; s'il est impossible, la migration n'a pas lieu. */
+  const needIdentity = DB.customExigences.filter(e=>!e.idV2);
+  if(needIdentity.length){
+    let snapshotOk = true;
+    try{
+      if(localStorage.getItem("qonnect_db_v1") && !localStorage.getItem("qonnect_db_v1_avant_migration_ids")) localStorage.setItem("qonnect_db_v1_avant_migration_ids", localStorage.getItem("qonnect_db_v1"));
+    }catch(err){ snapshotOk = false; IDENTITY_MIGRATION_BLOCKED = "Instantané de sécurité impossible (stockage du navigateur plein ou indisponible) : la migration des identifiants d'exigences est reportée. Téléchargez une sauvegarde, libérez de la place, puis rechargez Qonnect."; console.warn("Qonnect : instantané avant migration impossible (stockage plein ?) — migration des identifiants reportée.", err); }
+    if(snapshotOk){
+      needIdentity.forEach(e=>{
+        const rf = (DB.referentiels||[]).find(r=>r.id===e.referentielId);
+        const version = rf && rf.version ? rf.version : null;
+        const txt = e.sourceText || e.description || e.title || "";
+        if(!e.status) e.status = "active";
+        if(typeof e.introducedIn==="undefined") e.introducedIn = version;
+        if(typeof e.lastSeenIn==="undefined") e.lastSeenIn = version;
+        if(!e.contentHash) e.contentHash = vmHash(txt);
+        if(!Array.isArray(e.revisions)) e.revisions = [{ version, date:(rf&&rf.importDate)||null, ref:e.ref, title:e.title, description:e.description, hash:vmHash(txt), method:"migration", by:"système" }];
+        e.idV2 = true;
+      });
+    }
+  }
   if(!DB.competences) DB.competences = JSON.parse(JSON.stringify(QONNECT_SEED.competences));
   if(!DB.postes) DB.postes = JSON.parse(JSON.stringify(QONNECT_SEED.postes));
   if(!DB.habilitations) DB.habilitations = JSON.parse(JSON.stringify(QONNECT_SEED.habilitations));
