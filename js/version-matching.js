@@ -14,24 +14,37 @@ const VERSION_MATCH_THRESHOLDS = {
   contain: 0.7,   /* scission / fusion : part des mots d'un fragment retrouvée dans l'exigence d'origine */
   coverage: 0.6,  /* scission / fusion : part de l'exigence d'origine couverte par l'ensemble des fragments */
   minFragmentWords: 4,
+  maxParts: 5,    /* scission / fusion : au-delà, il ne s'agit plus d'un découpage mais de textes simplement semblables */
 };
 
 function vmNorm(t){ return String(t==null?"":t).normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim(); }
 function vmTokens(t){ return vmNorm(t).split(" ").filter(w=>w.length>1); }
 function vmTrigrams(t){ const s = " "+vmNorm(t)+" "; const out = new Set(); for(let i=0;i<s.length-2;i++) out.add(s.slice(i,i+3)); return out; }
 function vmDice(a, b){ if(!a.size || !b.size) return 0; let n = 0; a.forEach(x=>{ if(b.has(x)) n++; }); return 2*n/(a.size+b.size); }
+/* Profil d'un texte (normalisé, mots, trigrammes), mis en cache : le rapprochement compare chaque texte à de nombreux candidats. */
+const VM_PROFILES = new Map();
+function vmProfile(t){
+  const key = String(t==null?"":t);
+  let p = VM_PROFILES.get(key);
+  if(!p){
+    if(VM_PROFILES.size>4000) VM_PROFILES.clear();
+    p = { norm:vmNorm(key), words:new Set(vmTokens(key)), tri:vmTrigrams(key) };
+    VM_PROFILES.set(key, p);
+  }
+  return p;
+}
 /* Empreinte du texte normalisé (FNV-1a 32 bits) : un INDICE de changement de contenu, jamais un identifiant. */
 function vmHash(t){ const s = vmNorm(t); let h = 0x811c9dc5; for(let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16).padStart(8,"0"); }
 /* Similarité textuelle 0..1 (moyenne de la similarité de mots et de trigrammes). */
 function vmSimilarity(a, b){
-  const na = vmNorm(a), nb = vmNorm(b);
-  if(!na || !nb) return 0;
-  if(na===nb) return 1;
-  return (vmDice(new Set(vmTokens(a)), new Set(vmTokens(b))) + vmDice(vmTrigrams(a), vmTrigrams(b))) / 2;
+  const pa = vmProfile(a), pb = vmProfile(b);
+  if(!pa.norm || !pb.norm) return 0;
+  if(pa.norm===pb.norm) return 1;
+  return (vmDice(pa.words, pb.words) + vmDice(pa.tri, pb.tri)) / 2;
 }
 /* Part des mots de `part` présents dans `whole`. */
 function vmContainment(part, whole){
-  const p = new Set(vmTokens(part)), w = new Set(vmTokens(whole));
+  const p = vmProfile(part).words, w = vmProfile(whole).words;
   if(!p.size) return 0; let n = 0; p.forEach(x=>{ if(w.has(x)) n++; }); return n/p.size;
 }
 
@@ -103,20 +116,23 @@ function matchExigenceVersions(oldItems, newItems, thresholds){
   /* 4) Scission (1 → N) et fusion (N → 1) : toujours à résoudre manuellement.
      Les appariements « à confirmer » sont d'abord relâchés : un fragment qui porte le même code que l'exigence d'origine
      serait sinon pris pour cette exigence modifiée. Les appariements certains ne sont jamais remis en cause. */
-  const released = pairs.filter(p=>p.confidence==="to_confirm");
+  /* Un appariement « certain » dont le texte a changé peut cacher une scission (un fragment garde le code d'origine) ou une fusion :
+     on le relâche aussi, mais seulement s'il reste des exigences non appariées capables d'être l'autre partie ; il est rétabli sinon. */
+  const hasLooseNew = nRem.length>0, hasLooseOld = oRem.length>0;
+  const released = pairs.filter(p=> p.confidence==="to_confirm" || (p.textChanged && p.score<1 && (hasLooseNew || hasLooseOld)));
   released.forEach(pr=>{ pairs.splice(pairs.indexOf(pr),1); oRem.push(oldList.find(x=>x.id===pr.oldId)); nRem.push(newList[pr.newIndex]); });
   const words = t => vmTokens(t).length;
   const covered = (parts, whole)=>{ const w = new Set(vmTokens(whole)); if(!w.size) return 0; const hit = new Set(); parts.forEach(p=>vmTokens(p).forEach(x=>{ if(w.has(x)) hit.add(x); })); return hit.size/w.size; };
   oRem.slice().forEach(o=>{
     const frags = nRem.filter(n=> words(n.text)>=T.minFragmentWords && vmContainment(n.text, o.text)>=T.contain);
-    if(frags.length>=2 && covered(frags.map(f=>f.text), o.text)>=T.coverage){
-      pending.push({ kind:"scission", oldIds:[o.id], newIndexes:frags.map(f=>f.i), reason:"Une exigence semble avoir été scindée en plusieurs." });
+    if(frags.length>=2 && frags.length<=T.maxParts && covered(frags.map(f=>f.text), o.text)>=T.coverage){
+      pending.push({ kind:"scission", oldIds:[o.id], newIndexes:frags.map(f=>f.i).sort((a,b)=>a-b), reason:"Une exigence semble avoir été scindée en plusieurs." });
       oRem = oRem.filter(x=>x!==o); frags.forEach(f=>{ nRem = nRem.filter(x=>x!==f); });
     }
   });
   nRem.slice().forEach(n=>{
     const olds = oRem.filter(o=> words(o.text)>=T.minFragmentWords && vmContainment(o.text, n.text)>=T.contain);
-    if(olds.length>=2 && covered(olds.map(o=>o.text), n.text)>=T.coverage){
+    if(olds.length>=2 && olds.length<=T.maxParts && covered(olds.map(o=>o.text), n.text)>=T.coverage){
       pending.push({ kind:"fusion", oldIds:olds.map(o=>o.id), newIndexes:[n.i], reason:"Plusieurs exigences semblent avoir été fusionnées en une seule." });
       nRem = nRem.filter(x=>x!==n); olds.forEach(o=>{ oRem = oRem.filter(x=>x!==o); });
     }
@@ -124,6 +140,17 @@ function matchExigenceVersions(oldItems, newItems, thresholds){
   released.forEach(pr=>{
     const o = oRem.find(x=>x.id===pr.oldId), n = nRem.find(x=>x.i===pr.newIndex);
     if(o && n){ oRem = oRem.filter(x=>x!==o); nRem = nRem.filter(x=>x!==n); pairs.push(pr); }
+  });
+
+  /* 4b) Restes : un ancien et un nouveau texte proches malgré un code différent (similarité entre « confirm » et « moved »)
+     ne sont ni retirés/ajoutés en silence ni associés : ils sont mis de côté, à résoudre. */
+  const resid = [];
+  oRem.forEach(o=> nRem.forEach(n=>{ const sc = vmSimilarity(o.text,n.text); if(sc>=T.confirm) resid.push({ o, n, s:sc }); }));
+  resid.sort((a,b)=>b.s-a.s);
+  resid.forEach(c=>{
+    if(!oRem.includes(c.o) || !nRem.includes(c.n)) return;
+    pending.push({ kind:"ambigu", oldIds:[c.o.id], newIndexes:[c.n.i], reason:"Texte proche mais code différent : même exigence modifiée, ou exigences distinctes ?", score:c.s });
+    oRem = oRem.filter(x=>x!==c.o); nRem = nRem.filter(x=>x!==c.n);
   });
 
   /* 5) Le reste : retirées (jamais supprimées) et ajoutées. Une exigence déjà retirée reste retirée. */

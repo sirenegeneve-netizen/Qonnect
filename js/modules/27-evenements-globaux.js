@@ -28,6 +28,12 @@ function initGlobalEvents(){
       resolveLinkSuggestion(pl.exigenceId, pl.kind, pl.id, pl.action);
       return;
     }
+    const pendEl = e.target.closest("[data-pending-resolve]");
+    if(pendEl){ e.preventDefault(); const pr = JSON.parse(pendEl.getAttribute("data-pending-resolve")); resolvePendingMatch(pr.refId, pr.id, pr.action, pr.param); return; }
+    const revEl = e.target.closest("[data-exigence-reviewed]");
+    if(revEl){ e.preventDefault(); markExigenceReviewed(revEl.getAttribute("data-exigence-reviewed")); return; }
+    const undoEl = e.target.closest("[data-undo-version]");
+    if(undoEl){ e.preventDefault(); undoLastVersionImport(undoEl.getAttribute("data-undo-version")); return; }
     const editExigenceEl = e.target.closest("[data-edit-exigence]");
     if(editExigenceEl){
       e.preventDefault();

@@ -659,6 +659,10 @@ function openReferentielImportModal(presets){
       if(!text){ toast("Collez ou importez un texte à analyser","⚠️"); return; }
       state.text = text;
       state.meta.name = existingRef ? existingRef.name : (o.querySelector("#imp-name")?.value.trim() || "Référentiel importé");
+      if(!existingRef){
+        const nm = vmNorm(state.meta.name), dup = DB.referentiels.find(r=>vmNorm(r.name)===nm);
+        if(dup){ toast("« "+dup.name+" » existe déjà : ouvrez-le et utilisez « + Nouvelle version » pour ne pas créer de doublon.","⚠️"); return; }
+      }
       state.meta.version = o.querySelector("#imp-version").value.trim() || String(new Date().getFullYear());
       state.meta.origin = o.querySelector("#imp-origin").value.trim() || "Import texte";
       state.meta.mode = o.querySelector("#imp-mode").value;
@@ -704,42 +708,31 @@ function openReferentielImportModal(presets){
         DB.referentiels.push(ref);
       }
       const isNewVersion = presets.newVersion && ref.versions.length;
+      const today = new Date().toISOString().slice(0,10);
       let diffNote = "Import initial — "+state.parsed.exigences.length+" exigence(s) détectée(s).";
-      let diffDetail = null;
+      let diffDetail = null, toastMsg = "Référentiel analysé et importé — "+state.parsed.exigences.length+" exigence(s)";
       if(isNewVersion){
-        const oldExigences = DB.customExigences.filter(e=>e.referentielId===ref.id);
-        const keyOf = e => e.ref + "|" + (e.description||e.title||"").toLowerCase().replace(/\s+/g," ").trim();
-        const oldMap = new Map(oldExigences.map(e=>[keyOf(e), e]));
-        const newMap = new Map(state.parsed.exigences.map(e=>[keyOf(e), e]));
-        const added = [...newMap.keys()].filter(k=>!oldMap.has(k)).map(k=>newMap.get(k));
-        const removed = [...oldMap.keys()].filter(k=>!newMap.has(k)).map(k=>oldMap.get(k));
-        const oldByChapter = {}; oldExigences.forEach(e=>{ (oldByChapter[e.ref]=oldByChapter[e.ref]||[]).push(e); });
-        const newByChapter = {}; state.parsed.exigences.forEach(e=>{ (newByChapter[e.ref]=newByChapter[e.ref]||[]).push(e); });
-        const modified = [];
-        Object.keys(newByChapter).forEach(chRef=>{
-          if(oldByChapter[chRef] && oldByChapter[chRef].length && newByChapter[chRef].length){
-            const oldTexts = oldByChapter[chRef].map(e=>e.description).join(" ");
-            const newTexts = newByChapter[chRef].map(e=>e.description).join(" ");
-            if(oldTexts !== newTexts) modified.push("Chapitre "+chRef);
-          }
-        });
-        diffNote = `Nouvelle version — ${added.length} exigence(s) ajoutée(s), ${removed.length} supprimée(s), ${modified.length} chapitre(s) modifié(s).`;
-        diffDetail = { added: added.map(e=>e.ref+" — "+(exigenceExcerpt(e,100)||e.title)), removed: removed.map(e=>e.ref+" — "+(exigenceExcerpt(e,100)||e.title)), modified };
-        DB.customExigences = DB.customExigences.filter(e=>e.referentielId!==ref.id);
+        const lab = (e)=> e.ref+" — "+(exigenceExcerpt(e,100)||e.title);
+        const before = new Map(DB.customExigences.filter(e=>e.referentielId===ref.id).map(e=>[e.id,e]));
+        let res;
+        try{ res = applyVersionImport(ref, state.parsed.exigences, state.meta); }
+        catch(err){ restoreVersionSnapshot(ref.id); toast("Mise à jour impossible : "+err.message,"⚠️"); return; }
+        const s2 = res.sum;
+        diffNote = `Nouvelle version — ${s2.identical} inchangée(s), ${s2.modified} modifiée(s), ${s2.renumbered} renumérotée(s), ${s2.reactivated} réactivée(s), ${s2.added} ajoutée(s), ${s2.retired} retirée(s), ${s2.pending} à résoudre.`;
+        diffDetail = { retiredKept:true, added: res.plan.added.map(i=>lab(state.parsed.exigences[i])), removed: res.plan.retired.map(i=>lab(before.get(i))), modified: res.plan.pairs.filter(p=>p.confidence==="certain" && (p.textChanged||p.refChanged)).map(p=>lab(state.parsed.exigences[p.newIndex])) };
+        toastMsg = "Nouvelle version appliquée — "+(s2.pending ? s2.pending+" cas à résoudre (onglet « À résoudre »)" : "aucun cas en attente");
+      } else {
+        state.parsed.exigences.forEach(e=>{ DB.customExigences.push(buildImportedExigence(e, ref.id, state.meta)); });
       }
-      state.parsed.exigences.forEach((e,i)=>{
-        const links = linkExigenceToSMQ(e.title+" "+e.description);
-        const srcText = e.sourceText || e.description || e.title || "";
-        DB.customExigences.push({ id:newExigenceId(), referentielId:ref.id,
-          status:"active", introducedIn:state.meta.version||null, lastSeenIn:state.meta.version||null, contentHash:vmHash(srcText), idV2:true,
-          revisions:[{ version:state.meta.version||null, date:new Date().toISOString().slice(0,10), ref:e.ref, title:e.title, description:e.description, hash:vmHash(srcText), method:"import", by:"Vous" }],
-          ref:e.ref, title:e.title, description:e.description, sourceText:e.sourceText, type:e.type, processIds:[], docIds:[], riskIds:[], auditIds:[], indicatorIds:[], actionIds:[], suggested:links, linksV2:true,
-          ...(e.attendus ? { attendus:e.attendus } : {}), ...(e.criticite ? { criticite:e.criticite } : {}), ...(e.chapter ? { chapter:e.chapter } : {}), ...(e.chapterRef ? { chapterRef:e.chapterRef } : {}), ...(e.chapterTitle ? { chapterTitle:e.chapterTitle } : {}), ...(e.objectif ? { objectif:e.objectif } : {}), ...(e.original && e.lang==="fr" ? { original:e.original, lang:"fr", sourceLang:e.sourceLang||"en" } : {}) });
-      });
-      ref.version = state.meta.version; ref.importDate = new Date().toISOString().slice(0,10); ref.origin = state.meta.origin;
-      ref.versions.push({version:state.meta.version, date:new Date().toISOString().slice(0,10), note:diffNote, diff:diffDetail});
-      saveDB(); closeModal(); toast("Référentiel analysé et importé — "+state.parsed.exigences.length+" exigence(s)");
-      navigate(`referentiels/${ref.id}`);
+      ref.version = state.meta.version; ref.importDate = today; ref.origin = state.meta.origin;
+      ref.versions.push({version:state.meta.version, date:today, note:diffNote, diff:diffDetail});
+      try{ saveDB(); }
+      catch(err){
+        if(isNewVersion){ restoreVersionSnapshot(ref.id); try{ saveDB(); }catch(_){} }
+        toast("Enregistrement impossible (stockage plein ?) : rien n'a été modifié.","⚠️"); return;
+      }
+      closeModal(); toast(toastMsg);
+      navigate(`referentiels/${ref.id}`+(isNewVersion && pendingMatchesOf(ref.id).length ? "/resoudre" : ""));
     });
   }
   function renderStep(o, step){
@@ -1080,6 +1073,8 @@ function pageReferentiels(){
 
 function referentielTabsHtml(ref, active){
   const tabs = [{id:"vue",label:"Vue d'ensemble"},{id:"exigences",label:"Exigences"},{id:"cartographie",label:"Cartographie"},{id:"versions",label:"Versions"},{id:"assistant",label:"Assistant IA"}];
+  const nRes = pendingMatchesOf(ref.id).length + exigencesToReviewOf(ref.id).length;
+  if(nRes || (ref.pendingMatches||[]).length) tabs.splice(4,0,{id:"resoudre",label:"À résoudre"+(nRes?" ("+nRes+")":"")});
   return `<div class="tabs">${tabs.map(t=>`<button class="tab ${t.id===active?'active':''}" data-route="referentiels/${ref.id}/${t.id}">${esc(t.label)}</button>`).join("")}</div>`;
 }
 
@@ -1115,6 +1110,7 @@ function pageReferentielDetail(id, tab, subId){
       </div>
     </div>` : `<div class="mt-4">${emptyState("📥","Aucune exigence importée","Importez ce référentiel pour que Qonnect en analyse automatiquement la structure.", `<button class="btn btn-primary" data-open-referentiel-import data-preset-ref="${ref.id}">+ Importer ce référentiel</button>`)}</div>`}
   </div>
+  ${pendingMatchesOf(id).length?`<div class="aq-callout warn" style="margin-bottom:12px;">⚠️ Version ${esc(ref.version||"")} <strong>non entièrement rapprochée</strong> : ${pendingMatchesOf(id).length} cas à résoudre. <a href="#/referentiels/${ref.id}/resoudre">Voir</a></div>`:""}
   ${score.total?referentielTabsHtml(ref, tab):""}`;
 
   if(!score.total) return header;
@@ -1127,6 +1123,7 @@ function pageReferentielDetail(id, tab, subId){
   else if(tab==="exigences") body = refTabExigences(ref, score);
   else if(tab==="cartographie") body = refTabCartographie(ref, score);
   else if(tab==="versions") body = refTabVersions(ref);
+  else if(tab==="resoudre") body = refTabResolve(ref);
   else if(tab==="assistant") body = refTabAssistant(ref, score);
   return header + body;
 }
@@ -1135,7 +1132,7 @@ function versionDiffHtml(v){
   if(!v.diff) return "";
   const parts = [];
   if(v.diff.added.length) parts.push(`<p class="text-xs mt-2">➕ Ajoutées : ${v.diff.added.map(esc).join(", ")}</p>`);
-  if(v.diff.removed.length) parts.push(`<p class="text-xs mt-2">➖ Supprimées : ${v.diff.removed.map(esc).join(", ")}</p>`);
+  if(v.diff.removed.length) parts.push(`<p class="text-xs mt-2">➖ ${v.diff.retiredKept?"Retirées (conservées dans l'historique)":"Supprimées"} : ${v.diff.removed.map(esc).join(", ")}</p>`);
   if(v.diff.modified.length) parts.push(`<p class="text-xs mt-2">✏️ Modifiées : ${v.diff.modified.map(esc).join(", ")}</p>`);
   return parts.join("");
 }
@@ -1324,7 +1321,7 @@ function refTabCartographie(ref, score){
 
 function refTabVersions(ref){
   return `
-  <div class="flex justify-between items-center mb-2"><span></span>${ref.id==="ISO9001"
+  <div class="flex justify-between items-center mb-2"><span>${lastVersionSnapshot(ref.id)?`<button class="btn btn-secondary btn-sm" data-undo-version="${ref.id}">↩ Annuler la dernière mise à jour</button>`:""}</span>${ref.id==="ISO9001"
     ? `<button class="btn btn-secondary btn-sm" data-open-referentiel-import data-preset-ref="${ref.id}" data-preset-newversion="1" title="Temporairement indisponible pour ISO 9001">+ Nouvelle version (indisponible)</button>`
     : `<button class="btn btn-primary btn-sm" data-open-referentiel-import data-preset-ref="${ref.id}" data-preset-newversion="1">+ Nouvelle version</button>`}</div>
   ${ref.versions.length? ref.versions.slice().reverse().map(v=>`<div class="card mb-2"><div class="flex justify-between items-center"><h3>Version ${esc(v.version)}</h3><span class="text-sm">${fmtDate(v.date)}</span></div>${v.note?`<p class="text-sm mt-2">${esc(v.note)}</p>`:""}${versionDiffHtml(v)}</div>`).join("") : `<div class="card">${emptyState("🕒","Aucune version","Aucun historique de version n'est disponible.")}</div>`}`;
