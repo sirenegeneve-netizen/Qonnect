@@ -30,6 +30,8 @@ function initGlobalEvents(){
     }
     const mapAct = e.target.closest("[data-map-act]");
     if(mapAct){ e.preventDefault(); mappingAction(JSON.parse(mapAct.getAttribute("data-map-act"))); return; }
+    const mapSug = e.target.closest("[data-map-suggest]");
+    if(mapSug){ e.preventDefault(); openMappingSuggestForm(JSON.parse(mapSug.getAttribute("data-map-suggest")).refId); return; }
     const mapAdd = e.target.closest("[data-map-add]");
     if(mapAdd){ e.preventDefault(); const pa = JSON.parse(mapAdd.getAttribute("data-map-add")); openMappingForm(pa.refId, pa.exigenceId); return; }
     const pendEl = e.target.closest("[data-pending-resolve]");

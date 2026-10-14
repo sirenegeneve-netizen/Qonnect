@@ -161,16 +161,19 @@ function refTabMappings(ref){
       <select data-map-filter="status" aria-label="Statut">${opt("all","Tous les statuts",MAP_UI.status)}${opt("validated","Validées ("+count("validated")+")",MAP_UI.status)}${opt("suggested","À valider ("+count("suggested")+")",MAP_UI.status)}${opt("rejected","Rejetées ("+count("rejected")+")",MAP_UI.status)}${opt("a_revoir","À revoir ("+nRev+")",MAP_UI.status)}</select>
       <select data-map-filter="other" aria-label="Référentiel lié">${opt("all","Tous les référentiels",MAP_UI.other)}${others.map(o=>{ const r=getReferentiel(o); return opt(o, r?r.name:o, MAP_UI.other); }).join("")}</select>
     </div>
-    <button class="btn btn-primary btn-sm" data-map-add='${jsonAttr({refId:ref.id})}'>+ Ajouter une correspondance</button>
+    <div class="flex gap-2"><button class="btn btn-secondary btn-sm" data-map-suggest='${jsonAttr({refId:ref.id})}'>✨ Suggérer des correspondances</button>
+    <button class="btn btn-primary btn-sm" data-map-add='${jsonAttr({refId:ref.id})}'>+ Ajouter une correspondance</button></div>
   </div>
   ${dataTable([
     {label:"Exigence de ce référentiel", render:m=>exigenceChip(mappingEndpoint(side(m).own), side(m).own)},
-    {label:"Relation", render:m=>esc(MAPPING_RELATIONS[m.relation].label)},
+    {label:"Relation", render:m=>esc(MAPPING_RELATIONS[m.relation].label)+(m.status==="suggested"?`<div class="text-xs">proposée, à confirmer</div>`:"")},
     {label:"Exigence liée", render:m=>exigenceChip(mappingEndpoint(side(m).other), side(m).other)},
-    {label:"Statut", render:m=>badge(MAPPING_STATUS[m.status])+(mappingStateBadge(m)?"<div class='mt-2'>"+mappingStateBadge(m)+"</div>":"")+`<div class="text-xs mt-2">${esc(MAPPING_ORIGINS[m.origin]||m.origin)}${m.comment?" · "+esc(m.comment.length>60?m.comment.slice(0,59)+"…":m.comment):""}</div>`},
+    {label:"Statut", render:m=>badge(MAPPING_STATUS[m.status])+(mappingStateBadge(m)?"<div class='mt-2'>"+mappingStateBadge(m)+"</div>":"")+(m.status==="suggested"?mappingBasisHtml(m):"")+`<div class="text-xs mt-2">${esc(MAPPING_ORIGINS[m.origin]||m.origin)}${typeof m.confidence==="number"?" · indice "+Math.round(m.confidence*100)+" %":""}${m.comment?" · "+esc(m.comment.length>60?m.comment.slice(0,59)+"…":m.comment):""}</div>`},
     {label:"", render:m=>mappingActionsHtml(m, ref.id)} ],
     rows, {emptyEmoji:"🔗", emptyTitle: all.length?"Aucune correspondance pour ce filtre":"Aucune correspondance", emptyText: all.length?"Modifiez les filtres.":"Reliez une exigence de ce référentiel à l'exigence équivalente d'un autre référentiel (par exemple ISO 9001)."})}`;
 }
+/* Motifs d'une suggestion : toujours visibles, pour que la décision soit éclairée. */
+function mappingBasisHtml(m){ return (m.basis&&m.basis.length) ? `<details class="mt-2"><summary class="text-xs">Pourquoi cette suggestion ?</summary><ul>${m.basis.map(b=>`<li class="text-xs">${esc(b)}</li>`).join("")}</ul><p class="text-xs">Un indice n'est pas une preuve d'équivalence.</p></details>` : ""; }
 /* Carte « Correspondances » sur la fiche d'une exigence. */
 function exigenceMappingsCardHtml(refId, exigenceId){
   const list = mappingsOfExigence(exigenceId).filter(m=>m.status!=="rejected");
@@ -251,10 +254,78 @@ function openMappingHistory(id){
 function mappingAction(p){
   const m = mappingById(p.id); if(!m) return;
   const done = msg=>{ try{ saveDB(); }catch(e){ toast("Enregistrement impossible (stockage plein ?)","⚠️"); return; } if(msg) toast(msg,"✅"); render(); };
-  if(p.action==="validate"){ setMappingStatus(m.id,"validated"); done("Correspondance validée"); }
+  if(p.action==="validate") openMappingValidateForm(m.id);
   else if(p.action==="reject"){ setMappingStatus(m.id,"rejected"); done("Correspondance mise de côté (rejetée) — la trace est conservée"); }
   else if(p.action==="review"){ confirmMappingStillValid(m.id); done("Correspondance confirmée"); }
   else if(p.action==="edit") openMappingEditForm(m.id);
   else if(p.action==="history") openMappingHistory(m.id);
   else if(p.action==="delete") confirmDialog("Supprimer définitivement cette correspondance et son historique ? Pour seulement l'écarter en gardant la trace, utilisez « Rejeter ».", ()=>{ deleteMapping(m.id); done("Correspondance supprimée"); });
+}
+
+/* Validation d'une suggestion : la relation est confirmée ou corrigée par la personne, jamais validée « telle quelle » sans choix. */
+function openMappingValidateForm(id){
+  const m = mappingById(id); if(!m) return;
+  const a = mappingEndpoint(m.exigenceAId), b = mappingEndpoint(m.exigenceBId);
+  const box = ep => ep ? `<div class="card"><strong>${esc(ep.ref)}</strong> <span class="text-xs">${esc((getReferentiel(ep.referentielId)||{}).name||"")}</span><p class="text-sm mt-2">${esc(ep.text.length>500?ep.text.slice(0,499)+"…":ep.text)}</p></div>` : `<div class="card text-xs">Exigence introuvable</div>`;
+  openModal({ title:"Valider la correspondance", wide:true,
+    bodyHtml:`<div class="grid" style="grid-template-columns:1fr 1fr;gap:16px;">${box(a)}${box(b)}</div>
+      ${m.basis&&m.basis.length?`<p class="text-xs mt-2"><strong>Motifs de la suggestion :</strong> ${esc(m.basis.join(" · "))}</p>`:""}
+      <div class="grid mt-2" style="grid-template-columns:1fr 2fr;gap:16px;"><div class="field"><label>Type de correspondance <span class="req">*</span></label><select id="mapv-rel">${m.status==="suggested"&&m.origin!=="manuel"?`<option value="">— Choisir —</option>`:""}${Object.keys(MAPPING_RELATIONS).map(k=>`<option value="${k}" ${k===m.relation&&m.origin==="manuel"?"selected":""}>${esc(MAPPING_RELATIONS[k].label)}${k===m.relation&&m.origin!=="manuel"?" (proposé)":""}</option>`).join("")}</select></div>
+      <div class="field"><label>Commentaire (facultatif)</label><textarea id="mapv-comment" rows="2">${esc(m.comment||"")}</textarea></div></div><p class="text-xs" id="mapv-err" style="color:var(--danger,#c0392b);"></p>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="mapv-ok">Valider</button>`,
+    onMount:(o)=>{ o.querySelector("#mapv-ok").addEventListener("click", ()=>{
+      const rel = o.querySelector("#mapv-rel").value;
+      if(!MAPPING_RELATIONS[rel]){ o.querySelector("#mapv-err").textContent = "Choisissez le type de correspondance : la relation proposée doit être confirmée par vous."; return; }
+      updateMapping(id, { relation:rel, comment:o.querySelector("#mapv-comment").value });
+      setMappingStatus(id, "validated");
+      try{ saveDB(); }catch(e){ toast("Enregistrement impossible (stockage plein ?)","⚠️"); return; }
+      closeModal(); toast("Correspondance validée","✅"); render(); }); } });
+}
+
+/* ---------- Suggestions par règles : aperçu, puis enregistrement « à valider » ---------- */
+function openMappingSuggestForm(refId){
+  const ref = getReferentiel(refId); if(!ref) return;
+  const others = mappableReferentiels().filter(r=>r.id!==refId);
+  if(!others.length){ toast("Aucun autre référentiel avec des exigences : importez-en un d'abord.","⚠️"); return; }
+  const S = { other:others[0].id, level:"standard", list:[], skipped:0, off:new Set() };
+  const txt = id => { const ep = mappingEndpoint(id); return ep ? ep.ref+" — "+(ep.title||ep.text).slice(0,70) : id; };
+  openModal({ title:"Suggérer des correspondances", wide:true,
+    bodyHtml:`<p class="text-xs mb-2">Qonnect compare les exigences de « ${esc(ref.name)} » à celles d'un autre référentiel (mots-clés, texte, codes, chapitres). Les propositions sont enregistrées <strong>« à valider »</strong> : rien n'est validé ni compté dans les niveaux de maîtrise tant que vous ne l'avez pas décidé. Les paires déjà traitées (validées, rejetées, à valider) ne sont pas reproposées.</p>
+      <div class="flex gap-2" style="flex-wrap:wrap;align-items:flex-end;">
+        <div class="field" style="margin:0;"><label>Comparer avec</label><select id="mapsg-ref">${others.map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join("")}</select></div>
+        <div class="field" style="margin:0;"><label>Niveau de prudence</label><select id="mapsg-lvl">${Object.keys(MAPPING_SUGGEST_LEVELS).map(k=>`<option value="${k}" ${k==="standard"?"selected":""}>${esc(MAPPING_SUGGEST_LEVELS[k].label)}</option>`).join("")}</select></div>
+        <button class="btn btn-secondary" id="mapsg-run">Analyser</button></div>
+      <div id="mapsg-out" class="mt-2"></div>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Fermer</button><button class="btn btn-primary" id="mapsg-save" disabled>Enregistrer les suggestions</button>`,
+    onMount:(o)=>{
+      const out = o.querySelector("#mapsg-out"), save = o.querySelector("#mapsg-save");
+      const draw = ()=>{
+        const n = S.list.length - S.off.size;
+        save.disabled = n<=0; save.textContent = n>0 ? "Enregistrer "+n+" suggestion(s) « à valider »" : "Enregistrer les suggestions";
+        out.querySelectorAll("[data-mapsg-i]").forEach(cb=>{ cb.checked = !S.off.has(Number(cb.getAttribute("data-mapsg-i"))); });
+      };
+      o.querySelector("#mapsg-run").addEventListener("click", ()=>{
+        S.other = o.querySelector("#mapsg-ref").value; S.level = o.querySelector("#mapsg-lvl").value; S.off = new Set();
+        const mine = listExigencesOfReferentiel(refId).map(e=>({ id:e.id, ref:e.ref, title:e.title, text:e.text, chapterTitle:(getCustomExigence(e.id)||{}).chapterTitle||"" }));
+        const theirs = listExigencesOfReferentiel(S.other).map(e=>({ id:e.id, ref:e.ref, title:e.title, text:e.text, chapterTitle:(getCustomExigence(e.id)||{}).chapterTitle||"" }));
+        const l1 = msGuessLang(mine.map(e=>e.text)), l2 = msGuessLang(theirs.map(e=>e.text));
+        const raw = suggestMappings(mine, theirs, S.level);
+        S.list = raw.filter(c=>!findMapping(c.aId, c.bId)); S.skipped = raw.length - S.list.length;
+        const warn = (l1!=="?" && l2!=="?" && l1!==l2) ? `<div class="aq-callout warn">⚠️ Ces deux référentiels ne semblent pas être dans la même langue (${l1.toUpperCase()} / ${l2.toUpperCase()}) : les mots-clés ne se recoupent pas et les suggestions seront rares ou absentes. Traduisez d'abord le référentiel importé en anglais (traduction par IA locale à l'import).</div>` : "";
+        if(!S.list.length){ out.innerHTML = warn+`<p class="text-sm">Aucune nouvelle suggestion à ce niveau${S.skipped?" ("+S.skipped+" déjà traitée(s))":""}. Essayez un niveau plus large.</p>`; draw(); return; }
+        out.innerHTML = warn+`<p class="text-sm mb-2"><strong>${S.list.length}</strong> suggestion(s)${S.skipped?" · "+S.skipped+" déjà traitée(s), ignorée(s)":""}. Décochez celles qui ne vous semblent pas pertinentes.</p>
+          <div style="max-height:340px;overflow:auto;">${S.list.slice(0,150).map((c,i)=>`<label class="card mb-2" style="display:block;cursor:pointer;"><div class="flex" style="gap:10px;align-items:flex-start;"><input type="checkbox" data-mapsg-i="${i}" checked>
+            <div style="flex:1;"><div class="text-sm"><strong>${esc(txt(c.aId))}</strong><br>↔ <strong>${esc(txt(c.bId))}</strong></div><div class="text-xs mt-2">Indice ${Math.round(c.score*100)} % · ${esc(c.basis.join(" · "))}</div></div></div></label>`).join("")}${S.list.length>150?`<p class="text-xs">… ${S.list.length-150} autre(s) non affichée(s) : toutes seront enregistrées si vous ne les décochez pas ; relevez le niveau de prudence pour en voir moins.</p>`:""}</div>`;
+        out.querySelectorAll("[data-mapsg-i]").forEach(cb=>cb.addEventListener("change", ()=>{ const i = Number(cb.getAttribute("data-mapsg-i")); if(cb.checked) S.off.delete(i); else S.off.add(i); draw(); }));
+        draw();
+      });
+      save.addEventListener("click", ()=>{
+        const before = DB.exigenceMappings.length; let n = 0;
+        S.list.forEach((c,i)=>{ if(S.off.has(i)) return;
+          const r = createMapping(c.aId, c.bId, { relation:c.relation, origin:"regles", status:"suggested", confidence:c.score, basis:c.basis });
+          if(r.ok) n++; });
+        try{ saveDB(); }catch(e){ DB.exigenceMappings.length = before; toast("Enregistrement impossible (stockage plein ?) : rien n'a été enregistré.","⚠️"); return; }
+        closeModal(); MAP_UI.status = "suggested"; MAP_UI.other = "all"; toast(n+" suggestion(s) enregistrée(s) — à valider","✅"); render();
+      });
+    } });
 }
