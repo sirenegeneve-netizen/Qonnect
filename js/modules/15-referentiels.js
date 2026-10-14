@@ -800,7 +800,8 @@ function referentielDeletionImpact(refId){
   custom.forEach(e=>(e.docIds||[]).forEach(d=>docs.add(d)));
   DB.documents.forEach(d=>{ if((d.requirementIds||[]).some(id=>legacy.some(r=>r.id===id))) docs.add(d.id); });
   const validated = custom.reduce((n,e)=>n+(e.docIds||[]).length+(e.processIds||[]).length+(e.riskIds||[]).length, 0);
-  return { exigences: custom.length+legacy.length, audits:audits.length, questions, findings, documents:docs.size, validated };
+  const mappings = (DB.exigenceMappings||[]).filter(m=>m.refA===refId||m.refB===refId).length;
+  return { exigences: custom.length+legacy.length, mappings, audits:audits.length, questions, findings, documents:docs.size, validated };
 }
 function deleteReferentiel(refId){
   const ref = getReferentiel(refId);
@@ -814,6 +815,7 @@ function deleteReferentiel(refId){
         ${line(imp.exigences, "exigence(s) supprimée(s) avec le référentiel")}
         ${line(imp.documents, "document(s) lié(s) à ces exigences (les documents eux-mêmes ne sont pas supprimés)")}
         ${line(imp.validated, "lien(s) validé(s) avec documents, processus ou risques (perdus)")}
+        ${line(imp.mappings, "correspondance(s) avec d'autres référentiels (supprimées avec leur historique)")}
         ${line(imp.audits, "audit(s) qui font référence à ce référentiel ou à ses exigences")}
         ${line(imp.questions+imp.findings, "question(s) et constat(s) d'audit rattachés à ces exigences (ils resteront dans l'audit, sans exigence associée)")}
       </ul>`,
@@ -823,6 +825,7 @@ function deleteReferentiel(refId){
       const wasActive = ref.active;
       DB.referentiels = DB.referentiels.filter(r=>r.id!==refId);
       DB.customExigences = DB.customExigences.filter(e=>e.referentielId!==refId);
+      DB.exigenceMappings = (DB.exigenceMappings||[]).filter(m=>m.refA!==refId && m.refB!==refId);
       if(refId==="ISO9001") DB.requirements = [];
       if(wasActive && DB.referentiels.length) DB.referentiels[0].active = true;
       saveDB(); toast("Référentiel supprimé"); navigate("referentiels");
@@ -1073,6 +1076,8 @@ function pageReferentiels(){
 
 function referentielTabsHtml(ref, active){
   const tabs = [{id:"vue",label:"Vue d'ensemble"},{id:"exigences",label:"Exigences"},{id:"cartographie",label:"Cartographie"},{id:"versions",label:"Versions"},{id:"assistant",label:"Assistant IA"}];
+  const nMap = mappingsOfReferentiel(ref.id).filter(m=>m.status!=="rejected").length;
+  tabs.splice(3,0,{id:"correspondances",label:"Correspondances"+(nMap?" ("+nMap+")":"")});
   const nRes = pendingMatchesOf(ref.id).length + exigencesToReviewOf(ref.id).length;
   if(nRes || (ref.pendingMatches||[]).length) tabs.splice(4,0,{id:"resoudre",label:"À résoudre"+(nRes?" ("+nRes+")":"")});
   return `<div class="tabs">${tabs.map(t=>`<button class="tab ${t.id===active?'active':''}" data-route="referentiels/${ref.id}/${t.id}">${esc(t.label)}</button>`).join("")}</div>`;
@@ -1124,6 +1129,7 @@ function pageReferentielDetail(id, tab, subId){
   else if(tab==="cartographie") body = refTabCartographie(ref, score);
   else if(tab==="versions") body = refTabVersions(ref);
   else if(tab==="resoudre") body = refTabResolve(ref);
+  else if(tab==="correspondances") body = refTabMappings(ref);
   else if(tab==="assistant") body = refTabAssistant(ref, score);
   return header + body;
 }
@@ -1266,6 +1272,7 @@ function refExigenceDetail(ref, v){
         ${!v.legacy && typeof criterionHelpHtml==="function" ? criterionHelpHtml(v.description||v.title, {open:true}) : ""}
       </div>
       ${suggestedLinksHtml(ref.id, v)}
+      ${exigenceMappingsCardHtml(ref.id, v.id)}
       <div class="card mb-2">
         <h3 class="mb-2">Pourquoi ce niveau ?</h3>
         <ul>${reasons.map(r=>`<li class="text-sm mt-2">${esc(r)}</li>`).join("")}</ul>

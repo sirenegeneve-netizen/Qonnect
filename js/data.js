@@ -869,6 +869,8 @@ function normalizeDocuments(){
   if(!DB.trainings) DB.trainings = [];
   if(!DB.documentTemplates) DB.documentTemplates = JSON.parse(JSON.stringify(QONNECT_SEED.documentTemplates));
   if(!DB.customExigences) DB.customExigences = [];
+  /* Étape 3 — correspondances entre exigences : section AJOUTÉE (vide) ; aucune donnée existante n'est touchée. */
+  if(!Array.isArray(DB.exigenceMappings)) DB.exigenceMappings = [];
   /* Migration : les rapprochements automatiques faits à l'import (avant « liens à valider ») deviennent des suggestions et ne comptent plus dans le niveau. */
   DB.customExigences.forEach(e=>{
     if(e.linksV2) return;

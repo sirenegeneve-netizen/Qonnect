@@ -28,6 +28,10 @@ function initGlobalEvents(){
       resolveLinkSuggestion(pl.exigenceId, pl.kind, pl.id, pl.action);
       return;
     }
+    const mapAct = e.target.closest("[data-map-act]");
+    if(mapAct){ e.preventDefault(); mappingAction(JSON.parse(mapAct.getAttribute("data-map-act"))); return; }
+    const mapAdd = e.target.closest("[data-map-add]");
+    if(mapAdd){ e.preventDefault(); const pa = JSON.parse(mapAdd.getAttribute("data-map-add")); openMappingForm(pa.refId, pa.exigenceId); return; }
     const pendEl = e.target.closest("[data-pending-resolve]");
     if(pendEl){ e.preventDefault(); const pr = JSON.parse(pendEl.getAttribute("data-pending-resolve")); resolvePendingMatch(pr.refId, pr.id, pr.action, pr.param); return; }
     const revEl = e.target.closest("[data-exigence-reviewed]");
@@ -550,6 +554,7 @@ function initGlobalEvents(){
       if(zone==="frn") applyFournisseurFilters();
       if(e.target.id.startsWith("f-ref")) applyReferentielFilters();
     }
+    if(e.target.matches("[data-map-filter]")){ MAP_UI[e.target.getAttribute("data-map-filter")] = e.target.value; render(); }
     if(e.target.id==="review-picker"){ navigate("revue-direction/"+e.target.value); }
   });
 }
