@@ -30,6 +30,9 @@ function initGlobalEvents(){
     }
     const mapAct = e.target.closest("[data-map-act]");
     if(mapAct){ e.preventDefault(); mappingAction(JSON.parse(mapAct.getAttribute("data-map-act"))); return; }
+    const crossPair = e.target.closest("[data-cross-pair]");
+    if(crossPair){ e.preventDefault(); const cp = JSON.parse(crossPair.getAttribute("data-cross-pair")); CROSS_UI.from = cp.from; CROSS_UI.to = cp.to; CROSS_UI.filter = "all"; render(); setTimeout(()=>{ const t = document.querySelector("[data-cross-filter=from]"); if(t) t.scrollIntoView({behavior:"smooth", block:"center"}); }, 50); return; }
+    if(e.target.closest("[data-cross-export]")){ e.preventDefault(); crossExportCsv(); return; }
     const mapSug = e.target.closest("[data-map-suggest]");
     if(mapSug){ e.preventDefault(); openMappingSuggestForm(JSON.parse(mapSug.getAttribute("data-map-suggest")).refId); return; }
     const mapAdd = e.target.closest("[data-map-add]");
@@ -556,6 +559,7 @@ function initGlobalEvents(){
       if(zone==="frn") applyFournisseurFilters();
       if(e.target.id.startsWith("f-ref")) applyReferentielFilters();
     }
+    if(e.target.matches("[data-cross-filter]")){ CROSS_UI[e.target.getAttribute("data-cross-filter")] = e.target.value; if(e.target.getAttribute("data-cross-filter")==="from") CROSS_UI.to = null; render(); }
     if(e.target.matches("[data-map-filter]")){ MAP_UI[e.target.getAttribute("data-map-filter")] = e.target.value; render(); }
     if(e.target.id==="review-picker"){ navigate("revue-direction/"+e.target.value); }
   });

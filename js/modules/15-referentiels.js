@@ -1068,6 +1068,7 @@ function pageReferentiels(){
   return `
   ${pageHeader("Référentiels","Le moteur de conformité de Qonnect — importez un référentiel, Qonnect en analyse la structure et calcule automatiquement votre niveau de maîtrise.",
     `<button class="btn btn-primary" data-open-referentiel-import>+ Importer un référentiel</button>`)}
+  ${referentielsTopTabsHtml("liste")}
   ${identityBlockedHtml()}
   ${orphanReportHtml()}
   ${refListFiltersHtml()}
