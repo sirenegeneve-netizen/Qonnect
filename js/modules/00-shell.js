@@ -189,7 +189,7 @@ function render(){
         else html = pageFournisseurs();
         break;
       case "groupe": html = pageGroupe(); break;
-      case "referentiels": html = parts[1] ? pageReferentielDetail(parts[1], parts[2], parts[3]) : pageReferentiels(); break;
+      case "referentiels": html = parts[1]==="analyse" ? pageAnalyseTransversale() : parts[1] ? pageReferentielDetail(parts[1], parts[2], parts[3]) : pageReferentiels(); break;
       case "conformite": html = pageConformite(parts[1]); break;
       case "connexions": html = pageConnexions(parts[1], parts[2]); break;
       case "ai": html = pageAI(); break;
