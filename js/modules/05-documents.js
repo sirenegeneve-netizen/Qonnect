@@ -25,7 +25,7 @@ function docRelations(doc){
   const requirements = (doc.requirementIds||[]).map(id=>findBy(DB.requirements,id)).filter(Boolean);
   // Multi-référentiel : une même preuve (ce document) peut répondre à plusieurs référentiels — jamais dupliquée, toujours recensée.
   const legacyExigences = requirements.map(r=>({ref:r.ref, label:r.label, referentielId:"ISO9001", referentielName:"ISO 9001"}));
-  const customExigences = DB.customExigences.filter(e=>(e.docIds||[]).includes(doc.id)).map(e=>{
+  const customExigences = DB.customExigences.filter(e=>(e.docIds||[]).includes(doc.id) && e.status!=="retired").map(e=>{
     const rf = getReferentiel(e.referentielId);
     return {ref:e.ref, label:e.title, referentielId:e.referentielId, referentielName: rf?rf.name:e.referentielId};
   });
@@ -308,7 +308,8 @@ function docTabExigences(d, rel){
       <h3 class="mb-2">${esc(rn)}</h3>
       ${byRef[rn].map(e=>`<div class="rel-link"><span class="rel-name">${esc(e.ref)} — ${esc(e.label)}</span>${badgeRaw("success","Couverte")}</div>`).join("")}
     </div>`).join("")
-    : `<div class="card">${emptyState("📐","Aucune exigence associée","Ce document n'est pas encore relié à une exigence normative précise.")}</div>`}`;
+    : `<div class="card">${emptyState("📐","Aucune exigence associée","Ce document n'est pas encore relié à une exigence normative précise.")}</div>`}
+  ${documentSmqViaMappingsHtml(d.id)}`;
 }
 
 function docTabImpact(d, rel){
