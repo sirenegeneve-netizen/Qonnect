@@ -33,6 +33,8 @@ function initGlobalEvents(){
     const crossPair = e.target.closest("[data-cross-pair]");
     if(crossPair){ e.preventDefault(); const cp = JSON.parse(crossPair.getAttribute("data-cross-pair")); CROSS_UI.from = cp.from; CROSS_UI.to = cp.to; CROSS_UI.filter = "all"; render(); setTimeout(()=>{ const t = document.querySelector("[data-cross-filter=from]"); if(t) t.scrollIntoView({behavior:"smooth", block:"center"}); }, 50); return; }
     if(e.target.closest("[data-cross-export]")){ e.preventDefault(); crossExportCsv(); return; }
+    const smqP = e.target.closest("[data-smq-propose]");
+    if(smqP){ e.preventDefault(); smqPropose(JSON.parse(smqP.getAttribute("data-smq-propose"))); return; }
     const mapSug = e.target.closest("[data-map-suggest]");
     if(mapSug){ e.preventDefault(); openMappingSuggestForm(JSON.parse(mapSug.getAttribute("data-map-suggest")).refId); return; }
     const mapAdd = e.target.closest("[data-map-add]");

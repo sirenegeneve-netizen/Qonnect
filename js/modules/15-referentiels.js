@@ -1239,7 +1239,7 @@ function suggestedLinksHtml(refId, v){
   return `<div class="card mb-2">
     <h3 class="mb-2">Rapprochements suggérés — à valider</h3>
     <p class="text-xs mb-2">Qonnect a repéré ces éléments par proximité de mots avec l'exigence. <strong>Ils ne comptent pas</strong> dans le niveau de maîtrise tant que vous ne les avez pas validés : validez seulement ce qui démontre réellement l'exigence.</p>
-    ${rows.map(r=>`<div class="rel-link"><span class="rel-name"><span class="text-xs" style="display:block;font-weight:400;">${LINK_KINDS[r.kind].label}</span>${esc(r.nm)}</span><span style="display:flex;gap:6px;">${btn(r,"validate","✔ Valider","btn-primary")}${btn(r,"ignore","Ignorer","btn-secondary")}</span></div>`).join("")}
+    ${rows.map(r=>`<div class="rel-link"><span class="rel-name"><span class="text-xs" style="display:block;font-weight:400;">${LINK_KINDS[r.kind].label}${provenanceLabel((e.suggestedVia||{})[r.kind+":"+r.id])?" · "+esc(provenanceLabel(e.suggestedVia[r.kind+":"+r.id])):""}</span>${esc(r.nm)}</span><span style="display:flex;gap:6px;">${btn(r,"validate","✔ Valider","btn-primary")}${btn(r,"ignore","Ignorer","btn-secondary")}</span></div>`).join("")}
   </div>`;
 }
 function resolveLinkSuggestion(exigenceId, kind, id, action){
@@ -1249,7 +1249,7 @@ function resolveLinkSuggestion(exigenceId, kind, id, action){
   if(action==="validate"){
     e[kind] = e[kind] || [];
     if(!e[kind].includes(id)) e[kind].push(id);
-    e.linkMeta = e.linkMeta || {}; e.linkMeta[kind+":"+id] = { date:new Date().toISOString().slice(0,10), by:"Vous" };
+    e.linkMeta = e.linkMeta || {}; e.linkMeta[kind+":"+id] = Object.assign({ date:new Date().toISOString().slice(0,10), by:"Vous" }, (e.suggestedVia||{})[kind+":"+id] ? { origin:"correspondance", via:e.suggestedVia[kind+":"+id].via } : {});
   }
   saveDB();
   toast(action==="validate" ? "Rapprochement validé — il compte désormais dans le niveau" : "Suggestion ignorée");
@@ -1274,6 +1274,7 @@ function refExigenceDetail(ref, v){
       </div>
       ${suggestedLinksHtml(ref.id, v)}
       ${exigenceMappingsCardHtml(ref.id, v.id)}
+      ${exigenceSmqViaMappingsHtml(v.id)}
       <div class="card mb-2">
         <h3 class="mb-2">Pourquoi ce niveau ?</h3>
         <ul>${reasons.map(r=>`<li class="text-sm mt-2">${esc(r)}</li>`).join("")}</ul>
