@@ -21,10 +21,43 @@ const MAPPING_SUGGEST_OPTS = { perSource:3, maxCandidates:15, minContent:0.15, s
 const MS_STOP = new Set(("dans pour avec sans leur leurs cette cettes ainsi entre comme selon etre sont elle elles nous vous plus tout tous doit doivent doivent ete etre ayant afin lors ceux celle ces ses aux des les une que qui par sur sous the and for with that this shall must should are have been their which from into such any all other les mise place organisation organisme"+
   " exigence exigences").split(" "));
 
+/* Lexique de synonymes du domaine qualité (EXPÉRIMENTAL, explicite et auditable) : plusieurs racines ramenées à une racine commune
+   pour que « direction » et « leadership », ou « achats » et « prestataires externes », se recoupent. */
+const MS_SYNONYMS = [
+  ["~direction",  ["direction","dirigeant","leadership"]],
+  ["~achats",     ["achat","prestataire","fournisseur","soustrait","externe"]],
+  ["~documents",  ["document","enregistrement","dossier","manuel"]],
+  ["~client",     ["client","reclamation","feedback","satisfaction"]],
+  ["~amelioration",["amelior","correctif","corrective","preventi"]],
+  ["~risque",     ["risque","opportunit"]],
+  ["~competence", ["competence","sensibilis","formation"]],
+  ["~mesure",     ["mesure","surveillance","evaluation","analyse"]],
+];
 function msStems(text){
   const out = new Set();
-  vmNorm(text).split(" ").forEach(w=>{ if(w.length>=5 && !MS_STOP.has(w)) out.add(w.slice(0, MAPPING_SUGGEST_OPTS.stemLen)); });
+  vmNorm(text).split(" ").forEach(w=>{
+    if(w.length<5 || MS_STOP.has(w)) return;
+    const syn = MS_SYNONYMS.find(g=>g[1].some(p=>w.startsWith(p)));      /* mot entier (préfixe) : « prestation » ≠ « prestataire » */
+    out.add(syn ? syn[0] : w.slice(0, MAPPING_SUGGEST_OPTS.stemLen));   /* un synonyme est ramené à son concept commun */
+  });
   return out;
+}
+/* Contexte hiérarchique : pour un intitulé « pauvre » (moins de 3 mots distinctifs, ex. « Généralités »), on ajoute le titre du chapitre parent
+   déduit du code (4.2.1 → 4.2 → 4) afin de ne pas confondre tous les « Généralités » entre eux. */
+function msWithContext(list){
+  const byRef = new Map(); list.forEach(x=>{ const k = String(x.ref||"").trim(); if(k && !byRef.has(k)) byRef.set(k, x); });
+  return list.map(x=>{
+    const own = (x.text||"")+" "+(x.title||"");
+    if(msStems(own).size>=3) return own;
+    let ctx = "", ref = String(x.ref||"").trim();
+    for(let i=0;i<2;i++){
+      const parent = ref.replace(/[.\-][^.\-]+$/,"");
+      if(!parent || parent===ref) break;
+      const p = byRef.get(parent); if(p) ctx = (p.title||p.text||"")+" "+ctx;
+      ref = parent;
+    }
+    return ctx ? ctx+" "+own : own;
+  });
 }
 /* Langue approximative d'un texte : "fr" | "en" | "?" (utilisé pour avertir quand deux référentiels n'ont pas la même langue). */
 function msGuessLang(texts){
@@ -42,12 +75,13 @@ function suggestMappings(source, target, level, optsOverride){
   const O = Object.assign({}, MAPPING_SUGGEST_OPTS, optsOverride||{});
   const W = MAPPING_SUGGEST_WEIGHTS;
   const min = (MAPPING_SUGGEST_LEVELS[level]||MAPPING_SUGGEST_LEVELS.standard).min;
-  const S = source.map(x=>({ x, stems:msStems(x.text+" "+(x.title||"")), ref:vmNorm(x.ref) }));
-  const T = target.map(x=>({ x, stems:msStems(x.text+" "+(x.title||"")), ref:vmNorm(x.ref) }));
+  const sEff = msWithContext(source), tEff = msWithContext(target);
+  const S = source.map((x,i)=>({ x, eff:sEff[i], stems:msStems(sEff[i]), ref:vmNorm(x.ref) }));
+  const T = target.map((x,i)=>({ x, eff:tEff[i], stems:msStems(tEff[i]), ref:vmNorm(x.ref) }));
   /* Rareté des mots : poids idf calculé sur l'ensemble des deux référentiels. */
   const df = new Map(), N = S.length+T.length;
   S.concat(T).forEach(e=> e.stems.forEach(s=> df.set(s,(df.get(s)||0)+1)));
-  const idf = s => Math.log(1 + N/(df.get(s)||1));
+  const idf = s => Math.log(1 + N/(df.get(s)||1)) * (s[0]==="~" ? 1.6 : 1);   /* un concept du lexique qualité pèse plus qu'un mot isolé */
   const mass = e => { let m = 0; e.stems.forEach(s=>{ m += idf(s); }); return m; };
   S.forEach(e=>{ e.mass = mass(e); }); T.forEach(e=>{ e.mass = mass(e); });
   /* Index inversé de la cible : on ne compare qu'à des candidats qui partagent des mots rares. */
@@ -65,7 +99,7 @@ function suggestMappings(source, target, level, optsOverride){
       let shared = 0; const sharedStems = [];
       a.stems.forEach(s=>{ if(b.stems.has(s)){ shared += idf(s); sharedStems.push(s); } });
       const kw = (a.mass && b.mass) ? shared / Math.sqrt(a.mass*b.mass) : 0;
-      const txt = vmSimilarity(a.x.text, b.x.text);
+      const txt = vmSimilarity(a.eff, b.eff);
       if(kw < O.minContent && txt < 0.3) return;            /* le code seul ne suffit jamais */
       const code = (a.ref && a.ref===b.ref) ? 1 : 0;
       const chap = (a.x.chapterTitle && b.x.chapterTitle) ? vmSimilarity(a.x.chapterTitle, b.x.chapterTitle) : 0;

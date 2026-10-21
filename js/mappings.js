@@ -20,7 +20,17 @@ const MAPPING_STATUS = {
   rejected: { l:"Rejetée",   c:"neutral" },
 };
 const MAPPING_ORIGINS = { manuel:"Manuelle", regles:"Règles", ia:"IA locale" };
-const MAP_UI = { status:"all", other:"all" };
+const MAP_UI = { status:"all", other:[], openOther:false };   /* other : liste d'identifiants de référentiels (vide = tous) */
+
+/* Sélecteur multiple de référentiels (cases à cocher dans un menu repliable). `selected` : tableau d'identifiants (vide = tous). */
+function multiPickHtml(key, label, options, selected, open){
+  const sel = new Set(selected||[]);
+  const summary = !sel.size ? "Tous les référentiels" : sel.size===1 ? (options.find(o=>sel.has(o.id))||{name:"1 sélectionné"}).name : sel.size+" référentiels";
+  return `<details class="multi-pick" data-multi-pick="${esc(key)}" ${open?"open":""}><summary aria-label="${esc(label)}">${esc(label)} : <strong>${esc(summary)}</strong></summary>
+    <div class="multi-pick-body"><div class="multi-pick-bulk"><button type="button" class="btn btn-secondary btn-sm" data-multi-bulk="all">Tout cocher</button> <button type="button" class="btn btn-secondary btn-sm" data-multi-bulk="none">Effacer</button></div>
+    ${options.map(o=>`<label class="multi-pick-opt"><input type="checkbox" data-multi-opt value="${esc(o.id)}" ${sel.has(o.id)?"checked":""}> <span>${esc(o.name)}${o.hint?` <span class="text-xs">${esc(o.hint)}</span>`:""}</span></label>`).join("")}</div></details>`;
+}
+function multiPickValues(container){ return [...container.querySelectorAll("[data-multi-opt]:checked")].map(c=>c.value); }
 
 function newMappingId(){
   const a = new Uint8Array(6); (self.crypto||window.crypto).getRandomValues(a);
@@ -42,7 +52,7 @@ function mappingEndpoint(id){
 /* Exigences proposables d'un référentiel (actives uniquement). */
 function listExigencesOfReferentiel(refId){
   if(refId==="ISO9001") return DB.requirements.map(r=>({ id:r.id, ref:r.ref, title:r.label, text:r.label }));
-  return DB.customExigences.filter(e=>e.referentielId===refId && e.status!=="retired").map(e=>({ id:e.id, ref:e.ref, title:e.title||"", text:e.description||e.title||"" }));
+  return DB.customExigences.filter(e=>e.referentielId===refId && e.status!=="retired").map(e=>({ id:e.id, ref:e.ref, title:e.title||"", text:e.description||e.title||"", chapterTitle:e.chapterTitle||"" }));
 }
 function mappableReferentiels(){
   return DB.referentiels.filter(r=> r.id==="ISO9001" ? DB.requirements.length : DB.customExigences.some(e=>e.referentielId===r.id));
@@ -144,11 +154,13 @@ function mappingActionsHtml(m, refId){
 function refTabMappings(ref){
   const all = mappingsOfReferentiel(ref.id);
   const side = m => m.refA===ref.id ? { own:m.exigenceAId, other:m.exigenceBId, otherRef:m.refB } : { own:m.exigenceBId, other:m.exigenceAId, otherRef:m.refA };
-  const others = [...new Set(all.map(m=>side(m).otherRef))];
+  const countWith = rid => all.filter(m=>side(m).otherRef===rid).length;
+  const otherOpts = mappableReferentiels().filter(r=>r.id!==ref.id).map(r=>({ id:r.id, name:r.name, hint: countWith(r.id) ? "("+countWith(r.id)+")" : "" }));
+  const chosen = MAP_UI.other.filter(id=>otherOpts.some(o=>o.id===id));
   const rows = all.filter(m=>{
     if(MAP_UI.status==="a_revoir"){ if(mappingState(m)!=="a_revoir") return false; }
     else if(MAP_UI.status!=="all" && m.status!==MAP_UI.status) return false;
-    if(MAP_UI.other!=="all" && side(m).otherRef!==MAP_UI.other) return false;
+    if(chosen.length && !chosen.includes(side(m).otherRef)) return false;
     return true;
   });
   const count = s => all.filter(m=>m.status===s).length;
@@ -159,7 +171,7 @@ function refTabMappings(ref){
   <div class="flex justify-between items-center mb-2" style="gap:8px;flex-wrap:wrap;">
     <div class="filters-bar" style="margin:0;">
       <select data-map-filter="status" aria-label="Statut">${opt("all","Tous les statuts",MAP_UI.status)}${opt("validated","Validées ("+count("validated")+")",MAP_UI.status)}${opt("suggested","À valider ("+count("suggested")+")",MAP_UI.status)}${opt("rejected","Rejetées ("+count("rejected")+")",MAP_UI.status)}${opt("a_revoir","À revoir ("+nRev+")",MAP_UI.status)}</select>
-      <select data-map-filter="other" aria-label="Référentiel lié">${opt("all","Tous les référentiels",MAP_UI.other)}${others.map(o=>{ const r=getReferentiel(o); return opt(o, r?r.name:o, MAP_UI.other); }).join("")}</select>
+      ${multiPickHtml("map-other","Référentiels liés",otherOpts,chosen,MAP_UI.openOther)}
     </div>
     <div class="flex gap-2"><button class="btn btn-secondary btn-sm" data-map-suggest='${jsonAttr({refId:ref.id})}'>✨ Suggérer des correspondances</button>
     <button class="btn btn-primary btn-sm" data-map-add='${jsonAttr({refId:ref.id})}'>+ Ajouter une correspondance</button></div>
@@ -283,39 +295,54 @@ function openMappingValidateForm(id){
 }
 
 /* ---------- Suggestions par règles : aperçu, puis enregistrement « à valider » ---------- */
+/* Compare les exigences de refId à celles d'un ou de plusieurs autres référentiels. Retourne { list, skipped, warnings }. */
+function computeSuggestionsFor(refId, targetIds, level){
+  const mine = listExigencesOfReferentiel(refId);
+  const l1 = msGuessLang(mine.map(e=>e.text));
+  let list = [], skipped = 0; const warnings = [];
+  targetIds.forEach(tid=>{
+    const theirs = listExigencesOfReferentiel(tid);
+    const l2 = msGuessLang(theirs.map(e=>e.text));
+    if(l1!=="?" && l2!=="?" && l1!==l2) warnings.push({ target:(getReferentiel(tid)||{}).name||tid, l1, l2 });
+    const raw = suggestMappings(mine, theirs, level);
+    raw.forEach(c=>{ if(findMapping(c.aId,c.bId)) skipped++; else list.push(Object.assign(c,{ targetId:tid })); });
+  });
+  list.sort((p,q)=>q.score-p.score);
+  return { list, skipped, warnings };
+}
 function openMappingSuggestForm(refId){
   const ref = getReferentiel(refId); if(!ref) return;
   const others = mappableReferentiels().filter(r=>r.id!==refId);
   if(!others.length){ toast("Aucun autre référentiel avec des exigences : importez-en un d'abord.","⚠️"); return; }
-  const S = { other:others[0].id, level:"standard", list:[], skipped:0, off:new Set() };
+  const S = { targets:others.map(r=>r.id), level:"standard", list:[], skipped:0, off:new Set() };
   const txt = id => { const ep = mappingEndpoint(id); return ep ? ep.ref+" — "+(ep.title||ep.text).slice(0,70) : id; };
   openModal({ title:"Suggérer des correspondances", wide:true,
-    bodyHtml:`<p class="text-xs mb-2">Qonnect compare les exigences de « ${esc(ref.name)} » à celles d'un autre référentiel (mots-clés, texte, codes, chapitres). Les propositions sont enregistrées <strong>« à valider »</strong> : rien n'est validé ni compté dans les niveaux de maîtrise tant que vous ne l'avez pas décidé. Les paires déjà traitées (validées, rejetées, à valider) ne sont pas reproposées.</p>
+    bodyHtml:`<p class="text-xs mb-2">Qonnect compare les exigences de « ${esc(ref.name)} » à celles d'un ou de plusieurs autres référentiels (mots-clés, texte, codes, chapitres). Les propositions sont enregistrées <strong>« à valider »</strong> : rien n'est validé ni compté dans les niveaux de maîtrise tant que vous ne l'avez pas décidé. Les paires déjà traitées (validées, rejetées, à valider) ne sont pas reproposées.</p>
       <div class="flex gap-2" style="flex-wrap:wrap;align-items:flex-end;">
-        <div class="field" style="margin:0;"><label>Comparer avec</label><select id="mapsg-ref">${others.map(r=>`<option value="${esc(r.id)}">${esc(r.name)}</option>`).join("")}</select></div>
+        <div id="mapsg-pick">${multiPickHtml("mapsg-targets","Comparer avec",others.map(r=>({id:r.id,name:r.name})),S.targets,true)}</div>
         <div class="field" style="margin:0;"><label>Niveau de prudence</label><select id="mapsg-lvl">${Object.keys(MAPPING_SUGGEST_LEVELS).map(k=>`<option value="${k}" ${k==="standard"?"selected":""}>${esc(MAPPING_SUGGEST_LEVELS[k].label)}</option>`).join("")}</select></div>
         <button class="btn btn-secondary" id="mapsg-run">Analyser</button></div>
       <div id="mapsg-out" class="mt-2"></div>`,
     footHtml:`<button class="btn btn-secondary" data-close-modal>Fermer</button><button class="btn btn-primary" id="mapsg-save" disabled>Enregistrer les suggestions</button>`,
     onMount:(o)=>{
-      const out = o.querySelector("#mapsg-out"), save = o.querySelector("#mapsg-save");
+      const out = o.querySelector("#mapsg-out"), save = o.querySelector("#mapsg-save"), pick = o.querySelector("[data-multi-pick]");
       const draw = ()=>{
         const n = S.list.length - S.off.size;
         save.disabled = n<=0; save.textContent = n>0 ? "Enregistrer "+n+" suggestion(s) « à valider »" : "Enregistrer les suggestions";
         out.querySelectorAll("[data-mapsg-i]").forEach(cb=>{ cb.checked = !S.off.has(Number(cb.getAttribute("data-mapsg-i"))); });
       };
       o.querySelector("#mapsg-run").addEventListener("click", ()=>{
-        S.other = o.querySelector("#mapsg-ref").value; S.level = o.querySelector("#mapsg-lvl").value; S.off = new Set();
-        const mine = listExigencesOfReferentiel(refId).map(e=>({ id:e.id, ref:e.ref, title:e.title, text:e.text, chapterTitle:(getCustomExigence(e.id)||{}).chapterTitle||"" }));
-        const theirs = listExigencesOfReferentiel(S.other).map(e=>({ id:e.id, ref:e.ref, title:e.title, text:e.text, chapterTitle:(getCustomExigence(e.id)||{}).chapterTitle||"" }));
-        const l1 = msGuessLang(mine.map(e=>e.text)), l2 = msGuessLang(theirs.map(e=>e.text));
-        const raw = suggestMappings(mine, theirs, S.level);
-        S.list = raw.filter(c=>!findMapping(c.aId, c.bId)); S.skipped = raw.length - S.list.length;
-        const warn = (l1!=="?" && l2!=="?" && l1!==l2) ? `<div class="aq-callout warn">⚠️ Ces deux référentiels ne semblent pas être dans la même langue (${l1.toUpperCase()} / ${l2.toUpperCase()}) : les mots-clés ne se recoupent pas et les suggestions seront rares ou absentes. Traduisez d'abord le référentiel importé en anglais (traduction par IA locale à l'import).</div>` : "";
+        pick.removeAttribute("open");
+        S.targets = multiPickValues(pick); S.level = o.querySelector("#mapsg-lvl").value; S.off = new Set();
+        if(!S.targets.length){ out.innerHTML = `<p class="text-sm">Cochez au moins un référentiel à comparer.</p>`; S.list = []; draw(); return; }
+        const r = computeSuggestionsFor(refId, S.targets, S.level);
+        S.list = r.list; S.skipped = r.skipped;
+        const warn = r.warnings.length ? `<div class="aq-callout warn">⚠️ Langue différente pour : ${r.warnings.map(w=>esc(w.target)+" ("+w.l1.toUpperCase()+" / "+w.l2.toUpperCase()+")").join(", ")}. Les mots-clés ne se recoupent pas : les suggestions seront rares ou absentes pour ces référentiels. Traduisez d'abord le référentiel importé en anglais (traduction par IA locale à l'import).</div>` : "";
         if(!S.list.length){ out.innerHTML = warn+`<p class="text-sm">Aucune nouvelle suggestion à ce niveau${S.skipped?" ("+S.skipped+" déjà traitée(s))":""}. Essayez un niveau plus large.</p>`; draw(); return; }
+        const multi = S.targets.length>1;
         out.innerHTML = warn+`<p class="text-sm mb-2"><strong>${S.list.length}</strong> suggestion(s)${S.skipped?" · "+S.skipped+" déjà traitée(s), ignorée(s)":""}. Décochez celles qui ne vous semblent pas pertinentes.</p>
           <div style="max-height:340px;overflow:auto;">${S.list.slice(0,150).map((c,i)=>`<label class="card mb-2" style="display:block;cursor:pointer;"><div class="flex" style="gap:10px;align-items:flex-start;"><input type="checkbox" data-mapsg-i="${i}" checked>
-            <div style="flex:1;"><div class="text-sm"><strong>${esc(txt(c.aId))}</strong><br>↔ <strong>${esc(txt(c.bId))}</strong></div><div class="text-xs mt-2">Indice ${Math.round(c.score*100)} % · ${esc(c.basis.join(" · "))}</div></div></div></label>`).join("")}${S.list.length>150?`<p class="text-xs">… ${S.list.length-150} autre(s) non affichée(s) : toutes seront enregistrées si vous ne les décochez pas ; relevez le niveau de prudence pour en voir moins.</p>`:""}</div>`;
+            <div style="flex:1;"><div class="text-sm"><strong>${esc(txt(c.aId))}</strong><br>↔ <strong>${esc(txt(c.bId))}</strong>${multi?` <span class="text-xs">(${esc((getReferentiel(c.targetId)||{}).name||"")})</span>`:""}</div><div class="text-xs mt-2">Indice ${Math.round(c.score*100)} % · ${esc(c.basis.join(" · "))}</div></div></div></label>`).join("")}${S.list.length>150?`<p class="text-xs">… ${S.list.length-150} autre(s) non affichée(s) : toutes seront enregistrées si vous ne les décochez pas ; relevez le niveau de prudence pour en voir moins.</p>`:""}</div>`;
         out.querySelectorAll("[data-mapsg-i]").forEach(cb=>cb.addEventListener("change", ()=>{ const i = Number(cb.getAttribute("data-mapsg-i")); if(cb.checked) S.off.delete(i); else S.off.add(i); draw(); }));
         draw();
       });
@@ -325,7 +352,16 @@ function openMappingSuggestForm(refId){
           const r = createMapping(c.aId, c.bId, { relation:c.relation, origin:"regles", status:"suggested", confidence:c.score, basis:c.basis });
           if(r.ok) n++; });
         try{ saveDB(); }catch(e){ DB.exigenceMappings.length = before; toast("Enregistrement impossible (stockage plein ?) : rien n'a été enregistré.","⚠️"); return; }
-        closeModal(); MAP_UI.status = "suggested"; MAP_UI.other = "all"; toast(n+" suggestion(s) enregistrée(s) — à valider","✅"); render();
+        closeModal(); MAP_UI.status = "suggested"; MAP_UI.other = []; toast(n+" suggestion(s) enregistrée(s) — à valider","✅"); render();
       });
     } });
+}
+
+/* Changement dans un sélecteur multiple : sur la page, on mémorise le filtre et on redessine (le menu reste ouvert) ; dans la fenêtre de suggestions, rien à faire (lu au clic sur « Analyser »). */
+function multiPickChanged(box){
+  if(!box) return;
+  const key = box.getAttribute("data-multi-pick"), values = multiPickValues(box);
+  if(key==="map-other"){ MAP_UI.other = values; MAP_UI.openOther = true; render(); }
+  else if(key==="cross-to"){ CROSS_UI.tos = values; CROSS_UI.openTo = true; render(); }
+  else { const s = box.querySelector("summary strong"); if(s) s.textContent = !values.length ? "aucun" : values.length+" sélectionné(s)"; }
 }
