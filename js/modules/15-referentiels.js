@@ -88,9 +88,11 @@ function getReferentielExigenceViews(refId){
 }
 function referentielScore(refId){
   const views = getReferentielExigenceViews(refId);
-  const total = views.length;
+  /* Les éléments « informatifs » (introduction, annexes informatives…) restent visibles mais ne comptent pas dans le score. */
+  const scored = views.filter(v=>v.type!=="informatif");
+  const total = scored.length;
   const counts = {non_couvert:0, partiellement:0, a_renforcer:0, maitrise:0, optimise:0};
-  views.forEach(v=> counts[v.level]++);
+  scored.forEach(v=> counts[v.level]++);
   const pct = total ? Math.round(((counts.maitrise+counts.optimise)/total)*100) : 0;
   return {views, total, counts, pct};
 }
@@ -439,6 +441,10 @@ function parseObligations(text){
   }
   let currentRef = "", currentTitle = "";
   let buf = "", bufRef = "", bufTitle = "";
+  /* Contenu informatif (non auditable) : introduction (0.x), domaine d'application / références normatives / termes (1 à 3),
+     annexes marquées « (informative) ». Ces phrases sont importées mais signalées « informatif » : hors score de couverture. */
+  const infoTopRe = /domaine d.application|r[ée]f[ée]rences? normatives?|termes et d[ée]finitions|scope|normative references|terms and definitions/i;
+  let currentInfo = false, bufInfo = false, inAnnex = false;
   const exigences = [];
   let ignored = 0;
 
@@ -456,6 +462,7 @@ function parseObligations(text){
       if(softRe.test(sentence) && (!hardRe.test(sentence) || /^(?:\W*)(il convient|il est recommandé|\w+\s+devrait)/i.test(sentence))) type = "recommandation";
       else if(/preuve|enregistrement|trace|document[ée]/i.test(sentence)) type = "preuve";
       else if(/responsab/i.test(sentence)) type = "responsabilite";
+      if(bufInfo) type = "informatif";
       exigences.push({ ref: bufRef || "—", title: (bufTitle || sentence.slice(0,60)).slice(0,90), description: sentence, sourceText: sentence, type, chapterRef: bufRef||"", chapterTitle: bufTitle||"" });
     });
   }
@@ -471,11 +478,26 @@ function parseObligations(text){
   lines.forEach(line=>{
     const h = headingOf(line);
     if(h==="toc") return;
-    if(h){ flush(); currentRef = h.ref; currentTitle = h.title; return; }
+    if(h){
+      flush(); currentRef = h.ref; currentTitle = h.title;
+      const top = /^Annexe/i.test(h.ref) ? null : +String(h.ref).split(".")[0];
+      if(top===null){ inAnnex = true; currentInfo = /informative|informatif/i.test(h.title); }
+      else{
+        if(!String(h.ref).includes(".")) inAnnex = false;
+        if(!inAnnex){
+          if(top===0) currentInfo = true;
+          else if(!String(h.ref).includes(".")) currentInfo = top<=3 && infoTopRe.test(h.title);
+          else if(top>3) currentInfo = false;
+        }
+      }
+      return;
+    }
+    if(inAnnex && /^\(?\s*(informative|informatif|informative)\s*\)?/i.test(line) && !buf){ currentInfo = true; return; }
+    if(inAnnex && /^\(?\s*(normative|normatif|normative)\s*\)?/i.test(line) && !buf){ currentInfo = false; return; }
     if(buf && continues(buf, line)){
       buf = /-$/.test(buf) && /^[a-zà-ÿ]/.test(line) ? buf.slice(0,-1)+line : buf+" "+line;
     }else{
-      flush(); buf = line; bufRef = currentRef; bufTitle = currentTitle;
+      flush(); buf = line; bufRef = currentRef; bufTitle = currentTitle; bufInfo = currentInfo;
     }
   });
   flush();
@@ -597,7 +619,7 @@ function openReferentielImportModal(presets){
     const count = t => p.exigences.filter(e=>e.type===t).length;
     const attendusCount = p.exigences.reduce((n,e)=>n+(e.attendus?e.attendus.length:0),0);
     const kpis = [[p.chapters.length, "Chapitres détectés"]];
-    [["critere","Critères"],["exigence","Exigences"],["responsabilite","Responsabilités"],["preuve","Preuves attendues"],["recommandation","Recommandations"]].forEach(([t,l])=>{ if(count(t)||t==="exigence"&&p.mode==="obligations") kpis.push([count(t), l]); });
+    [["critere","Critères"],["exigence","Exigences"],["responsabilite","Responsabilités"],["preuve","Preuves attendues"],["recommandation","Recommandations"],["informatif","Informatif (hors score)"]].forEach(([t,l])=>{ if(count(t)||t==="exigence"&&p.mode==="obligations") kpis.push([count(t), l]); });
     if(attendusCount){
       /* Les « éléments d'évaluation » ne sont de vrais éléments que lorsque le document les liste ; sinon le critère lui-même sert d'attendu. */
       const derived = p.exigences.filter(e=>e.attendus && e.attendus.length===1 && e.attendus[0].minMatches!==undefined).length === p.exigences.filter(e=>e.attendus).length;
@@ -630,6 +652,7 @@ function openReferentielImportModal(presets){
           <option value="responsabilite">Responsabilités (${count("responsabilite")})</option>
           <option value="preuve">Preuves attendues (${count("preuve")})</option>
           <option value="recommandation">Recommandations (${count("recommandation")})</option>
+          ${count("informatif")?`<option value="informatif">Informatif — hors score (${count("informatif")})</option>`:""}
         </select></div></div>
       <div id="imp-preview-list" style="max-height:340px;overflow-y:auto;">${previewListHtml("all")}</div>
       ${!p.exigences.length?`<p class="text-sm mt-2">⚠️ Aucune exigence détectée. Vérifiez le type de référentiel choisi : « à obligations » cherche « doit », « doivent », « shall » ; « par critères » cherche des lignes comme « Critère 1.1-01 » suivies d'« Éléments d'évaluation ».</p>`:""}
