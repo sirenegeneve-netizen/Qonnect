@@ -86,10 +86,24 @@ function crossPairRows(A, fromId, toIds, level){
 function referentielsTopTabsHtml(active){
   return `<div class="tabs"><button class="tab ${active==="liste"?"active":""}" data-route="referentiels">Référentiels</button><button class="tab ${active==="analyse"?"active":""}" data-route="referentiels/analyse">Analyse transversale</button></div>`;
 }
+/* Rang d'une exigence parmi celles du même référentiel qui portent le même code (« 4.1 (2/3) ») : plusieurs phrases d'exigence d'un même article
+   ne sont pas des doublons. Calculé à l'affichage, sans rien enregistrer. */
+function crossRankInfo(id){
+  const c = getCustomExigence(id); if(!c) return { rank:1, of:1 };
+  const same = DB.customExigences.filter(e=>e.referentielId===c.referentielId && e.ref===c.ref && e.status!=="retired");
+  return { rank: Math.max(1, same.findIndex(e=>e.id===id)+1), of: Math.max(1, same.length) };
+}
+function crossCode(id, ref){ const k = crossRankInfo(id); return ref + (k.of>1 ? " ("+k.rank+"/"+k.of+")" : ""); }
+function crossExcerpt(ep, max){
+  const t = (ep.text||"").replace(/\s+/g," ").trim();
+  if(!t || t===(ep.title||"") || ep.legacy) return "";
+  return t.length>max ? t.slice(0,max-1).trimEnd()+"…" : t;
+}
 function crossExLabel(id, withRef){
   const ep = mappingEndpoint(id); if(!ep) return esc(id);
   const rf = getReferentiel(ep.referentielId);
-  return `<a href="#/referentiels/${esc(ep.referentielId)}/exigences/${esc(id)}">${esc(ep.ref)} — ${esc((ep.title||ep.text).slice(0,80))}</a>${withRef&&rf?` <span class="text-xs">(${esc(rf.name)})</span>`:""}`;
+  const ex = crossExcerpt(ep, 110);
+  return `<a href="#/referentiels/${esc(ep.referentielId)}/exigences/${esc(id)}">${esc(crossCode(id, ep.ref))} — ${esc((ep.title||ep.text).slice(0,80))}</a>${withRef&&rf?` <span class="text-xs">(${esc(rf.name)})</span>`:""}${ex?`<span class="text-xs" style="display:block;font-weight:400;">${esc(ex)}</span>`:""}`;
 }
 function crossHeat(pct){ return `background:rgba(34,139,84,${(0.06+0.5*pct/100).toFixed(2)});`; }
 
@@ -162,14 +176,16 @@ function crossPairCsv(fromId, toIds, level){
   const lines = [["Référentiel source","Code","Exigence","État","Référentiel comparé","Code lié","Exigence liée","Relation","Statut de la correspondance"].map(q).join(";")];
   const fromR = getReferentiel(fromId);
   const STATE = { validee:"Correspondance validée", a_revoir:"À revoir", a_valider:"Suggestion à valider", similitude:"Similitude détectée (non enregistrée)", aucune:"Sans correspondance ni similitude" };
+  const csvEx = ep => { const x = crossExcerpt(ep,200); return (ep.title||ep.text)+(x?" — "+x:""); };
   const rf = id => { const ep = mappingEndpoint(id); return ep ? ((getReferentiel(ep.referentielId)||{}).name||"") : ""; };
   crossPairRows(A, fromId, ids, level||"off").forEach(r=>{
     const links = [...r.validated, ...r.review, ...r.suggested];
-    const base = [fromR.name, r.e.ref, r.e.title||r.e.text, STATE[r.state]];
+    const fe = mappingEndpoint(r.e.id); const fx = fe ? crossExcerpt(fe,200) : "";
+    const base = [fromR.name, crossCode(r.e.id, r.e.ref), (r.e.title||r.e.text)+(fx?" — "+fx:""), STATE[r.state]];
     if(links.length) links.forEach(x=>{ const ep = mappingEndpoint(x.otherId);
-      lines.push([...base, rf(x.otherId), ep?ep.ref:"", ep?(ep.title||ep.text):"", MAPPING_RELATIONS[x.m.relation].label, MAPPING_STATUS[x.m.status].l].map(q).join(";")); });
+      lines.push([...base, rf(x.otherId), ep?crossCode(ep.id,ep.ref):"", ep?csvEx(ep):"", MAPPING_RELATIONS[x.m.relation].label, MAPPING_STATUS[x.m.status].l].map(q).join(";")); });
     else if(r.similar.length) r.similar.forEach(x=>{ const ep = mappingEndpoint(x.bId);
-      lines.push([...base, rf(x.bId), ep?ep.ref:"", ep?(ep.title||ep.text):"", MAPPING_RELATIONS[x.relation].label+" (proposée)", "Non enregistrée · indice "+Math.round(x.score*100)+" %"].map(q).join(";")); });
+      lines.push([...base, rf(x.bId), ep?crossCode(ep.id,ep.ref):"", ep?csvEx(ep):"", MAPPING_RELATIONS[x.relation].label+" (proposée)", "Non enregistrée · indice "+Math.round(x.score*100)+" %"].map(q).join(";")); });
     else lines.push([...base, ids.map(i=>(getReferentiel(i)||{}).name||i).join(" / "), "", "", "", ""].map(q).join(";"));
   });
   return "\ufeff"+lines.join("\r\n");
