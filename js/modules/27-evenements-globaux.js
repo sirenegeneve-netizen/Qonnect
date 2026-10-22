@@ -21,6 +21,8 @@ function initGlobalEvents(){
     reader.readAsText(file);
   });
   document.addEventListener("click", (e)=>{
+    /* Un sélecteur multiple ouvert se referme au clic à l'extérieur. */
+    document.querySelectorAll("details.multi-pick[open]").forEach(d=>{ if(!d.contains(e.target)){ d.removeAttribute("open"); if(typeof MAP_UI!=="undefined") MAP_UI.openOther = false; if(typeof CROSS_UI!=="undefined") CROSS_UI.openTo = false; } });
     const linkEl = e.target.closest("[data-link-resolve]");
     if(linkEl){
       e.preventDefault();
@@ -30,8 +32,12 @@ function initGlobalEvents(){
     }
     const mapAct = e.target.closest("[data-map-act]");
     if(mapAct){ e.preventDefault(); mappingAction(JSON.parse(mapAct.getAttribute("data-map-act"))); return; }
+    const bulk = e.target.closest("[data-multi-bulk]");
+    if(bulk){ e.preventDefault(); const box = bulk.closest("[data-multi-pick]"); box.querySelectorAll("[data-multi-opt]").forEach(c=>{ c.checked = bulk.getAttribute("data-multi-bulk")==="all"; }); multiPickChanged(box); return; }
+    const simSave = e.target.closest("[data-cross-save-sim]");
+    if(simSave){ e.preventDefault(); crossSaveSimilarities(); return; }
     const crossPair = e.target.closest("[data-cross-pair]");
-    if(crossPair){ e.preventDefault(); const cp = JSON.parse(crossPair.getAttribute("data-cross-pair")); CROSS_UI.from = cp.from; CROSS_UI.to = cp.to; CROSS_UI.filter = "all"; render(); setTimeout(()=>{ const t = document.querySelector("[data-cross-filter=from]"); if(t) t.scrollIntoView({behavior:"smooth", block:"center"}); }, 50); return; }
+    if(crossPair){ e.preventDefault(); const cp = JSON.parse(crossPair.getAttribute("data-cross-pair")); CROSS_UI.from = cp.from; CROSS_UI.tos = [cp.to]; CROSS_UI.filter = "all"; render(); setTimeout(()=>{ const t = document.querySelector("[data-cross-filter=from]"); if(t) t.scrollIntoView({behavior:"smooth", block:"center"}); }, 50); return; }
     if(e.target.closest("[data-cross-export]")){ e.preventDefault(); crossExportCsv(); return; }
     const smqP = e.target.closest("[data-smq-propose]");
     if(smqP){ e.preventDefault(); smqPropose(JSON.parse(smqP.getAttribute("data-smq-propose"))); return; }
@@ -561,7 +567,8 @@ function initGlobalEvents(){
       if(zone==="frn") applyFournisseurFilters();
       if(e.target.id.startsWith("f-ref")) applyReferentielFilters();
     }
-    if(e.target.matches("[data-cross-filter]")){ CROSS_UI[e.target.getAttribute("data-cross-filter")] = e.target.value; if(e.target.getAttribute("data-cross-filter")==="from") CROSS_UI.to = null; render(); }
+    if(e.target.matches("[data-multi-opt]")){ multiPickChanged(e.target.closest("[data-multi-pick]")); }
+    if(e.target.matches("[data-cross-filter]")){ CROSS_UI[e.target.getAttribute("data-cross-filter")] = e.target.value; if(e.target.getAttribute("data-cross-filter")==="from") CROSS_UI.tos = []; render(); }
     if(e.target.matches("[data-map-filter]")){ MAP_UI[e.target.getAttribute("data-map-filter")] = e.target.value; render(); }
     if(e.target.id==="review-picker"){ navigate("revue-direction/"+e.target.value); }
   });
