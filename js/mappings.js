@@ -132,7 +132,9 @@ function deleteMapping(id){ DB.exigenceMappings = (DB.exigenceMappings||[]).filt
 function exigenceChip(ep, fallbackId){
   if(!ep) return `<span class="text-xs">Exigence introuvable <code>${esc(fallbackId)}</code></span>`;
   const rf = getReferentiel(ep.referentielId);
-  return `<div class="cell-title">${esc(ep.ref)} — ${esc(ep.title||ep.text.slice(0,80))}</div><div class="text-xs">${esc(rf?rf.name:ep.referentielId)}${ep.retired?" · <strong>retirée de la version courante</strong>":""}</div>`;
+  const ex = typeof crossExcerpt==="function" ? crossExcerpt(ep, 130) : "";
+  const code = typeof crossCode==="function" ? crossCode(ep.id, ep.ref) : ep.ref;
+  return `<div class="cell-title">${esc(code)} — ${esc(ep.title||ep.text.slice(0,80))}</div>${ex?`<div class="text-xs" style="font-weight:400;">${esc(ex)}</div>`:""}<div class="text-xs">${esc(rf?rf.name:ep.referentielId)}${ep.retired?" · <strong>retirée de la version courante</strong>":""}</div>`;
 }
 function mappingStateBadge(m){
   const s = mappingState(m);
@@ -190,7 +192,7 @@ function mappingBasisHtml(m){ return (m.basis&&m.basis.length) ? `<details class
 function exigenceMappingsCardHtml(refId, exigenceId){
   const list = mappingsOfExigence(exigenceId).filter(m=>m.status!=="rejected");
   const rows = list.map(m=>{ const otherId = m.exigenceAId===exigenceId ? m.exigenceBId : m.exigenceAId; const ep = mappingEndpoint(otherId);
-    return `<div class="rel-link" data-route="referentiels/${ep?ep.referentielId:refId}/correspondances"><span class="rel-name">🔗 ${esc(ep?ep.ref+" — "+(ep.title||""):"Exigence introuvable")} <span class="text-xs">(${esc(ep&&getReferentiel(ep.referentielId)?getReferentiel(ep.referentielId).name:"")} · ${esc(MAPPING_RELATIONS[m.relation].label.toLowerCase())} · ${esc(MAPPING_STATUS[m.status].l.toLowerCase())})</span></span><span class="chev">›</span></div>`; }).join("");
+    return `<div class="rel-link" data-route="referentiels/${ep?ep.referentielId:refId}/correspondances"><span class="rel-name">🔗 ${esc(ep?(typeof crossCode==="function"?crossCode(ep.id,ep.ref):ep.ref)+" — "+(ep.title||""):"Exigence introuvable")} <span class="text-xs">(${esc(ep&&getReferentiel(ep.referentielId)?getReferentiel(ep.referentielId).name:"")} · ${esc(MAPPING_RELATIONS[m.relation].label.toLowerCase())} · ${esc(MAPPING_STATUS[m.status].l.toLowerCase())})</span></span><span class="chev">›</span></div>`; }).join("");
   return `<div class="card mb-2"><div class="flex justify-between items-center"><h3>Correspondances avec d'autres référentiels</h3><button class="btn btn-secondary btn-sm" data-map-add='${jsonAttr({refId, exigenceId})}'>+ Ajouter</button></div>
     ${rows || `<p class="text-sm mt-2">Aucune correspondance enregistrée.</p>`}</div>`;
 }
@@ -278,7 +280,7 @@ function mappingAction(p){
 function openMappingValidateForm(id){
   const m = mappingById(id); if(!m) return;
   const a = mappingEndpoint(m.exigenceAId), b = mappingEndpoint(m.exigenceBId);
-  const box = ep => ep ? `<div class="card"><strong>${esc(ep.ref)}</strong> <span class="text-xs">${esc((getReferentiel(ep.referentielId)||{}).name||"")}</span><p class="text-sm mt-2">${esc(ep.text.length>500?ep.text.slice(0,499)+"…":ep.text)}</p></div>` : `<div class="card text-xs">Exigence introuvable</div>`;
+  const box = ep => ep ? `<div class="card"><strong>${esc(typeof crossCode==="function"?crossCode(ep.id,ep.ref):ep.ref)}</strong> <span class="text-xs">${esc((getReferentiel(ep.referentielId)||{}).name||"")}</span><p class="text-sm mt-2">${esc(ep.text.length>500?ep.text.slice(0,499)+"…":ep.text)}</p></div>` : `<div class="card text-xs">Exigence introuvable</div>`;
   openModal({ title:"Valider la correspondance", wide:true,
     bodyHtml:`<div class="grid" style="grid-template-columns:1fr 1fr;gap:16px;">${box(a)}${box(b)}</div>
       ${m.basis&&m.basis.length?`<p class="text-xs mt-2"><strong>Motifs de la suggestion :</strong> ${esc(m.basis.join(" · "))}</p>`:""}

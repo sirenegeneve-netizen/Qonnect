@@ -89,7 +89,7 @@ function referentielsTopTabsHtml(active){
 /* Rang d'une exigence parmi celles du même référentiel qui portent le même code (« 4.1 (2/3) ») : plusieurs phrases d'exigence d'un même article
    ne sont pas des doublons. Calculé à l'affichage, sans rien enregistrer. */
 function crossRankInfo(id){
-  const c = getCustomExigence(id); if(!c) return { rank:1, of:1 };
+  const c = getCustomExigence(id); if(!c || c.status==='retired') return { rank:1, of:1 };
   const same = DB.customExigences.filter(e=>e.referentielId===c.referentielId && e.ref===c.ref && e.status!=="retired");
   return { rank: Math.max(1, same.findIndex(e=>e.id===id)+1), of: Math.max(1, same.length) };
 }
