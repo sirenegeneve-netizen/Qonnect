@@ -1002,11 +1002,20 @@ function loadDB(){
   }catch(e){ console.error("Qonnect: cache local invalide, réinitialisation.", e); }
   return seedCopy;
 }
+const QONNECT_BACKUP_KEYS = ["qonnect_db_v1_avant_import","qonnect_db_v1_avant_migration_ids"];
 function saveDB(){
-  localStorage.setItem("qonnect_db_v1", JSON.stringify(DB));
+  const json = JSON.stringify(DB);
+  try{ localStorage.setItem("qonnect_db_v1", json); }
+  catch(err){
+    /* Stockage plein : les copies de sécurité automatiques (avant import / migration) sont jetables ; on les supprime et on réessaie.
+       Si cela ne suffit pas, l'erreur remonte comme avant et rien n'est modifié. */
+    let freed = false;
+    QONNECT_BACKUP_KEYS.forEach(k=>{ try{ if(localStorage.getItem(k)!==null){ localStorage.removeItem(k); freed = true; } }catch(e){} });
+    if(!freed) throw err;
+    localStorage.setItem("qonnect_db_v1", json);
+  }
 }
 /* Diagnostic du stockage du navigateur (≈ 5 millions de caractères par site) : taille de chaque clé et des principales collections. */
-const QONNECT_BACKUP_KEYS = ["qonnect_db_v1_avant_import","qonnect_db_v1_avant_migration_ids"];
 function storageInfo(){
   const keys = []; let total = 0;
   try{ for(let i=0;i<localStorage.length;i++){ const k = localStorage.key(i); const n = (localStorage.getItem(k)||"").length+k.length; keys.push({key:k, chars:n}); total += n; } }catch(e){}
@@ -1103,4 +1112,21 @@ function nextId(prefix, arr){
   let max = 0;
   arr.forEach(x=>{ const m = x.id.match(/(\d+)$/); if(m) max = Math.max(max, parseInt(m[1],10)); });
   return prefix + "-" + String(max+1).padStart(3,"0");
+}
+
+/* Carte « Espace de stockage » (Administration) : ce qui occupe la place, et deux actions de nettoyage explicites. */
+function storageCardHtml(){
+  const info = storageInfo();
+  const snaps = (DB.referentielSnapshots||[]).length ? JSON.stringify(DB.referentielSnapshots).length : 0;
+  const pct = Math.min(100, Math.round(info.total/5e6*100));
+  return `<div class="card">
+    <h3 class="mb-2">Espace de stockage</h3>
+    <p class="text-sm mb-2">Qonnect occupe environ <strong>${storageMo(info.total)}</strong> de caractères sur ~5 M autorisés par le navigateur (${pct} %). Les plus lourdes : ${info.parts.map(p=>esc(p.key)+" "+storageMo(p.chars)).join(", ")}.</p>
+    <div style="height:8px;background:var(--border,#e2e8f0);border-radius:4px;overflow:hidden;" aria-hidden="true"><div style="width:${pct}%;height:100%;background:${pct>85?"#c0392b":pct>60?"#d68910":"#2e8b57"};"></div></div>
+    <div class="flex gap-2 mt-2">
+      <button class="btn btn-secondary btn-sm" id="stor-del-backups" ${info.backupChars?"":"disabled"}>Supprimer les copies de sécurité (${storageMo(info.backupChars)})</button>
+      <button class="btn btn-secondary btn-sm" id="stor-del-snaps" ${snaps?"":"disabled"}>Supprimer les instantanés de versions (${storageMo(snaps)})</button>
+    </div>
+    <p class="text-xs mt-2">Les copies de sécurité sont créées avant un import ou une migration. Les instantanés permettent d'annuler la dernière nouvelle version d'un référentiel. Vos exigences, correspondances et décisions ne sont pas touchées. En cas de stockage plein, les copies de sécurité sont supprimées automatiquement.</p>
+  </div>`;
 }
