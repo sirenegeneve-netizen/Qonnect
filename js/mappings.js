@@ -351,8 +351,13 @@ function openMappingSuggestForm(refId){
         S.list.forEach((c,i)=>{ if(S.off.has(i)) return;
           const r = createMapping(c.aId, c.bId, { relation:c.relation, origin:"regles", status:"suggested", confidence:c.score, basis:c.basis });
           if(r.ok) n++; });
-        try{ saveDB(); }catch(e){ DB.exigenceMappings.length = before; toast("Enregistrement impossible (stockage plein ?) : rien n'a été enregistré.","⚠️"); return; }
-        closeModal(); MAP_UI.status = "suggested"; MAP_UI.other = []; toast(n+" suggestion(s) enregistrée(s) — à valider","✅"); render();
+        const finish = ()=>{ closeModal(); MAP_UI.status = "suggested"; MAP_UI.other = []; toast(n+" suggestion(s) enregistrée(s) — à valider","✅"); render(); };
+        try{ saveDB(); }catch(e){
+          const added = DB.exigenceMappings.splice(before);   /* annule en mémoire : rien n'est conservé tant que l'enregistrement échoue */
+          toast("Enregistrement impossible : stockage plein. Rien n'a été enregistré.","⚠️");
+          storageFullHelp(()=>{ DB.exigenceMappings.push(...added); try{ saveDB(); finish(); }catch(e2){ DB.exigenceMappings.splice(before); toast("Toujours impossible : stockage plein. Rien n'a été enregistré.","⚠️"); storageFullHelp(null); } });
+          return; }
+        finish();
       });
     } });
 }

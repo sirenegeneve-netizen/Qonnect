@@ -1005,6 +1005,26 @@ function loadDB(){
 function saveDB(){
   localStorage.setItem("qonnect_db_v1", JSON.stringify(DB));
 }
+/* Diagnostic du stockage du navigateur (≈ 5 millions de caractères par site) : taille de chaque clé et des principales collections. */
+const QONNECT_BACKUP_KEYS = ["qonnect_db_v1_avant_import","qonnect_db_v1_avant_migration_ids"];
+function storageInfo(){
+  const keys = []; let total = 0;
+  try{ for(let i=0;i<localStorage.length;i++){ const k = localStorage.key(i); const n = (localStorage.getItem(k)||"").length+k.length; keys.push({key:k, chars:n}); total += n; } }catch(e){}
+  const parts = Object.keys(DB).map(k=>({ key:k, chars:JSON.stringify(DB[k]||"").length })).sort((a,b)=>b.chars-a.chars).slice(0,5);
+  const backups = keys.filter(k=>QONNECT_BACKUP_KEYS.includes(k.key));
+  return { total, keys, parts, backups, backupChars: backups.reduce((s,k)=>s+k.chars,0) };
+}
+const storageMo = n => (n/1e6).toFixed(1).replace(".",",")+" M";
+/* Appelé quand un enregistrement échoue faute de place : explique ce qui occupe le stockage et propose de supprimer
+   les copies de sécurité automatiques (avant import / avant migration), après confirmation, puis de réessayer. */
+function storageFullHelp(retry){
+  const info = storageInfo();
+  const detail = "Qonnect occupe environ "+storageMo(info.total)+" caractères sur ~5 M autorisés. Principales données : "+info.parts.map(p=>p.key+" "+storageMo(p.chars)).join(", ")+".";
+  if(!info.backups.length){ openModal({ title:"Stockage plein", bodyHtml:`<p>${esc(detail)}</p><p class="mt-2">Rien n'a été enregistré. Pour libérer de la place : supprimez un référentiel inutilisé, ou faites une sauvegarde (export) puis retirez des données anciennes.</p>`, footHtml:`<button class="btn btn-primary" data-close-modal>Fermer</button>` }); return; }
+  openModal({ title:"Stockage plein", bodyHtml:`<p>${esc(detail)}</p><p class="mt-2">Dont <strong>${storageMo(info.backupChars)}</strong> de copies de sécurité automatiques (${info.backups.map(b=>esc(b.key.replace("qonnect_db_v1_",""))).join(", ")}) créées lors d'imports ou de migrations. Voulez-vous les supprimer pour libérer de la place, puis réessayer l'enregistrement ? Vos données actuelles ne sont pas touchées.</p>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Non</button><button class="btn btn-primary" id="stor-free">Supprimer les copies et réessayer</button>`,
+    onMount:(o)=>{ o.querySelector("#stor-free").addEventListener("click", ()=>{ info.backups.forEach(b=>{ try{ localStorage.removeItem(b.key); }catch(e){} }); closeModal(); if(retry) retry(); }); } });
+}
 function resetDB(){
   localStorage.removeItem("qonnect_db_v1");
   DB = JSON.parse(JSON.stringify(QONNECT_SEED));
