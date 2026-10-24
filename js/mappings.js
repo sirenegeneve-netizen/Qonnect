@@ -330,8 +330,10 @@ function openMappingSuggestForm(refId){
       const out = o.querySelector("#mapsg-out"), save = o.querySelector("#mapsg-save"), pick = o.querySelector("[data-multi-pick]");
       const draw = ()=>{
         const n = S.list.length - S.off.size;
-        save.disabled = n<=0; save.textContent = n>0 ? "Enregistrer "+n+" suggestion(s) « à valider »" : "Enregistrer les suggestions";
-        out.querySelectorAll("[data-mapsg-i]").forEach(cb=>{ cb.checked = !S.off.has(Number(cb.getAttribute("data-mapsg-i"))); });
+        save.disabled = n<=0 || !!S.busy; save.title = S.busy ? "Disponible une fois l'analyse par l'IA locale terminée." : "";
+        const runB = o.querySelector("#mapsg-run"), lvl = o.querySelector("#mapsg-lvl"); if(runB) runB.disabled = !!S.busy; if(lvl) lvl.disabled = !!S.busy; if(pick) pick.style.pointerEvents = S.busy ? "none" : "";
+        save.textContent = n>0 ? "Enregistrer "+n+" suggestion(s) « à valider »" : "Enregistrer les suggestions";
+        out.querySelectorAll("[data-mapsg-i]").forEach(cb=>{ cb.checked = !S.off.has(Number(cb.getAttribute("data-mapsg-i"))); cb.disabled = !!S.busy; });
       };
       const multi = ()=>S.targets.length>1;
       const AIREL = { equivalente:"équivalente", partielle:"partielle", complementaire:"complémentaire", aucune:"aucune" };
@@ -350,17 +352,18 @@ function openMappingSuggestForm(refId){
         aiBtn.addEventListener("click", async ()=>{
           const idx = []; S.list.forEach((c,i)=>{ if(i<150 && !S.off.has(i)) idx.push(i); });
           if(!idx.length){ st.textContent = "Aucune paire cochée à analyser."; return; }
-          S.ctl = { cancelled:false }; aiBtn.disabled = true; stopBtn.style.display = ""; stopBtn.onclick = ()=>{ S.ctl.cancelled = true; stopBtn.disabled = true; };
+          S.ctl = { cancelled:false }; S.busy = true; aiBtn.disabled = true; stopBtn.style.display = ""; draw(); stopBtn.onclick = ()=>{ S.ctl.cancelled = true; stopBtn.disabled = true; };
           try{
             const res = await maAiQualify(idx.map(i=>S.list[i]), { ctl:S.ctl,
               onProgress:s=>{ st.textContent = s.status==="loading" ? (s.text||"Chargement du modèle…")+(typeof s.progress==="number"?" "+Math.round(s.progress*100)+" %":"") : (s.text||""); },
-              onStep:(k,n)=>{ st.textContent = "Analyse par l'IA locale… "+k+" / "+n; } });
+              onStep:(k,n)=>{ if(!document.body.contains(out)) S.ctl.cancelled = true; st.textContent = "Analyse par l'IA locale… "+k+" / "+n; } });
+            S.busy = false;
             let done = 0, dropped = 0;
             res.forEach((v,k)=>{ if(!v) return; S.ai[idx[k]] = v; done++; if(!v.error && v.relation==="aucune"){ S.off.add(idx[k]); dropped++; } });
             const keep = S.ctl.cancelled;
             renderList(); const st2 = out.querySelector("#mapsg-ai-status");
             if(st2) st2.textContent = (keep?"Interrompu : ":"")+done+" paire(s) analysée(s) par l'IA locale, "+dropped+" écartée(s). Relisez : l'avis d'un petit modèle n'est pas une preuve.";
-          }catch(e){ st.textContent = "IA locale indisponible : "+((e&&e.message)||e)+" Les propositions par règles restent utilisables."; aiBtn.disabled = false; stopBtn.style.display = "none"; }
+          }catch(e){ S.busy = false; draw(); st.textContent = "IA locale indisponible : "+((e&&e.message)||e)+" Les propositions par règles restent utilisables."; aiBtn.disabled = false; stopBtn.style.display = "none"; }
         });
         draw();
       };
