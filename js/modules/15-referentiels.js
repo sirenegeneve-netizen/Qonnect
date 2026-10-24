@@ -711,12 +711,15 @@ function openReferentielImportModal(presets){
       const tbtn = o.querySelector("#imp-translate"), status = o.querySelector("#imp-translate-status");
       if(tbtn) tbtn.addEventListener("click", async ()=>{
         tbtn.disabled = true; status.textContent = "Préparation du modèle…";
+        const lock = on => ["#imp-confirm","#imp-back"].forEach(sel=>{ const b = o.querySelector(sel); if(b){ b.disabled = on || (sel==="#imp-confirm" && !state.parsed.exigences.length); b.title = on ? "Disponible une fois la traduction terminée." : ""; } });
+        lock(true);
         try{
           const r = await translateExigences(state.parsed.exigences, s=>{ if(status && s) status.textContent = (s.text||"") + (typeof s.progress==="number" && s.status==="loading" ? " ("+Math.round(s.progress*100)+" %)" : ""); });
+          lock(false);
           if(!r.translated){ status.textContent = "Aucun texte n'a pu être traduit. Réessayez ou changez de modèle (Administration)."; tbtn.disabled = false; return; }
           toast(r.translated+" exigence(s) traduite(s)"+(r.failed?" — "+r.failed+" texte(s) laissé(s) en anglais":""));
           rerenderTranslation();
-        }catch(err){ status.textContent = "⚠️ "+(err&&err.message?err.message:err); tbtn.disabled = false; }
+        }catch(err){ lock(false); status.textContent = "⚠️ "+(err&&err.message?err.message:err); tbtn.disabled = false; }
       });
       const tg = o.querySelector("#imp-toggle-lang");
       if(tg) tg.addEventListener("click", ()=>{ const fr = state.parsed.exigences.some(e=>e.lang==="fr"); setExigencesLanguage(state.parsed.exigences, fr?"original":"fr"); rerenderTranslation(); });
