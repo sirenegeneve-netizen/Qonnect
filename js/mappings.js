@@ -175,7 +175,7 @@ function refTabMappings(ref){
       <select data-map-filter="status" aria-label="Statut">${opt("all","Tous les statuts",MAP_UI.status)}${opt("validated","Validées ("+count("validated")+")",MAP_UI.status)}${opt("suggested","À valider ("+count("suggested")+")",MAP_UI.status)}${opt("rejected","Rejetées ("+count("rejected")+")",MAP_UI.status)}${opt("a_revoir","À revoir ("+nRev+")",MAP_UI.status)}</select>
       ${multiPickHtml("map-other","Référentiels liés",otherOpts,chosen,MAP_UI.openOther)}
     </div>
-    <div class="flex gap-2"><button class="btn btn-secondary btn-sm" data-map-suggest='${jsonAttr({refId:ref.id})}'>✨ Suggérer des correspondances</button>
+    <div class="flex gap-2"><button class="btn btn-secondary btn-sm" data-map-suggest='${jsonAttr({refId:ref.id})}'>✨ Suggérer des correspondances</button>${all.some(m=>m.status==="suggested")?`<button class="btn btn-secondary btn-sm" data-map-trim='${jsonAttr({refId:ref.id})}' title="Retirer les suggestions les moins sûres, avant de les valider">Réduire les suggestions</button>`:""}
     <button class="btn btn-primary btn-sm" data-map-add='${jsonAttr({refId:ref.id})}'>+ Ajouter une correspondance</button></div>
   </div>
   ${dataTable([
@@ -401,4 +401,35 @@ function multiPickChanged(box){
   if(key==="map-other"){ MAP_UI.other = values; MAP_UI.openOther = true; render(); }
   else if(key==="cross-to"){ CROSS_UI.tos = values; CROSS_UI.openTo = true; render(); }
   else { const s = box.querySelector("summary strong"); if(s) s.textContent = !values.length ? "aucun" : values.length+" sélectionné(s)"; }
+}
+
+/* ---------- Réduire les suggestions : revenir d'une analyse large à une plus prudente ---------- */
+/* Suggestions retirables : « à valider », issues des règles ou de l'IA, jamais retouchées (pas d'historique au-delà de la création) et dont l'indice
+   est sous le seuil choisi. Jamais touché : correspondances validées, rejetées, saisies à la main, ou modifiées. */
+function trimmableSuggestions(refId, levelKey){
+  const min = (MAPPING_SUGGEST_LEVELS[levelKey]||{}).min;
+  if(typeof min!=="number") return [];
+  return mappingsOfReferentiel(refId).filter(m=>m.status==="suggested" && (m.origin==="regles"||m.origin==="ia") && typeof m.confidence==="number" && m.confidence<min && (m.history||[]).length<=1);
+}
+function openMappingTrimForm(refId){
+  const ref = getReferentiel(refId); if(!ref) return;
+  const total = mappingsOfReferentiel(refId).filter(m=>m.status==="suggested").length;
+  openModal({ title:"Réduire les suggestions",
+    bodyHtml:`<p class="text-sm mb-2">« ${esc(ref.name)} » compte <strong>${total}</strong> suggestion(s) « à valider ». Retirez les moins sûres pour ne garder que celles d'un niveau de prudence plus strict.</p>
+      <div class="field"><label>Garder seulement les suggestions de niveau</label><select id="mtrim-lvl"><option value="standard">Standard (indice d'au moins ${Math.round(MAPPING_SUGGEST_LEVELS.standard.min*100)} %)</option><option value="prudent">Prudent (indice d'au moins ${Math.round(MAPPING_SUGGEST_LEVELS.prudent.min*100)} %)</option></select></div>
+      <p class="text-sm" id="mtrim-count"></p>
+      <p class="text-xs mt-2">Seules sont retirées les suggestions « à valider » proposées par les règles ou l'IA que vous n'avez pas retouchées. Vos correspondances validées, rejetées, saisies à la main ou modifiées ne sont jamais touchées. Les paires retirées pourront être reproposées par une nouvelle analyse.</p>`,
+    footHtml:`<button class="btn btn-secondary" data-close-modal>Annuler</button><button class="btn btn-primary" id="mtrim-ok" disabled>Retirer</button>`,
+    onMount:(o)=>{
+      const sel = o.querySelector("#mtrim-lvl"), cnt = o.querySelector("#mtrim-count"), ok = o.querySelector("#mtrim-ok");
+      const upd = ()=>{ const n = trimmableSuggestions(refId, sel.value).length; cnt.innerHTML = n ? `<strong>${n}</strong> suggestion(s) seront retirées, <strong>${total-n}</strong> conservée(s).` : "Aucune suggestion à retirer à ce niveau."; ok.disabled = !n; ok.textContent = n ? "Retirer "+n+" suggestion(s)" : "Retirer"; };
+      sel.addEventListener("change", upd); upd();
+      ok.addEventListener("click", ()=>{
+        const ids = new Set(trimmableSuggestions(refId, sel.value).map(m=>m.id)); if(!ids.size) return;
+        const before = DB.exigenceMappings.slice();
+        DB.exigenceMappings = DB.exigenceMappings.filter(m=>!ids.has(m.id));
+        try{ saveDB(); }catch(e){ DB.exigenceMappings = before; toast("Enregistrement impossible : rien n'a été retiré.","⚠️"); return; }
+        closeModal(); toast(ids.size+" suggestion(s) retirée(s)","✅"); render();
+      });
+    } });
 }
