@@ -406,6 +406,15 @@ function initGlobalEvents(){
       refAiSend(refId, input.value); input.value="";
       return;
     }
+    if(e.target.id==="stor-del-backups"){
+      QONNECT_BACKUP_KEYS.forEach(k=>{ try{ localStorage.removeItem(k); }catch(err){} });
+      toast("Copies de sécurité supprimées","✅"); render(); return;
+    }
+    if(e.target.id==="stor-del-snaps"){
+      confirmDialog("Supprimer les instantanés de versions ? Vous ne pourrez plus annuler la dernière nouvelle version importée d'un référentiel. Vos exigences et correspondances actuelles ne changent pas.",
+        ()=>{ DB.referentielSnapshots = []; try{ saveDB(); }catch(err){ toast("Enregistrement impossible","⚠️"); return; } closeModal(); toast("Instantanés supprimés","✅"); render(); });
+      return;
+    }
     if(e.target.id==="export-data-btn"){
       const d = new Date().toISOString().slice(0,10);
       const blob = new Blob([JSON.stringify(buildBackup(), null, 2)], {type:"application/json"});
