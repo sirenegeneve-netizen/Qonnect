@@ -41,6 +41,8 @@ function initGlobalEvents(){
     if(e.target.closest("[data-cross-export]")){ e.preventDefault(); crossExportCsv(); return; }
     const smqP = e.target.closest("[data-smq-propose]");
     if(smqP){ e.preventDefault(); smqPropose(JSON.parse(smqP.getAttribute("data-smq-propose"))); return; }
+    const mapTrim = e.target.closest("[data-map-trim]");
+    if(mapTrim){ e.preventDefault(); openMappingTrimForm(JSON.parse(mapTrim.getAttribute("data-map-trim")).refId); return; }
     const mapSug = e.target.closest("[data-map-suggest]");
     if(mapSug){ e.preventDefault(); openMappingSuggestForm(JSON.parse(mapSug.getAttribute("data-map-suggest")).refId); return; }
     const mapAdd = e.target.closest("[data-map-add]");
