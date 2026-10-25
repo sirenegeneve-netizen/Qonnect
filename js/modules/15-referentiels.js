@@ -385,7 +385,12 @@ function parseOutcomeCodes(text){
   return { exigences, chapters:[...new Set(exigences.map(e=>e.chapter.ref))], functions:Object.keys(funcs).length, categories:Object.keys(cats).length };
 }
 
+/* Apostrophes françaises mal lues dans certains PDF (« d' INGENIERIE », « L ' APTITUDE ») : une élision n'est jamais suivie ni précédée d'une espace. */
+function fixFrenchApostrophes(text){
+  return String(text||"").replace(/(^|[^\p{L}])([dDlLjJnNsScCmMtT]|[Qq]u)\s*(['’])\s+(?=\p{L})/gu, "$1$2$3").replace(/(^|[^\p{L}])([dDlLjJnNsScCmMtT]|[Qq]u)\s+(['’])(?=\p{L})/gu, "$1$2$3");
+}
 function parseReferentielText(text, mode){
+  text = fixFrenchApostrophes(text);
   mode = mode || "auto";
   if(mode==="auto" || mode==="catalogue" || mode==="criteres"){
     const oc = parseOutcomeCodes(text);
@@ -414,6 +419,8 @@ function parseReferentielText(text, mode){
   return res;
 }
 function dedupeFallback(list){ const seen = new Set(); return list.filter(e=>{ const k=e.ref+"|"+e.description.toLowerCase(); if(seen.has(k)) return false; seen.add(k); return true; }); }
+/* Titre borné à `max` caractères, coupé à une limite de mot (jamais au milieu d'un mot). */
+function clipTitleWords(t, max){ t = String(t||"").replace(/\s+/g," ").trim(); if(t.length<=max) return t; const cut = t.slice(0,max-1); const sp = cut.lastIndexOf(" "); return (sp>max*0.6 ? cut.slice(0,sp) : cut).replace(/[\s,;:–-]+$/,"")+"…"; }
 function parseObligations(text){
   const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   const chapterRe = /^(\d+(?:\.\d+){0,3})\s+(.{3,90})$/;
@@ -463,7 +470,7 @@ function parseObligations(text){
       else if(/preuve|enregistrement|trace|document[ée]/i.test(sentence)) type = "preuve";
       else if(/responsab/i.test(sentence)) type = "responsabilite";
       if(bufInfo) type = "informatif";
-      exigences.push({ ref: bufRef || "—", title: (bufTitle || sentence.slice(0,60)).slice(0,90), description: sentence, sourceText: sentence, type, chapterRef: bufRef||"", chapterTitle: bufTitle||"" });
+      exigences.push({ ref: bufRef || "—", title: clipTitleWords(bufTitle || sentence.slice(0,60), 110), description: sentence, sourceText: sentence, type, chapterRef: bufRef||"", chapterTitle: bufTitle||"" });
     });
   }
   /* Une ligne prolonge la précédente si celle-ci ne se termine pas par une ponctuation de fin de phrase
@@ -471,14 +478,24 @@ function parseObligations(text){
   function continues(prev, line){
     if(endsSentenceRe.test(prev)) return false;
     if(listItemRe.test(line)) return false;
-    return /^[a-zà-ÿ(]/.test(line) || /,$/.test(prev) || connectiveRe.test(prev);
+    /* Les TERMES DEFINIS d'une norme s'écrivent en majuscules (« …RELATIFS AU PHENOMENE / DANGEREUX sont découverts… ») : une ligne qui commence par l'un d'eux prolonge la phrase. */
+    return /^[a-zà-ÿ(]/.test(line) || /,$/.test(prev) || connectiveRe.test(prev) || /^[A-ZÀ-Ý][A-ZÀ-Ý'’-]{2,}(\s|$)/.test(line);
   }
 
   const rawConvient = (text.replace(/\s+/g," ").match(/\bil convient\b/gi)||[]).length;
-  lines.forEach(line=>{
-    const h = headingOf(line);
-    if(h==="toc") return;
+  for(let i=0;i<lines.length;i++){
+    const line = lines[i];
+    let h = headingOf(line);
+    if(h==="toc") continue;
+    /* Entrée de table des matières coupée sur deux lignes : la ligne sans points de conduite est suivie d'une ligne qui les porte. */
+    if(h && tocRe.test(lines[i+1]||"")){ i++; continue; }
     if(h){
+      /* Titre de chapitre coupé sur deux lignes (« …mise en œuvre et son / EVALUATION FORMATIVE ») : la ligne suivante prolonge le titre
+         si celui-ci finit par un mot de liaison ou une virgule, qu'elle est courte et ne ressemble ni à un chapitre ni à une phrase. */
+      const nxt = lines[i+1];
+      if(nxt && (connectiveRe.test(h.title) || /,$/.test(h.title)) && nxt.length<=70 && !endsSentenceRe.test(nxt) && !headingOf(nxt) && !reqWordsRe.test(nxt) && !listItemRe.test(nxt) && h.title.length+nxt.length<140){
+        h = { ref:h.ref, title:(h.title+" "+nxt).replace(/\s+/g," ").trim() }; i++;
+      }
       flush(); currentRef = h.ref; currentTitle = h.title;
       const top = /^Annexe/i.test(h.ref) ? null : +String(h.ref).split(".")[0];
       if(top===null){ inAnnex = true; currentInfo = /informative|informatif/i.test(h.title); }
@@ -490,25 +507,48 @@ function parseObligations(text){
           else if(top>3) currentInfo = false;
         }
       }
-      return;
+      continue;
     }
-    if(inAnnex && /^\(?\s*(informative|informatif|informative)\s*\)?/i.test(line) && !buf){ currentInfo = true; return; }
-    if(inAnnex && /^\(?\s*(normative|normatif|normative)\s*\)?/i.test(line) && !buf){ currentInfo = false; return; }
+    if(inAnnex && /^\(?\s*(informative|informatif|informative)\s*\)?/i.test(line) && !buf){ currentInfo = true; continue; }
+    if(inAnnex && /^\(?\s*(normative|normatif|normative)\s*\)?/i.test(line) && !buf){ currentInfo = false; continue; }
     if(buf && continues(buf, line)){
       buf = /-$/.test(buf) && /^[a-zà-ÿ]/.test(line) ? buf.slice(0,-1)+line : buf+" "+line;
     }else{
       flush(); buf = line; bufRef = currentRef; bufTitle = currentTitle; bufInfo = currentInfo;
     }
-  });
+  }
   flush();
 
   /* Doublon = même chapitre ET même phrase (ex. en-tête ou pied de page répété sur chaque page du PDF). */
   const seen = new Set();
   const norm = t => t.toLowerCase().replace(/\s+/g," ").trim();
   const deduped = exigences.filter(e=>{ const k=e.ref+"|"+norm(e.description); if(seen.has(k)) return false; seen.add(k); return true; });
+  /* Avant-propos (hors chapitre, avant le premier titre numéroté) : ce n'est pas une exigence du référentiel — signalé « informatif ». */
+  if(deduped.some(e=>e.ref!=="—")) deduped.forEach(e=>{ if(e.ref==="—") e.type = "informatif"; });
   const kept = deduped.slice(0, MAX_IMPORTED_EXIGENCES);
   annotateRanks(kept);
   return { chapters: [...new Set(kept.map(e=>e.ref))], exigences: kept, truncated: Math.max(0, deduped.length-kept.length), duplicatesRemoved: exigences.length-deduped.length, ignored, rawConvient };
+}
+/* Document bilingue (anglais + français dans le même fichier, fréquent pour les normes IEC/ISO) : langue de chaque exigence, estimée par mots-outils. */
+const EXLANG_EN = new Set(["the","of","and","to","is","are","shall","should","must","be","that","with","for","by","in","on","as","this","which","from","or","an","has","have","been","their","it","not","any","all"]);
+const EXLANG_FR = new Set(["le","la","les","de","des","du","et","est","sont","doit","doivent","que","qui","pour","par","dans","sur","avec","une","un","au","aux","ce","cette","son","ses","leur","en","ne","pas","tout","toute"]);
+function exigenceLang(e){
+  const words = ((e.title||"")+" "+(e.description||"")).toLowerCase().match(/[a-zàâçéèêëîïôûùüÿœ']+/g) || [];
+  let en = 0, fr = 0; words.forEach(w=>{ if(EXLANG_EN.has(w)) en++; else if(EXLANG_FR.has(w)) fr++; });
+  if(en+fr<2) return "?";
+  return fr>en ? "fr" : en>fr ? "en" : "?";
+}
+function bilingualInfo(exigences){
+  let fr = 0, en = 0; (exigences||[]).forEach(e=>{ const l = exigenceLang(e); if(l==="fr") fr++; else if(l==="en") en++; });
+  const total = fr+en;
+  return { fr, en, bilingual: total>0 && Math.min(fr,en)>=10 && Math.min(fr,en)/total>=0.2 };
+}
+/* Garde une langue ; les exigences de langue indéterminée sont conservées. Rangs et chapitres recalculés. */
+function filterParsedByLanguage(parsed, lang){
+  if(!parsed || lang==="both") return parsed;
+  const exigences = parsed.exigences.filter(e=>{ const l = exigenceLang(e); return l===lang || l==="?"; });
+  annotateRanks(exigences);
+  return Object.assign({}, parsed, { exigences, chapters:[...new Set(exigences.map(e=>e.ref))] });
 }
 /* Chapitre d'une exigence importée, quel que soit le mode de lecture (obligations, critères simples, critères numérotés). */
 function chapterParts(e){
@@ -614,6 +654,11 @@ function openReferentielImportModal(presets){
         <span class="text-xs" id="imp-translate-status"></span>
       </div></div>`;
   }
+  function langChoiceHtml(){
+    const b = state.bilingual; if(!b || !b.bilingual) return "";
+    return `<div class="aq-callout" style="margin-top:0;margin-bottom:12px;" id="imp-lang-box"><div>🌍 <strong>Ce document contient le texte en français et en anglais</strong> (environ ${b.fr} passage(s) français, ${b.en} anglais).</div>
+      <div class="field" style="margin:8px 0 0;max-width:340px;"><label>Langue à importer</label><select id="imp-keeplang"><option value="fr" ${state.keepLang==="fr"?"selected":""}>Français (recommandé)</option><option value="en" ${state.keepLang==="en"?"selected":""}>Anglais</option><option value="both" ${state.keepLang==="both"?"selected":""}>Les deux (doublons possibles)</option></select></div></div>`;
+  }
   function step2Html(){
     const p = state.parsed;
     const count = t => p.exigences.filter(e=>e.type===t).length;
@@ -638,6 +683,7 @@ function openReferentielImportModal(presets){
       ${p.ignored?`<p class="text-xs mb-2">${p.ignored} phrase(s) qui expliquent le vocabulaire de la norme (« doit » indique une exigence…) ont été ignorées : ce ne sont pas des exigences.</p>`:""}
       ${p.coded?"":p.rawConvient?`<p class="text-xs mb-2">Contrôle : « il convient » apparaît ${p.rawConvient} fois dans le texte lu ; ${count("recommandation")} recommandation(s) retenue(s), ${p.ignored} phrase(s) de vocabulaire ignorée(s)${p.duplicatesRemoved?" et "+p.duplicatesRemoved+" doublon(s) regroupé(s)":""}. Si l'écart vous surprend, utilisez le filtre « Tout » pour vérifier que la phrase n'est pas rangée dans un autre type.</p>`:`<p class="text-xs mb-2">Contrôle : l'expression « il convient » n'apparaît pas dans le texte lu. Si votre document en contient, le PDF a peut-être été mal lu (essayez la version Word).</p>`}
       ${p.truncated?`<p class="text-sm mb-2">⚠️ ${p.truncated} exigence(s) au-delà de la limite de ${MAX_IMPORTED_EXIGENCES} n'ont pas été retenues.</p>`:""}
+      ${langChoiceHtml()}
       ${translationBlockHtml()}
       <div class="field-row"><div class="field"><label>Chapitre</label>
         <select id="imp-chapter">
@@ -689,7 +735,10 @@ function openReferentielImportModal(presets){
       state.meta.version = o.querySelector("#imp-version").value.trim() || String(new Date().getFullYear());
       state.meta.origin = o.querySelector("#imp-origin").value.trim() || "Import texte";
       state.meta.mode = o.querySelector("#imp-mode").value;
-      state.parsed = parseReferentielText(text, state.meta.mode);
+      state.parsedAll = parseReferentielText(text, state.meta.mode);
+      state.bilingual = bilingualInfo(state.parsedAll.exigences);
+      state.keepLang = state.bilingual.bilingual ? "fr" : "both";
+      state.parsed = filterParsedByLanguage(state.parsedAll, state.keepLang);
       renderStep(o, 2);
     });
   }
@@ -725,6 +774,8 @@ function openReferentielImportModal(presets){
       if(tg) tg.addEventListener("click", ()=>{ const fr = state.parsed.exigences.some(e=>e.lang==="fr"); setExigencesLanguage(state.parsed.exigences, fr?"original":"fr"); rerenderTranslation(); });
     }
     bindTranslation();
+    const langSel = o.querySelector("#imp-keeplang");
+    if(langSel) langSel.addEventListener("change", ()=>{ state.keepLang = langSel.value; state.parsed = filterParsedByLanguage(state.parsedAll, state.keepLang); renderStep(o, 2); });
     const confirmBtn = o.querySelector("#imp-confirm");
     if(confirmBtn) confirmBtn.addEventListener("click", ()=>{
       let ref = existingRef;
