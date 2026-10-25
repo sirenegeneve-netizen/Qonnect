@@ -18,6 +18,10 @@ const MAPPING_SUGGEST_LEVELS = {
 const MAPPING_SUGGEST_WEIGHTS = { keywords:0.45, text:0.35, code:0.12, chapter:0.08 };
 const MAPPING_SUGGEST_OPTS = { perSource:3, maxCandidates:15, minContent:0.15, stemLen:6, margin:0.05 };
 
+/* Racines de mots passe-partout des textes normatifs (« méthodes et techniques appropriées… ») : elles se retrouvent dans des exigences sans rapport.
+   Elles comptent encore, mais bien moins : deux exigences ne se ressemblent pas parce qu'elles disent « approprié » ou « utiliser ». (EXPÉRIMENTAL) */
+const MS_GENERIC = new Set(["method","techni","approp","compri","adequa","necess"]);
+const MS_GENERIC_FACTOR = 0.35;
 const MS_STOP = new Set(("dans pour avec sans leur leurs cette cettes ainsi entre comme selon etre sont elle elles nous vous plus tout tous doit doivent doivent ete etre ayant afin lors ceux celle ces ses aux des les une que qui par sur sous the and for with that this shall must should are have been their which from into such any all other les mise place organisation organisme"+
   " exigence exigences").split(" "));
 
@@ -81,7 +85,7 @@ function suggestMappings(source, target, level, optsOverride){
   /* Rareté des mots : poids idf calculé sur l'ensemble des deux référentiels. */
   const df = new Map(), N = S.length+T.length;
   S.concat(T).forEach(e=> e.stems.forEach(s=> df.set(s,(df.get(s)||0)+1)));
-  const idf = s => Math.log(1 + N/(df.get(s)||1)) * (s[0]==="~" ? 1.6 : 1);   /* un concept du lexique qualité pèse plus qu'un mot isolé */
+  const idf = s => Math.log(1 + N/(df.get(s)||1)) * (s[0]==="~" ? 1.6 : MS_GENERIC.has(s) ? MS_GENERIC_FACTOR : 1);   /* un concept du lexique qualité pèse plus qu'un mot isolé */
   const mass = e => { let m = 0; e.stems.forEach(s=>{ m += idf(s); }); return m; };
   S.forEach(e=>{ e.mass = mass(e); }); T.forEach(e=>{ e.mass = mass(e); });
   /* Index inversé de la cible : on ne compare qu'à des candidats qui partagent des mots rares. */
