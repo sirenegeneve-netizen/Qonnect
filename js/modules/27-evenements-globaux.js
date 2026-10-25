@@ -408,6 +408,15 @@ function initGlobalEvents(){
       refAiSend(refId, input.value); input.value="";
       return;
     }
+    if(e.target.id==="dom-add"){ const inp = document.getElementById("dom-new"); if(refDomainAdd(inp&&inp.value)) return; return; }
+    const domRen = e.target.closest("[data-dom-rename]");
+    if(domRen){ const old = domRen.getAttribute("data-dom-rename"); const inp = [...document.querySelectorAll("[data-dom-input]")].find(i=>i.getAttribute("data-dom-input")===old); refDomainRename(old, inp?inp.value:""); return; }
+    const domDel = e.target.closest("[data-dom-del]");
+    if(domDel){ const d = domDel.getAttribute("data-dom-del"); const n = DB.referentiels.filter(r=>r.domain===d).length;
+      confirmDialog("Retirer le domaine « "+d+" » de la liste ?"+(n?" "+n+" référentiel(s) l'utilisent et le gardent.":""), ()=>{ closeModal(); refDomainRemove(d); }); return; }
+    const domKeep = e.target.closest("[data-dom-keep]");
+    if(domKeep){ refDomainAdd(domKeep.getAttribute("data-dom-keep")); return; }
+    if(e.target.id==="dom-reset"){ confirmDialog("Rétablir la liste d'origine des domaines ? Les référentiels ne changent pas.", ()=>{ closeModal(); const b = DB.referentielDomains; delete DB.referentielDomains; try{ saveDB(); }catch(err){ DB.referentielDomains = b; toast("Enregistrement impossible","⚠️"); return; } toast("Liste rétablie","✅"); render(); }); return; }
     if(e.target.id==="stor-del-backups"){
       QONNECT_BACKUP_KEYS.forEach(k=>{ try{ localStorage.removeItem(k); }catch(err){} });
       toast("Copies de sécurité supprimées","✅"); render(); return;

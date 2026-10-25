@@ -1011,9 +1011,59 @@ const REF_SORTS = [
   { v:"domain", l:"Domaine", dir:"asc" }, { v:"version", l:"Version", dir:"asc" },
   { v:"count", l:"Exigences (plus nombreuses d'abord)", dir:"desc" }, { v:"pct", l:"Maîtrise (plus élevée d'abord)", dir:"desc" },
 ];
+/* Liste des domaines proposés : modifiable dans Administration (DB.referentielDomains) ; par défaut, la liste d'origine. Les domaines déjà
+   utilisés par un référentiel restent toujours proposés, même retirés de la liste. */
+function refDomainList(){ return Array.isArray(DB.referentielDomains) ? DB.referentielDomains : REF_DOMAIN_SUGGESTIONS.slice(); }
 function refDomainChoices(){
   const used = DB.referentiels.map(r=>r.domain).filter(Boolean);
-  return [...new Set([...REF_DOMAIN_SUGGESTIONS, ...used])];
+  return [...new Set([...refDomainList(), ...used])];
+}
+function refDomainsSave(list, msg){
+  const before = DB.referentielDomains, beforeRefs = DB.referentiels.map(r=>r.domain);
+  DB.referentielDomains = list;
+  try{ saveDB(); }catch(e){ DB.referentielDomains = before; DB.referentiels.forEach((r,i)=>{ r.domain = beforeRefs[i]; }); toast("Enregistrement impossible : rien n'a été modifié.","⚠️"); return false; }
+  if(msg) toast(msg,"✅"); render(); return true;
+}
+function refDomainAdd(name){
+  name = String(name||"").trim();
+  if(!name){ toast("Saisissez un nom de domaine.","⚠️"); return false; }
+  const list = refDomainList();
+  if(list.some(d=>d.toLowerCase()===name.toLowerCase())){ toast("Ce domaine existe déjà.","⚠️"); return false; }
+  return refDomainsSave([...list, name], "Domaine ajouté");
+}
+function refDomainRename(oldName, newName){
+  newName = String(newName||"").trim();
+  if(!newName){ toast("Le nom ne peut pas être vide.","⚠️"); return false; }
+  if(newName===oldName) return false;
+  const list = refDomainList();
+  if(list.some(d=>d!==oldName && d.toLowerCase()===newName.toLowerCase())){ toast("Ce domaine existe déjà.","⚠️"); return false; }
+  const used = DB.referentiels.filter(r=>r.domain===oldName);
+  used.forEach(r=>{ r.domain = newName; });
+  const next = list.includes(oldName) ? list.map(d=>d===oldName?newName:d) : [...list, newName];
+  const ok = refDomainsSave(next, "Domaine renommé"+(used.length?" ("+used.length+" référentiel(s) mis à jour)":""));
+  if(!ok) used.forEach(r=>{ r.domain = oldName; });
+  return ok;
+}
+function refDomainRemove(name){
+  return refDomainsSave(refDomainList().filter(d=>d!==name), "Domaine retiré de la liste");
+}
+function refDomainsCardHtml(){
+  const list = refDomainList();
+  const count = d => DB.referentiels.filter(r=>r.domain===d).length;
+  const orphans = [...new Set(DB.referentiels.map(r=>r.domain).filter(d=>d && !list.includes(d)))];
+  const row = (d, inList) => `<div class="flex gap-2 mt-2" style="align-items:center;"><input type="text" value="${esc(d)}" data-dom-input="${esc(d)}" aria-label="Nom du domaine ${esc(d)}" style="flex:1;max-width:340px;">
+      <span class="text-xs" style="min-width:90px;">${count(d)} référentiel(s)</span>
+      <button class="btn btn-secondary btn-sm" data-dom-rename="${esc(d)}">Renommer</button>
+      ${inList?`<button class="btn btn-secondary btn-sm" data-dom-del="${esc(d)}">Retirer</button>`:`<button class="btn btn-secondary btn-sm" data-dom-keep="${esc(d)}">Ajouter à la liste</button>`}</div>`;
+  return `<div class="card">
+    <h3 class="mb-2">Domaines des référentiels</h3>
+    <p class="text-sm mb-2">Liste proposée quand vous renseignez le domaine d'un référentiel. Le domaine reste toujours choisi par vous : Qonnect ne le déduit jamais.</p>
+    ${list.map(d=>row(d,true)).join("") || `<p class="text-sm">Aucun domaine dans la liste.</p>`}
+    ${orphans.length?`<p class="text-xs mt-2">Utilisés par vos référentiels mais absents de la liste :</p>${orphans.map(d=>row(d,false)).join("")}`:""}
+    <div class="flex gap-2 mt-2" style="align-items:center;"><input type="text" id="dom-new" placeholder="Nouveau domaine" style="flex:1;max-width:340px;"><button class="btn btn-primary btn-sm" id="dom-add">Ajouter</button></div>
+    <div class="mt-2"><button class="btn btn-secondary btn-sm" id="dom-reset" ${Array.isArray(DB.referentielDomains)?"":"disabled"}>Rétablir la liste d'origine</button></div>
+    <p class="text-xs mt-2">Renommer un domaine met à jour les référentiels qui l'utilisent. Retirer un domaine de la liste ne change aucun référentiel : ceux qui l'utilisent le gardent.</p>
+  </div>`;
 }
 function refListData(){
   return DB.referentiels.map(r=>{
