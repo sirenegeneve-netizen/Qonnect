@@ -305,8 +305,9 @@ function computeSuggestionsFor(refId, targetIds, level){
   targetIds.forEach(tid=>{
     const theirs = listExigencesOfReferentiel(tid);
     const l2 = msGuessLang(theirs.map(e=>e.text));
-    if(l1!=="?" && l2!=="?" && l1!==l2) warnings.push({ target:(getReferentiel(tid)||{}).name||tid, l1, l2 });
-    const raw = suggestMappings(mine, theirs, level);
+    const xl = l1!=="?" && l2!=="?" && l1!==l2;
+    if(xl) warnings.push({ target:(getReferentiel(tid)||{}).name||tid, targetId:tid, l1, l2 });
+    const raw = suggestMappings(mine, theirs, level, { xlang:xl });
     raw.forEach(c=>{ if(findMapping(c.aId,c.bId)) skipped++; else list.push(Object.assign(c,{ targetId:tid })); });
   });
   list.sort((p,q)=>q.score-p.score);
@@ -331,6 +332,7 @@ function openMappingSuggestForm(refId){
       const draw = ()=>{
         const n = S.list.length - S.off.size;
         save.disabled = n<=0 || !!S.busy; save.title = S.busy ? "Disponible une fois l'analyse par l'IA locale terminée." : "";
+        const discB = o.querySelector("#mapsg-disc"); if(discB) discB.disabled = !!S.busy;
         const runB = o.querySelector("#mapsg-run"), lvl = o.querySelector("#mapsg-lvl"); if(runB) runB.disabled = !!S.busy; if(lvl) lvl.disabled = !!S.busy; if(pick) pick.style.pointerEvents = S.busy ? "none" : "";
         save.textContent = n>0 ? "Enregistrer "+n+" suggestion(s) « à valider »" : "Enregistrer les suggestions";
         out.querySelectorAll("[data-mapsg-i]").forEach(cb=>{ cb.checked = !S.off.has(Number(cb.getAttribute("data-mapsg-i"))); cb.disabled = !!S.busy; });
@@ -339,14 +341,13 @@ function openMappingSuggestForm(refId){
       const AIREL = { equivalente:"équivalente", partielle:"partielle", complementaire:"complémentaire", aucune:"aucune" };
       const renderList = (warnings)=>{
         const warn = S.warnHtml || "";
-        const aiBar = `<div class="flex gap-2 mb-2" style="align-items:center;flex-wrap:wrap;"><button class="btn btn-secondary btn-sm" id="mapsg-ai">🤖 Affiner avec l'IA locale</button><span class="text-xs" id="mapsg-ai-status">Facultatif : un petit modèle exécuté sur ce poste donne son avis sur chaque paire cochée. Il ne valide rien et peut se tromper.</span><button class="btn btn-secondary btn-sm" id="mapsg-ai-stop" style="display:none;">Arrêter</button></div>`;
-        out.innerHTML = warn+`<p class="text-sm mb-2"><strong>${S.list.length}</strong> suggestion(s)${S.skipped?" · "+S.skipped+" déjà traitée(s), ignorée(s)":""}. Décochez celles qui ne vous semblent pas pertinentes.</p>${aiBar}
-          <div style="max-height:340px;overflow:auto;">${S.list.slice(0,150).map((c,i)=>{ const v = S.ai[i];
+        const aiBar = `<div class="flex gap-2 mb-2" style="align-items:center;flex-wrap:wrap;"><button class="btn btn-secondary btn-sm" id="mapsg-ai">🤖 Affiner avec l'IA locale</button><button class="btn btn-secondary btn-sm" id="mapsg-disc" title="L'IA locale cherche une correspondance pour les exigences restées sans proposition">🔎 Chercher avec l'IA les exigences sans proposition</button><span class="text-xs" id="mapsg-ai-status">Facultatif : un petit modèle exécuté sur ce poste donne son avis sur chaque paire cochée. Il ne valide rien et peut se tromper.</span><button class="btn btn-secondary btn-sm" id="mapsg-ai-stop" style="display:none;">Arrêter</button></div>`;
+        out.innerHTML = warn+(S.list.length ? `<p class="text-sm mb-2"><strong>${S.list.length}</strong> suggestion(s)${S.skipped?" · "+S.skipped+" déjà traitée(s), ignorée(s)":""}. Décochez celles qui ne vous semblent pas pertinentes.</p>` : `<p class="text-sm mb-2">${esc(S.emptyMsg||"Aucune suggestion.")}</p>`)+aiBar+`<div style="max-height:340px;overflow:auto;">${S.list.slice(0,150).map((c,i)=>{ const v = S.ai[i];
             const aiLine = !v ? "" : v.error ? `<div class="text-xs mt-2">🤖 Avis indisponible (${esc(v.error)}) : proposition par règles conservée.</div>`
               : v.relation==="aucune" ? `<div class="text-xs mt-2">🤖 <strong>Écartée par l'IA locale</strong> (décochée, vous pouvez la recocher) — ${esc(v.reason)}</div>`
               : `<div class="text-xs mt-2">🤖 IA locale : <strong>${esc(AIREL[v.relation])}</strong>${v.relation!==c.relation?" (les règles proposaient « "+esc(AIREL[c.relation]||c.relation)+" »)":""} — ${esc(v.reason)}</div>`;
             return `<label class="card mb-2" style="display:block;cursor:pointer;"><div class="flex" style="gap:10px;align-items:flex-start;"><input type="checkbox" data-mapsg-i="${i}" ${S.off.has(i)?"":"checked"}>
-            <div style="flex:1;"><div class="text-sm"><strong>${esc(txt(c.aId))}</strong><br>↔ <strong>${esc(txt(c.bId))}</strong>${multi()?` <span class="text-xs">(${esc((getReferentiel(c.targetId)||{}).name||"")})</span>`:""}</div><div class="text-xs mt-2">Indice ${Math.round(c.score*100)} % · ${esc(c.basis.join(" · "))}</div>${aiLine}</div></div></label>`; }).join("")}${S.list.length>150?`<p class="text-xs">… ${S.list.length-150} autre(s) non affichée(s) : toutes seront enregistrées si vous ne les décochez pas ; relevez le niveau de prudence pour en voir moins.</p>`:""}</div>`;
+            <div style="flex:1;"><div class="text-sm"><strong>${esc(txt(c.aId))}</strong><br>↔ <strong>${esc(txt(c.bId))}</strong>${multi()?` <span class="text-xs">(${esc((getReferentiel(c.targetId)||{}).name||"")})</span>`:""}</div><div class="text-xs mt-2">${c.discovered?"🔎 Trouvée par l'IA locale (décochée par défaut) — "+esc(c.reason||""):"Indice "+Math.round(c.score*100)+" % · "+esc(c.basis.join(" · "))}</div>${aiLine}</div></div></label>`; }).join("")}${S.list.length>150?`<p class="text-xs">… ${S.list.length-150} autre(s) non affichée(s) : toutes seront enregistrées si vous ne les décochez pas ; relevez le niveau de prudence pour en voir moins.</p>`:""}</div>`;
         out.querySelectorAll("[data-mapsg-i]").forEach(cb=>cb.addEventListener("change", ()=>{ const i = Number(cb.getAttribute("data-mapsg-i")); if(cb.checked) S.off.delete(i); else S.off.add(i); draw(); }));
         const aiBtn = out.querySelector("#mapsg-ai"), stopBtn = out.querySelector("#mapsg-ai-stop"), st = out.querySelector("#mapsg-ai-status");
         aiBtn.addEventListener("click", async ()=>{
@@ -365,6 +366,33 @@ function openMappingSuggestForm(refId){
             if(st2) st2.textContent = (keep?"Interrompu : ":"")+done+" paire(s) analysée(s) par l'IA locale, "+dropped+" écartée(s). Relisez : l'avis d'un petit modèle n'est pas une preuve.";
           }catch(e){ S.busy = false; draw(); st.textContent = "IA locale indisponible : "+((e&&e.message)||e)+" Les propositions par règles restent utilisables."; aiBtn.disabled = false; stopBtn.style.display = "none"; }
         });
+        const discBtn = out.querySelector("#mapsg-disc");
+        discBtn.addEventListener("click", async ()=>{
+          const withProposal = new Set(S.list.map(c=>c.aId));
+          const targetsEx = []; S.targets.forEach(tid=> listExigencesOfReferentiel(tid).forEach(e=>targetsEx.push(Object.assign({}, e, { referentielId:tid, targetId:tid }))));
+          const mappedAlready = id => mappingsOfExigence(id).some(m=>S.targets.includes(m.refA===refId?m.refB:m.refA));
+          const items = [];
+          listExigencesOfReferentiel(refId).forEach(src=>{
+            if(items.length>=40 || withProposal.has(src.id) || mappedAlready(src.id)) return;
+            const opts = maShortlist(src, targetsEx, 8).filter(t=>!findMapping(src.id, t.id));
+            if(opts.length) items.push({ aId:src.id, options:opts });
+          });
+          if(!items.length){ st.textContent = "Aucune exigence sans proposition n'a de candidate à examiner (présélection vide)."; return; }
+          S.ctl = { cancelled:false }; S.busy = true; discBtn.disabled = true; aiBtn.disabled = true; stopBtn.style.display = ""; stopBtn.disabled = false; draw(); stopBtn.onclick = ()=>{ S.ctl.cancelled = true; stopBtn.disabled = true; };
+          try{
+            const res = await maAiDiscover(items, { ctl:S.ctl,
+              onProgress:s2=>{ st.textContent = s2.status==="loading" ? (s2.text||"Chargement du modèle…")+(typeof s2.progress==="number"?" "+Math.round(s2.progress*100)+" %":"") : (s2.text||""); },
+              onStep:(k,n)=>{ if(!document.body.contains(out)) S.ctl.cancelled = true; st.textContent = "Recherche par l'IA locale… "+k+" / "+n; } });
+            S.busy = false; let found = 0, none = 0, err = 0;
+            res.forEach((v,k)=>{ if(!v) return;
+              if(v.error){ err++; return; } if(v.none){ none++; return; }
+              const tEp = mappingEndpoint(v.bId); const tid = tEp ? tEp.referentielId : S.targets[0];
+              S.list.push({ aId:items[k].aId, bId:v.bId, relation:v.relation, score:null, basis:[], targetId:tid, discovered:true, reason:v.reason });
+              S.off.add(S.list.length-1); found++; });
+            const keep = S.ctl.cancelled; renderList(); const st2 = out.querySelector("#mapsg-ai-status");
+            if(st2) st2.textContent = (keep?"Interrompu : ":"")+items.length+" exigence(s) examinée(s) : "+found+" candidate(s) trouvée(s) (décochées, à relire), "+none+" sans correspondance"+(err?", "+err+" réponse(s) inutilisable(s)":"")+".";
+          }catch(e){ S.busy = false; draw(); st.textContent = "IA locale indisponible : "+((e&&e.message)||e); discBtn.disabled = false; aiBtn.disabled = false; stopBtn.style.display = "none"; }
+        });
         draw();
       };
       o.querySelector("#mapsg-run").addEventListener("click", ()=>{
@@ -373,9 +401,9 @@ function openMappingSuggestForm(refId){
         if(!S.targets.length){ out.innerHTML = `<p class="text-sm">Cochez au moins un référentiel à comparer.</p>`; S.list = []; draw(); return; }
         const r = computeSuggestionsFor(refId, S.targets, S.level);
         S.list = r.list; S.skipped = r.skipped; S.ai = {}; S.warnings = r.warnings;
-        const warn = r.warnings.length ? `<div class="aq-callout warn">⚠️ Langue différente pour : ${r.warnings.map(w=>esc(w.target)+" ("+w.l1.toUpperCase()+" / "+w.l2.toUpperCase()+")").join(", ")}. Les mots-clés ne se recoupent pas : les suggestions seront rares ou absentes pour ces référentiels. Traduisez d'abord le référentiel importé en anglais (traduction par IA locale à l'import).</div>` : "";
+        const warn = r.warnings.length ? `<div class="aq-callout warn">🌍 Langues différentes pour : ${r.warnings.map(w=>esc(w.target)+" ("+w.l1.toUpperCase()+" / "+w.l2.toUpperCase()+")").join(", ")}. Qonnect compare alors par un <strong>lexique bilingue</strong> (sans similarité de texte) : les propositions sont plus approximatives, relisez-les avec soin. Vous pouvez aussi demander à l'IA locale de chercher les exigences restées sans proposition.</div>` : "";
         S.warnHtml = warn;
-        if(!S.list.length){ out.innerHTML = warn+`<p class="text-sm">Aucune nouvelle suggestion à ce niveau${S.skipped?" ("+S.skipped+" déjà traitée(s))":""}. Essayez un niveau plus large.</p>`; draw(); return; }
+        S.emptyMsg = `Aucune nouvelle suggestion à ce niveau${S.skipped?" ("+S.skipped+" déjà traitée(s))":""}. Essayez un niveau plus large${r.warnings.length?" ou cherchez avec l'IA locale":""}.`;
         S.ai = {}; renderList(r.warnings);
       });
       save.addEventListener("click", ()=>{
