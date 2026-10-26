@@ -37,11 +37,39 @@ const MS_SYNONYMS = [
   ["~competence", ["competence","sensibilis","formation"]],
   ["~mesure",     ["mesure","surveillance","evaluation","analyse"]],
 ];
-function msStems(text){
+/* Lexique bilingue FR/EN, utilisé SEULEMENT pour comparer deux référentiels de langues différentes (EXPÉRIMENTAL) : il ramène les termes
+   courants des normes à un concept commun. Il vient en priorité sur le lexique ci-dessus. */
+const MS_XLANG = [
+  ["~direction",  ["direction","dirigeant","leadership","top","managers"]],
+  ["~achats",     ["achat","prestataire","fournisseur","soustrait","externe","supplier","purchas","outsourc","vendor","provider","procure"]],
+  ["~documents",  ["document","enregistrement","dossier","manuel","record","manual","file"]],
+  ["~client",     ["client","reclamation","feedback","satisfaction","customer","complaint"]],
+  ["~amelioration",["amelior","correctif","corrective","preventi","improve","improvement"]],
+  ["~risque",     ["risque","opportunit","risk"]],
+  ["~competence", ["competence","sensibilis","formation","training","awareness","competen","skill"]],
+  ["~mesure",     ["mesure","surveillance","evaluation","analyse","monitor","measure","measurement","evaluat","analys"]],
+  ["~produit",    ["produit","product"]],
+  ["~ressource",  ["ressourc","resourc"]],
+  ["~conception", ["conception","design","developpement","development"]],
+  ["~revue",      ["revue","review"]],
+  ["~modification",["modification","changement","change","amendment"]],
+  ["~etalonnage", ["etalonn","calibrat","calibr"]],
+  ["~securite",   ["securite","safety","security"]],
+  ["~reglement",  ["reglement","regulat","statutor","legal","legislat"]],
+  ["~tracabilite",["tracabil","traceab","identification"]],
+  ["~conformite", ["conform","compliance","comply","complies"]],
+  ["~processus",  ["processus","process"]],
+  ["~obligation", ["obligation","requirement","requis"]],
+  ["~verification",["verification","verify","validation","validat","verifi"]],
+  ["~maintenance",["maintenance","entretien","infrastructure","equipement","equipment"]],
+  ["~stockage",   ["stockage","storage","preservation","conservation","packaging","emballage"]],
+];
+function msStems(text, xlang){
   const out = new Set();
+  const groups = xlang ? MS_XLANG.concat(MS_SYNONYMS) : MS_SYNONYMS;
   vmNorm(text).split(" ").forEach(w=>{
     if(w.length<5 || MS_STOP.has(w)) return;
-    const syn = MS_SYNONYMS.find(g=>g[1].some(p=>w.startsWith(p)));      /* mot entier (préfixe) : « prestation » ≠ « prestataire » */
+    const syn = groups.find(g=>g[1].some(p=>w.startsWith(p)));      /* mot entier (préfixe) : « prestation » ≠ « prestataire » */
     out.add(syn ? syn[0] : w.slice(0, MAPPING_SUGGEST_OPTS.stemLen));   /* un synonyme est ramené à son concept commun */
   });
   return out;
@@ -80,8 +108,8 @@ function suggestMappings(source, target, level, optsOverride){
   const W = MAPPING_SUGGEST_WEIGHTS;
   const min = (MAPPING_SUGGEST_LEVELS[level]||MAPPING_SUGGEST_LEVELS.standard).min;
   const sEff = msWithContext(source), tEff = msWithContext(target);
-  const S = source.map((x,i)=>({ x, eff:sEff[i], stems:msStems(sEff[i]), ref:vmNorm(x.ref) }));
-  const T = target.map((x,i)=>({ x, eff:tEff[i], stems:msStems(tEff[i]), ref:vmNorm(x.ref) }));
+  const S = source.map((x,i)=>({ x, eff:sEff[i], stems:msStems(sEff[i], O.xlang), ref:vmNorm(x.ref) }));
+  const T = target.map((x,i)=>({ x, eff:tEff[i], stems:msStems(tEff[i], O.xlang), ref:vmNorm(x.ref) }));
   /* Rareté des mots : poids idf calculé sur l'ensemble des deux référentiels. */
   const df = new Map(), N = S.length+T.length;
   S.concat(T).forEach(e=> e.stems.forEach(s=> df.set(s,(df.get(s)||0)+1)));
@@ -103,11 +131,11 @@ function suggestMappings(source, target, level, optsOverride){
       let shared = 0; const sharedStems = [];
       a.stems.forEach(s=>{ if(b.stems.has(s)){ shared += idf(s); sharedStems.push(s); } });
       const kw = (a.mass && b.mass) ? shared / Math.sqrt(a.mass*b.mass) : 0;
-      const txt = vmSimilarity(a.eff, b.eff);
+      const txt = O.xlang ? 0 : vmSimilarity(a.eff, b.eff);   /* entre deux langues, la similarité de texte n'a pas de sens */
       if(kw < O.minContent && txt < 0.3) return;            /* le code seul ne suffit jamais */
       const code = (a.ref && a.ref===b.ref) ? 1 : 0;
       const chap = (a.x.chapterTitle && b.x.chapterTitle) ? vmSimilarity(a.x.chapterTitle, b.x.chapterTitle) : 0;
-      const score = W.keywords*kw + W.text*txt + W.code*code + W.chapter*chap;
+      const score = O.xlang ? (W.keywords*kw + W.code*code) / (W.keywords+W.code) * 0.8 : W.keywords*kw + W.text*txt + W.code*code + W.chapter*chap;   /* entre langues : mots-clés et code seulement, plafonné (jamais « équivalente » sur ce seul indice) */
       if(score < min) return;
       cand.push({ si, ti, score, kw, txt, code, chap, sharedStems:sharedStems.sort((p,q)=>idf(q)-idf(p)) });
     });
@@ -125,15 +153,16 @@ function suggestMappings(source, target, level, optsOverride){
       const a = S[c.si].x, b = T[c.ti].x;
       const basis = [];
       if(c.sharedStems.length){ const words = c.sharedStems.slice(0,5); basis.push("Mots-clés communs : "+words.join(", ")); }
-      basis.push("Similarité du texte : "+Math.round(c.txt*100)+" %");
+      if(O.xlang) basis.push("Rapprochement entre deux langues par lexique bilingue : à relire avec soin");
+      else basis.push("Similarité du texte : "+Math.round(c.txt*100)+" %");
       if(c.code) basis.push("Même code : "+a.ref);
       if(c.chap>=0.5) basis.push("Chapitres proches : « "+(a.chapterTitle||"")+" » / « "+(b.chapterTitle||"")+" »");
       if(mutual) basis.push("Meilleur candidat des deux côtés");
       if(close) basis.push("Attention : un autre candidat est presque aussi proche");
-      out.push({ aId:a.id, bId:b.id, score:c.score, relation: c.txt>=0.7 ? "equivalente" : "partielle", basis,
+      out.push({ aId:a.id, bId:b.id, score:c.score, relation: (!O.xlang && c.txt>=0.7) ? "equivalente" : "partielle", basis,
         signals:{ keywords:c.kw, text:c.txt, code:c.code, chapter:c.chap }, mutual, close });
     });
   });
   return out.sort((p,q)=>q.score-p.score);
 }
-if(typeof module!=="undefined" && module.exports) module.exports = { suggestMappings, msGuessLang, msStems, MAPPING_SUGGEST_LEVELS };
+if(typeof module!=="undefined" && module.exports) module.exports = { suggestMappings, msGuessLang, msStems, MAPPING_SUGGEST_LEVELS, MS_XLANG };
