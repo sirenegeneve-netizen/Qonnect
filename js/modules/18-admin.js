@@ -12,11 +12,12 @@ function pageAdmin(){
       <p class="text-sm mt-2">Utilisateurs : 12 (démonstration)</p>
     </div>
     ${typeof adminAnalysisEngineCard==="function" ? adminAnalysisEngineCard() : ""}
+    ${typeof authCardHtml==="function" ? authCardHtml() : ""}
     ${typeof storageCardHtml==="function" ? storageCardHtml() : ""}
     ${typeof refDomainsCardHtml==="function" ? refDomainsCardHtml() : ""}
     <div class="card">
       <h3 class="mb-2">Données du prototype</h3>
-      <p class="text-sm mb-2">Toutes les données sont stockées localement dans votre navigateur (localStorage). Aucune donnée n'est envoyée à un serveur.</p>
+      <p class="text-sm mb-2">Toutes les données sont stockées localement dans votre navigateur, chiffrées avec votre mot de passe. Aucune donnée n'est envoyée à un serveur.</p>
       <button class="btn btn-danger" id="reset-data-btn">Réinitialiser les données de démonstration</button>
     </div>
     <div class="card">

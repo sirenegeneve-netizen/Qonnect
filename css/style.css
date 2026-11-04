@@ -543,3 +543,12 @@ table.dt td .cell-title a:hover{color:var(--primary);text-decoration:underline;}
 .multi-pick-bulk{display:flex;gap:6px;margin-bottom:8px;}
 .multi-pick-opt{display:flex;gap:8px;align-items:flex-start;padding:5px 2px;cursor:pointer;font-size:14px;}
 .multi-pick-opt input{width:auto;margin-top:3px;}
+
+/* ---------- Écrans d'accueil (connexion / création de compte) ---------- */
+.auth-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:linear-gradient(135deg,var(--primary-soft),#fff);}
+.auth-card{width:100%;max-width:420px;background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:16px;padding:28px;box-shadow:0 10px 30px rgba(15,23,42,.08);}
+.auth-brand{display:flex;align-items:center;gap:10px;margin-bottom:18px;}
+.auth-brand .brand-mark{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;}
+.auth-brand .brand-name{font-weight:800;letter-spacing:.04em;}
+.auth-title{font-size:20px;margin:0 0 10px;}
+.auth-reckey{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:15px;letter-spacing:.04em;word-break:break-all;background:var(--primary-soft);border:1px dashed var(--primary);border-radius:10px;padding:14px;user-select:all;}
