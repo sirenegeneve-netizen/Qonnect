@@ -984,10 +984,19 @@ function normalizeDocuments(){
     if(seed && !r.attendus){ r.attendus = JSON.parse(JSON.stringify(seed.attendus)); r.synthese = r.synthese || seed.synthese; }
   });
 }
+const QONNECT_ENC_PREFIX = "QENC1:";   /* données chiffrées (voir js/auth.js) */
+/* Fusionne les données enregistrées avec la structure actuelle (sections apparues depuis dans une mise à jour de Qonnect). */
+function mergeLoadedDB(cached){
+  const seedCopy = JSON.parse(JSON.stringify(QONNECT_SEED));
+  Object.keys(seedCopy).forEach(key=>{ if(!(key in cached)) cached[key] = seedCopy[key]; });
+  if(cached.climate && typeof cached.climate.evaluated === "undefined") cached.climate.evaluated = true;
+  return cached;
+}
 function loadDB(){
   const seedCopy = JSON.parse(JSON.stringify(QONNECT_SEED));
   try{
     const raw = localStorage.getItem("qonnect_db_v1");
+    if(raw && raw.startsWith(QONNECT_ENC_PREFIX)) return seedCopy;   /* chiffré : illisible tant que l'utilisateur ne s'est pas connecté ; base vide, jamais enregistrée */
     if(raw){
       const cached = JSON.parse(raw);
       // Fusionne : conserve les données déjà enregistrées par l'utilisateur, mais
@@ -1004,15 +1013,17 @@ function loadDB(){
 }
 const QONNECT_BACKUP_KEYS = ["qonnect_db_v1_avant_import","qonnect_db_v1_avant_migration_ids"];
 function saveDB(){
-  const json = JSON.stringify(DB);
-  try{ localStorage.setItem("qonnect_db_v1", json); }
+  /* Les données ne sont JAMAIS écrites en clair : sans session déverrouillée (clé en mémoire), l'enregistrement est refusé. */
+  if(typeof AUTH==="undefined" || !AUTH.dek) throw new Error("Application verrouillée : enregistrement refusé.");
+  const blob = authEncryptJson(DB);
+  try{ localStorage.setItem("qonnect_db_v1", blob); }
   catch(err){
     /* Stockage plein : les copies de sécurité automatiques (avant import / migration) sont jetables ; on les supprime et on réessaie.
        Si cela ne suffit pas, l'erreur remonte comme avant et rien n'est modifié. */
     let freed = false;
     QONNECT_BACKUP_KEYS.forEach(k=>{ try{ if(localStorage.getItem(k)!==null){ localStorage.removeItem(k); freed = true; } }catch(e){} });
     if(!freed) throw err;
-    localStorage.setItem("qonnect_db_v1", json);
+    localStorage.setItem("qonnect_db_v1", blob);
   }
 }
 /* Diagnostic du stockage du navigateur (≈ 5 millions de caractères par site) : taille de chaque clé et des principales collections. */
@@ -1035,7 +1046,6 @@ function storageFullHelp(retry){
     onMount:(o)=>{ o.querySelector("#stor-free").addEventListener("click", ()=>{ info.backups.forEach(b=>{ try{ localStorage.removeItem(b.key); }catch(e){} }); closeModal(); if(retry) retry(); }); } });
 }
 function resetDB(){
-  localStorage.removeItem("qonnect_db_v1");
   DB = JSON.parse(JSON.stringify(QONNECT_SEED));
   normalizeDocuments();
   saveDB();
@@ -1062,7 +1072,7 @@ function validateBackup(obj){
 function restoreBackup(obj){
   const err = validateBackup(obj);
   if(err) throw new Error(err);
-  try{ localStorage.setItem("qonnect_db_v1_avant_import", JSON.stringify(DB)); }catch(e){}
+  try{ localStorage.setItem("qonnect_db_v1_avant_import", authEncryptJson(DB)); }catch(e){}
   const seedCopy = JSON.parse(JSON.stringify(QONNECT_SEED));
   const data = obj.data;
   Object.keys(seedCopy).forEach(key=>{ if(!(key in data)) data[key] = seedCopy[key]; });

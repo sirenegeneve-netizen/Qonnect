@@ -103,7 +103,8 @@ function buildShell(){
       <div class="header-right">
         <button class="icon-btn" title="Notifications"><span class="dot"></span>🔔</button>
         <button class="icon-btn" title="Aide">❓</button>
-        <div class="avatar">MC</div>
+        <button class="icon-btn" id="auth-lock-btn" title="Se déconnecter" aria-label="Se déconnecter">🔒</button>
+        <div class="avatar" title="${esc(typeof AUTH!=="undefined"?AUTH.login:"")}">${esc(typeof authInitials==="function"?authInitials():"MC")}</div>
       </div>
     </header>
     <main class="content" id="content-area"></main>`;
